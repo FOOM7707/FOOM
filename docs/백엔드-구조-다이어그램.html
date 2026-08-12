@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>품(FOOM) 백엔드 구조 다이어그램 v3</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root{
+    --forest:#1f5c43;
+    --forest-dark:#163f2e;
+    --forest-bg:#eaf3ed;
+    --sun:#d98a3d;
+    --sun-bg:#fbead6;
+    --bg:#faf8f4;
+    --ink:#22302b;
+    --muted:#6b7a72;
+    --line:#e1e0d8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    padding:32px 20px 60px;
+  }
+  .wrap{max-width:980px; margin:0 auto;}
+  header{margin-bottom:28px;}
+  header h1{font-size:22px; color:var(--forest-dark); margin:0 0 6px;}
+  header p{color:var(--muted); font-size:13.5px; margin:0;}
+  .badge{
+    display:inline-block; background:var(--forest); color:#fff; font-size:11px;
+    font-weight:700; padding:3px 10px; border-radius:100px; margin-right:8px;
+  }
+  section{
+    background:#fff; border:1px solid var(--line); border-radius:16px;
+    padding:22px 24px 26px; margin-bottom:24px; box-shadow:0 1px 4px rgba(0,0,0,.03);
+  }
+  section h2{
+    font-size:16px; color:var(--forest-dark); margin:0 0 4px;
+    display:flex; align-items:center; gap:8px;
+  }
+  section .desc{font-size:12.5px; color:var(--muted); margin:0 0 16px;}
+  .mermaid{display:flex; justify-content:center;}
+  .legend{
+    margin-top:16px; padding-top:14px; border-top:1px dashed var(--line);
+    font-size:12px; color:var(--muted); line-height:1.7;
+  }
+  .legend b{color:var(--ink);}
+  .note-box{
+    background:var(--sun-bg); border:1px solid #eecfa2; border-radius:10px;
+    padding:12px 14px; font-size:12.5px; color:#7a5320; margin-top:14px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">v3 확정</span>
+    <span class="badge" style="background:var(--sun);">2026.08.07</span>
+    <h1>🌲 품(FOOM) 백엔드 구조 다이어그램</h1>
+    <p>Firestore 컬렉션 관계 구조 + 예약·결제 핵심 흐름(오버부킹 방지 로직 포함)</p>
+  </header>
+
+  <section>
+    <h2>1. 데이터 구조 (컬렉션 관계도)</h2>
+    <p class="desc">누가 무엇을 갖고, 어떤 컬렉션이 어떤 컬렉션을 참조하는지 한눈에 보는 구조도입니다.</p>
+    <div class="mermaid" id="diagram1"></div>
+    <div class="legend">
+      <b>읽는 법:</b> 화살표는 "1개가 여러 개를 갖는다(1:N)" 방향입니다. 예) providerProfiles(공급자 1명) → programs(그가 등록한 여러 프로그램).<br>
+      <b>핵심 포인트:</b> scheduleTemplates(반복규칙)는 사람이 직접 만들지 않고, 이 템플릿을 바탕으로 Cloud Function이 자동으로 schedules(실제 회차)를 미리 생성합니다.
+    </div>
+  </section>
+
+  <section>
+    <h2>2. 예약→결제 핵심 흐름 (오버부킹 방지 로직)</h2>
+    <p class="desc">이번 설계에서 가장 공들인 부분 — "결제 안 하고 이탈한 사람 때문에 자리가 계속 잠기는 문제"와 "여러 명이 동시에 마지막 자리를 결제해버리는 문제"를 동시에 막는 흐름입니다.</p>
+    <div class="mermaid" id="diagram2"></div>
+    <div class="note-box">
+      💡 식당 예약으로 비유하면: 손님이 예약하면 일단 자리를 잡아두되(정원 -1), 10분 안에 결제(=도착 확인)를 안 하면 자동으로 자리를 풀어줍니다(정원 +1 복구). 결제가 두 번 중복 통보돼도 이미 처리된 예약이면 무시합니다(멱등 처리).
+    </div>
+  </section>
+
+  <section>
+    <h2>3. 스케줄 생성 흐름 (weekly 반복 → 실제 회차)</h2>
+    <p class="desc">"매주 월요일 10시" 같은 반복 규칙이 실제 예약 가능한 날짜별 회차로 어떻게 바뀌는지 보여줍니다.</p>
+    <div class="mermaid" id="diagram3"></div>
+  </section>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#eaf3ed',
+      primaryTextColor: '#22302b',
+      primaryBorderColor: '#1f5c43',
+      lineColor: '#6b7a72',
+      secondaryColor: '#fbead6',
+      tertiaryColor: '#faf8f4',
+      fontFamily: 'Pretendard, Apple SD Gothic Neo, sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis' }
+  });
+
+  const diagram1 = `
+flowchart TD
+    U["users<br/>회원 공통정보 (role: consumer/provider/admin)"] -->|공급자만 1:1| PP["providerProfiles<br/>자격증 · 승인상태"]
+    PP -->|1:N| P["programs<br/>프로그램"]
+    P -->|weekly 반복규칙 1:N| ST["scheduleTemplates<br/>주간 반복 정의"]
+    ST -->|Cloud Function 자동생성| S["schedules<br/>실제 예약 회차"]
+    P -->|single/series 직접등록| S
+    P -->|1:N| INQ["inquiries<br/>1:1 문의"]
+    S -->|1:N| B["bookings<br/>예약"]
+    U -->|1:N| B
+    B -->|1:1, 문서ID=pgTransactionId| PAY["payments<br/>결제"]
+    B -->|완료건만 1:1| REV["reviews<br/>리뷰"]
+    PP -->|기간별 1:N| SET["settlements<br/>정산"]
+    SET -->|1:N| SI["settlementItems<br/>정산 명세"]
+    U -->|1:N| TA["termsAgreements<br/>약관동의 이력"]
+    VA["voucherAds<br/>바우처 광고 (독립)"]
+
+    classDef money fill:#fbead6,stroke:#d98a3d,stroke-width:1.5px;
+    classDef core fill:#eaf3ed,stroke:#1f5c43,stroke-width:1.5px;
+    class PAY,SET,SI money;
+    class U,PP,P,S,B core;
+`;
+
+  const diagram2 = `
+sequenceDiagram
+    participant C as 소비자
+    participant F as Cloud Functions
+    participant DB as Firestore
+    participant PG as 토스페이먼츠/포트원
+
+    C->>F: 예약 신청 (POST /bookings)
+    F->>DB: 트랜잭션 — schedules.remainingSlots -1
+    F->>DB: bookings.status = pending_payment<br/>expiresAt = now + 10분
+    F-->>C: 결제창 URL 반환
+    C->>PG: 결제 진행
+
+    alt 10분 내 결제 완료
+        PG->>F: 웹훅 (결제완료, pgTransactionId)
+        F->>DB: payments 문서 조회 (ID = pgTransactionId)
+        alt 이미 status=paid (중복 웹훅)
+            F-->>PG: 200 OK (조용히 무시)
+        else 신규 결제
+            F->>DB: payments 생성 + bookings.status = confirmed
+            F-->>PG: 200 OK
+        end
+    else 10분 초과, 결제 안 함
+        F->>DB: (Scheduled Function 5분 주기) bookings.status = expired
+        F->>DB: schedules.remainingSlots +1 복구
+    end
+`;
+
+  const diagram3 = `
+flowchart LR
+    T["scheduleTemplates<br/>weekday=월, timeOfDay=10:00(KST)<br/>capacityPerOccurrence=10"] -->|Scheduled Function<br/>롤링 윈도우 8주| G{"매주 생성"}
+    G --> S1["schedules<br/>8/10(월) 10:00<br/>remainingSlots=10"]
+    G --> S2["schedules<br/>8/17(월) 10:00<br/>remainingSlots=10"]
+    G --> S3["schedules<br/>8/24(월) 10:00<br/>remainingSlots=10"]
+    S1 -.독립적으로 차감.-> B1["예약 발생 시<br/>이 회차만 정원 감소"]
+
+    classDef tmpl fill:#fbead6,stroke:#d98a3d,stroke-width:1.5px;
+    classDef inst fill:#eaf3ed,stroke:#1f5c43,stroke-width:1.5px;
+    class T tmpl;
+    class S1,S2,S3 inst;
+`;
+
+  document.getElementById('diagram1').innerHTML = diagram1;
+  document.getElementById('diagram2').innerHTML = diagram2;
+  document.getElementById('diagram3').innerHTML = diagram3;
+  mermaid.run();
+</script>
+</body>
+</html>

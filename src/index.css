@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@theme {
+  /* 폰트는 Pretendard 단독 — Toss Product Sans·Tossface는 라이선스상 사용 불가 (스키마 9-5) */
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto,
+    "Noto Sans KR", sans-serif;
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  /* 디자인 초안 토큰 매핑 (docs/디자인-웹페이지-초안.html)
+     --brand-primary(#1F5C43) → --primary, --brand-soft(#EAF3ED) → --secondary 로 이미 매핑됨.
+     아래는 초안에만 있던 신규 토큰 */
+  --color-cta: hsl(var(--cta));
+  --color-cta-hover: hsl(var(--cta-hover));
+  --color-footer: hsl(var(--footer));
+  --color-footer-muted: hsl(var(--footer-muted));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  /* 품(FOOM) 브랜드 그린(#1F5C43)을 shadcn/ui 표준 변수 체계에 매핑 */
+  /* 라이트 모드 기본 배경은 순백으로 통일 (스키마 9-5 배경색 규칙) */
+  --background: 0 0% 100%;
+  --foreground: 155 20% 14%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 155 20% 14%;
+
+  --primary: 155 50% 24%; /* #1F5C43 */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 150 27% 92%; /* #EAF3ED 계열 */
+  --secondary-foreground: 155 48% 17%; /* #163F2E */
+
+  --muted: 60 9% 94%;
+  --muted-foreground: 155 8% 45%; /* #6B7A72 */
+
+  --accent: 150 27% 92%;
+  --accent-foreground: 155 48% 17%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 48 15% 88%; /* #E1E0D8 */
+  --input: 48 15% 88%;
+  --ring: 155 50% 24%;
+
+  /* 초안의 웜 우드 액센트 (--accent는 shadcn 예약이라 cta로 명명) */
+  --cta: 30 67% 55%; /* #D98A3D */
+  --cta-hover: 30 64% 46%; /* #C2762B */
+
+  /* 푸터 — 초안의 다크 네이비(#05131D) 대신 다크 포레스트 (스키마 9-7 ⑦) */
+  --footer: 158 40% 9%; /* #0E211A 계열 */
+  --footer-muted: 155 12% 62%;
+
+  --radius: 0.625rem;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  word-break: keep-all;
+  -webkit-font-smoothing: antialiased;
+}

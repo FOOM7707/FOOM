@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>품(FOOM) - 우리 동네 숲에서, 오늘 뭐 하지?</title>
+  <!-- Pretendard 백업 폰트 & 토스 웹폰트 정의 -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <style>
+    /* ==========================================================================
+       Toss Fonts (Toss Product Sans & Tossface Webfont)
+       ========================================================================== */
+    @font-face {
+      font-family: 'Toss Product Sans';
+      font-weight: 400;
+      font-style: normal;
+      src: url('https://cdn.jsdelivr.net/gh/toss/toss-product-sans@main/TossProductSans-Regular.woff2') format('woff2');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Toss Product Sans';
+      font-weight: 600;
+      font-style: normal;
+      src: url('https://cdn.jsdelivr.net/gh/toss/toss-product-sans@main/TossProductSans-Medium.woff2') format('woff2');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Toss Product Sans';
+      font-weight: 700;
+      font-style: normal;
+      src: url('https://cdn.jsdelivr.net/gh/toss/toss-product-sans@main/TossProductSans-Bold.woff2') format('woff2');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Toss Product Sans';
+      font-weight: 800;
+      font-style: normal;
+      src: url('https://cdn.jsdelivr.net/gh/toss/toss-product-sans@main/TossProductSans-ExtraBold.woff2') format('woff2');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Tossface';
+      src: url('https://cdn.jsdelivr.net/gh/toss/toss-face/dist/tossface.woff2') format('woff2');
+      font-display: swap;
+    }
+
+    /* ==========================================================================
+       FOOM Design Tokens
+       ========================================================================== */
+    :root {
+      /* Brand Primary Colors */
+      --brand-primary: #1F5C43;     /* FOOM Forest Green */
+      --brand-hover: #163F2E;
+      --brand-soft: #EAF3ED;
+
+      /* Accent Colors */
+      --accent: #D98A3D;            /* Warm Wood Accent */
+      --accent-hover: #C2762B;
+      --vibrant-green: #00852E;
+
+      /* Dark Footer Palette */
+      --bg-dark-navy: #05131D;
+      --text-dark-muted: #8FA2B0;
+
+      /* Neutral Text & Backgrounds */
+      --text-primary: #1A2421;
+      --text-secondary: #4A5852;
+      --text-muted: #73827B;
+      --bg-canvas: #FFFFFF;
+      --bg-surface: #F4F7F5;
+
+      /* Borders & Shadows */
+      --border-light: #E2E7E3;
+      --shadow-floating: 0 16px 36px rgba(31, 92, 67, 0.12);
+      --shadow-card: 0 6px 20px rgba(31, 92, 67, 0.08);
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+
+      --transition-smooth: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Toss Product Sans", "Tossface", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+
+    body {
+      font-family: "Toss Product Sans", "Tossface", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      word-break: keep-all;
+    }
+
+    /* 1. Header Navigation */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      height: 60px;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .brand-logo {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--brand-primary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 36px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-primary);
+      font-size: 15px;
+      font-weight: 600;
+      transition: var(--transition-smooth);
+    }
+
+    .nav-links a:hover {
+      color: var(--brand-primary);
+    }
+
+    .user-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-login {
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-light);
+      background: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .btn-regist {
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      background-color: var(--brand-primary);
+      color: #ffffff;
+      border: none;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* 2. Hero Section */
+    .hero-section {
+      width: 100%;
+      padding: 32px 20px 90px;
+      background: linear-gradient(180deg, #E8F0EC 0%, #F4F7F5 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: var(--radius-full);
+      background-color: rgba(31, 92, 67, 0.12);
+      color: var(--brand-primary);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .hero-title {
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--text-primary);
+      line-height: 1.25;
+      margin-bottom: 8px;
+      letter-spacing: -0.8px;
+      white-space: nowrap;
+    }
+
+    .hero-sub {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      margin-bottom: 20px;
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .btn-hero {
+      padding: 11px 26px;
+      border-radius: var(--radius-full);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-smooth);
+    }
+
+    .btn-hero.primary {
+      background-color: var(--brand-primary);
+      color: #ffffff;
+      border: 1px solid var(--brand-primary);
+    }
+
+    .btn-hero.ghost {
+      background-color: #ffffff;
+      color: var(--brand-primary);
+      border: 1px solid var(--brand-primary);
+    }
+
+    /* 3. Photo Card Section (반응형 비율 aspect-ratio 적용) */
+    .photo-category-container {
+      width: 100%;
+      max-width: 1360px;
+      margin: -56px auto 80px;
+      padding: 0 24px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .photo-card-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 20px;
+    }
+
+    .photo-card {
+      background-color: #ffffff;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-light);
+      overflow: hidden;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-card);
+      transition: var(--transition-smooth);
+    }
+
+    .photo-card:hover {
+      transform: translateY(-10px);
+      box-shadow: var(--shadow-floating);
+      border-color: var(--brand-primary);
+    }
+
+    .card-photo-box {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      max-height: 380px;
+      position: relative;
+      overflow: hidden;
+      background-color: #E2E7E3;
+    }
+
+    .slide-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      animation: autoImageSlider 9s infinite ease-in-out;
+    }
+
+    .slide-img:nth-child(1) { animation-delay: 0s; }
+    .slide-img:nth-child(2) { animation-delay: 3s; }
+    .slide-img:nth-child(3) { animation-delay: 6s; }
+
+    @keyframes autoImageSlider {
+      0% { opacity: 0; transform: scale(1.0); }
+      8% { opacity: 1; transform: scale(1.02); }
+      33% { opacity: 1; transform: scale(1.06); }
+      41% { opacity: 0; transform: scale(1.08); }
+      100% { opacity: 0; transform: scale(1.0); }
+    }
+
+    .card-tag {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(8px);
+      padding: 5px 12px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--text-primary);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-content {
+      padding: 18px 18px 22px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      background-color: #ffffff;
+      z-index: 2;
+    }
+
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      margin-bottom: 4px;
+    }
+
+    .card-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.4px;
+    }
+
+    .card-arrow-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background-color: var(--bg-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--brand-primary);
+      transition: var(--transition-smooth);
+    }
+
+    .photo-card:hover .card-arrow-icon {
+      background-color: var(--brand-primary);
+      color: #ffffff;
+      transform: translateX(3px);
+    }
+
+    .card-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      font-weight: 400;
+    }
+
+    /* 4. Promo Section */
+    .promo-section {
+      width: 100%;
+      max-width: 1360px;
+      margin: 0 auto 90px;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 1.8fr 1fr;
+      gap: 24px;
+    }
+
+    .promo-card-main {
+      background: linear-gradient(135deg, #1F5C43 0%, #163F2E 100%);
+      border-radius: var(--radius-lg);
+      padding: 44px;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 220px;
+    }
+
+    .promo-card-main b {
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.35;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .promo-card-main p {
+      font-size: 15px;
+      color: #C3DFC2;
+      font-weight: 400;
+    }
+
+    .promo-card-sub {
+      background-color: #FAF6F0;
+      border: 1px solid #EFE4D6;
+      border-radius: var(--radius-lg);
+      padding: 36px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .promo-card-sub b {
+      font-size: 19px;
+      font-weight: 800;
+      color: #5A3E2B;
+      line-height: 1.3;
+      margin-bottom: 6px;
+    }
+
+    .promo-card-sub p {
+      font-size: 14px;
+      color: #8C6A53;
+      margin-bottom: 18px;
+      font-weight: 400;
+    }
+
+    .btn-cta {
+      padding: 13px 28px;
+      border-radius: var(--radius-full);
+      background-color: var(--accent);
+      color: #ffffff;
+      border: none;
+      font-size: 14px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      display: inline-block;
+      transition: var(--transition-smooth);
+    }
+
+    .btn-cta:hover {
+      background-color: var(--accent-hover);
+    }
+
+    /* ==========================================================================
+       5. Testimonials Section (요청하신 후기 영역 추가)
+       ========================================================================== */
+    .reviews-section {
+      width: 100%;
+      background-color: #ffffff;
+      padding: 80px 24px 100px;
+      text-align: center;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .reviews-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* 원형 엠블럼 스탬프 */
+    .stamp-badge {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 16px;
+      border: 1px solid #1A2421;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #1A2421;
+      text-align: center;
+      line-height: 1.15;
+    }
+
+    .reviews-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--vibrant-green);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .reviews-title {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.6px;
+      margin-bottom: 48px;
+    }
+
+    /* 3열 후기 카드 그리드 */
+    .reviews-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      text-align: left;
+    }
+
+    .review-card {
+      background-color: #F0F5FA;
+      border: 1px solid #E1E8ED;
+      border-radius: 12px;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .stars-row {
+      color: #FFB800;
+      font-size: 13px;
+      margin-bottom: 14px;
+      letter-spacing: 2px;
+    }
+
+    .review-text {
+      font-size: 14px;
+      color: #2A363B;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .reviewer-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .reviewer-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: #A0C3E8;
+      color: #1E385B;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .reviewer-details b {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      color: #1E282A;
+      margin-bottom: 2px;
+    }
+
+    .reviewer-details span {
+      font-size: 12px;
+      color: #68787E;
+    }
+
+    /* ==========================================================================
+       6. Dark Navy Footer (요청하신 하단 푸터 스타일 추가)
+       ========================================================================== */
+    .footer {
+      background-color: var(--bg-dark-navy);
+      color: #ffffff;
+      padding: 64px 24px 32px;
+    }
+
+    .footer-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 2fr repeat(3, 1fr);
+      gap: 40px;
+      margin-bottom: 48px;
+    }
+
+    .footer-brand b {
+      font-size: 22px;
+      font-weight: 800;
+      display: block;
+      margin-bottom: 12px;
+      letter-spacing: -0.4px;
+    }
+
+    .footer-brand p {
+      font-size: 13px;
+      color: var(--text-dark-muted);
+      line-height: 1.6;
+    }
+
+    .footer-col h4 {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--vibrant-green);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    .footer-col ul {
+      list-style: none;
+    }
+
+    .footer-col ul li {
+      margin-bottom: 10px;
+    }
+
+    .footer-col ul li a {
+      color: #C5D2E0;
+      text-decoration: none;
+      font-size: 13px;
+      transition: var(--transition-smooth);
+    }
+
+    .footer-col ul li a:hover {
+      color: #ffffff;
+    }
+
+    .footer-bottom {
+      max-width: 1200px;
+      margin: 0 auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #6B7C8E;
+    }
+
+    /* Responsive */
+    @media (max-height: 850px) {
+      .hero-section {
+        padding-top: 20px;
+        padding-bottom: 64px;
+      }
+      .card-photo-box {
+        max-height: 280px;
+      }
+    }
+
+    @media (max-width: 1200px) {
+      .photo-card-grid { grid-template-columns: repeat(3, 1fr); }
+      .promo-section { grid-template-columns: 1fr; }
+      .hero-title, .hero-sub { white-space: normal; }
+    }
+
+    @media (max-width: 900px) {
+      .reviews-grid { grid-template-columns: 1fr; }
+      .footer-container { grid-template-columns: 1fr; gap: 32px; }
+    }
+
+    @media (max-width: 768px) {
+      .photo-card-grid { grid-template-columns: repeat(2, 1fr); }
+      .nav-links { display: none; }
+      .hero-title { font-size: 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .photo-card-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Header Navigation -->
+  <header class="header">
+    <a href="#" class="brand-logo">
+      <span>🌲</span> 품 FOOM
+    </a>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="#">프로그램 찾기</a></li>
+        <li><a href="#">지도로 찾기</a></li>
+        <li><a href="#">예약내역</a></li>
+        <li><a href="#">마이페이지</a></li>
+      </ul>
+    </nav>
+    <div class="user-actions">
+      <button class="btn-login">로그인</button>
+      <button class="btn-regist">전문가로 활동하기</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- 2. Hero Section -->
+    <section class="hero-section">
+      <div class="hero-badge">
+        <span>🌲</span> 산림복지전문가 직연결 플랫폼
+      </div>
+      <h1 class="hero-title">
+        우리 동네 숲에서, 오늘 뭐 하지?
+      </h1>
+      <p class="hero-sub">
+        국가공인 산림복지전문가와 함께하는 맞춤형 숲 프로그램
+      </p>
+      <div class="hero-actions">
+        <a href="#" class="btn-hero primary">프로그램 둘러보기</a>
+        <a href="#" class="btn-hero ghost">📍 내 주변에서 찾기</a>
+      </div>
+    </section>
+
+    <!-- 3. Photo Card Section -->
+    <section class="photo-category-container">
+      <div class="photo-card-grid">
+        
+        <!-- Card 1: 숲해설 -->
+        <a href="#" class="photo-card">
+          <div class="card-photo-box">
+            <span class="card-tag">🌳 숲해설</span>
+            <img class="slide-img" src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80" alt="숲해설 1">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=800&q=80" alt="숲해설 2">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1511497584788-876761c11969?auto=format&fit=crop&w=800&q=80" alt="숲해설 3">
+          </div>
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="card-title">숲해설</div>
+              <div class="card-arrow-icon">→</div>
+            </div>
+            <div class="card-desc">숲해설가와 걷는<br>자연 생태 체험</div>
+          </div>
+        </a>
+
+        <!-- Card 2: 유아숲체험 -->
+        <a href="#" class="photo-card">
+          <div class="card-photo-box">
+            <span class="card-tag">🧒 유아숲</span>
+            <img class="slide-img" src="https://images.unsplash.com/photo-1476514525535-ce74f45814d0?auto=format&fit=crop&w=800&q=80" alt="유아숲 1">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=800&q=80" alt="유아숲 2">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1485546246426-74dc88dec4d9?auto=format&fit=crop&w=800&q=80" alt="유아숲 3">
+          </div>
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="card-title">유아숲체험</div>
+              <div class="card-arrow-icon">→</div>
+            </div>
+            <div class="card-desc">아이와 함께하는<br>창의 숲 놀이·교육</div>
+          </div>
+        </a>
+
+        <!-- Card 3: 산림치유 -->
+        <a href="#" class="photo-card">
+          <div class="card-photo-box">
+            <span class="card-tag">🧘 치유</span>
+            <img class="slide-img" src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=800&q=80" alt="산림치유 1">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80" alt="산림치유 2">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?auto=format&fit=crop&w=800&q=80" alt="산림치유 3">
+          </div>
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="card-title">산림치유</div>
+              <div class="card-arrow-icon">→</div>
+            </div>
+            <div class="card-desc">몸과 마음을 쉬어가는<br>숲 힐링 프로그램</div>
+          </div>
+        </a>
+
+        <!-- Card 4: 숲길등산 -->
+        <a href="#" class="photo-card">
+          <div class="card-photo-box">
+            <span class="card-tag">🥾 등산</span>
+            <img class="slide-img" src="https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=800&q=80" alt="숲길등산 1">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80" alt="숲길등산 2">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1486870591958-9b9d0d1dda99?auto=format&fit=crop&w=800&q=80" alt="숲길등산 3">
+          </div>
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="card-title">숲길등산</div>
+              <div class="card-arrow-icon">→</div>
+            </div>
+            <div class="card-desc">전문가와 안전하게<br>걷는 트레킹 안내</div>
+          </div>
+        </a>
+
+        <!-- Card 5: 단체·기업 -->
+        <a href="#" class="photo-card">
+          <div class="card-photo-box">
+            <span class="card-tag">🏢 단체</span>
+            <img class="slide-img" src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80" alt="단체·기업 1">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=800&q=80" alt="단체·기업 2">
+            <img class="slide-img" src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80" alt="단체·기업 3">
+          </div>
+          <div class="card-content">
+            <div class="card-header-row">
+              <div class="card-title">단체·기업</div>
+              <div class="card-arrow-icon">→</div>
+            </div>
+            <div class="card-desc">기관 및 단체를 위한<br>맞춤형 숲 프로그램</div>
+          </div>
+        </a>
+
+      </div>
+    </section>
+
+    <!-- 4. Promo Section -->
+    <section class="promo-section">
+      <div class="promo-card-main">
+        <div>
+          <b>우리 동네 숲에서 만나는<br>특별한 맞춤형 산림복지 서비스</b>
+          <p>검증된 산림복지전문가가 직접 기획하고 운영합니다.</p>
+        </div>
+      </div>
+
+      <div class="promo-card-sub">
+        <div>
+          <b>산림복지전문가이신가요?</b>
+          <p>내 프로그램을 올리고 지역 주민들을 직접 만나보세요.</p>
+        </div>
+        <a href="#" class="btn-cta">전문가 가입하기</a>
+      </div>
+    </section>
+
+    <!-- 5. Testimonials Section (요청하신 후기 영역) -->
+    <section class="reviews-section">
+      <div class="reviews-container">
+        <div class="stamp-badge">
+          FEEL THE<br>DIFFERENCE
+        </div>
+        <span class="reviews-eyebrow">REAL EXPERIENCES</span>
+        <h2 class="reviews-title">숲이 준 일상의 변화, 직접 경험한 이야기</h2>
+
+        <div class="reviews-grid">
+          <!-- Card 1 -->
+          <div class="review-card">
+            <div>
+              <div class="stars-row">★★★★★</div>
+              <p class="review-text">
+                "아이와 유아숲체험에 참여했는데, 전문가분이 해설을 너무 쉽고 재미있게 해주셔서 아이가 숲을 보는 눈이 달라졌어요. 주말마다 또 가고 싶어해요!"
+              </p>
+            </div>
+            <div class="reviewer-info">
+              <div class="reviewer-avatar">김</div>
+              <div class="reviewer-details">
+                <b>김민지 님</b>
+                <span>유아숲체험 참여</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="review-card">
+            <div>
+              <div class="stars-row">★★★★★</div>
+              <p class="review-text">
+                "업무 스트레스로 머리가 복잡했는데 산림치유 프로그램에 참여하고 오니 몸과 마음이 정말 가벼워졌습니다. 전문가 지도 덕분에 깊이 몰입할 수 있었어요."
+              </p>
+            </div>
+            <div class="reviewer-info">
+              <div class="reviewer-avatar">박</div>
+              <div class="reviewer-details">
+                <b>박성우 님</b>
+                <span>산림치유 참여</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="review-card">
+            <div>
+              <div class="stars-row">★★★★★</div>
+              <p class="review-text">
+                "등산 코스를 혼자 가기 무서웠는데 전문가와 함께 안전하게 트레킹을 즐길 수 있어 좋았습니다. 내 주변 숲의 새로운 매력을 알게 되었네요."
+              </p>
+            </div>
+            <div class="reviewer-info">
+              <div class="reviewer-avatar">이</div>
+              <div class="reviewer-details">
+                <b>이수진 님</b>
+                <span>숲길등산 참여</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 6. Dark Navy Footer (요청하신 하단 푸터) -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <b>품 FOOM</b>
+        <p>산림복지전문가와 이용자를 잇는 No.1 숲 프로그램 플랫폼.<br>체질숲협동조합이 함께 만들어갑니다.</p>
+      </div>
+
+      <div class="footer-col">
+        <h4>PROGRAMS</h4>
+        <ul>
+          <li><a href="#">숲해설</a></li>
+          <li><a href="#">유아숲체험</a></li>
+          <li><a href="#">산림치유</a></li>
+          <li><a href="#">숲길등산</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>ABOUT FOOM</h4>
+        <ul>
+          <li><a href="#">서비스 소개</a></li>
+          <li><a href="#">전문가 가입 안내</a></li>
+          <li><a href="#">공지사항</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>CONTACT</h4>
+        <ul>
+          <li><a href="#">고객센터</a></li>
+          <li><a href="#">1:1 문의하기</a></li>
+          <li><a href="#">제휴 문의</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>© 2026 FOOM. All rights reserved.</div>
+      <div>개인정보처리방침 · 이용약관</div>
+    </div>
+  </footer>
+
+</body>
+</html>
