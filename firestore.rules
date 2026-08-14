@@ -1,0 +1,12 @@
+// [Red-A] 임시 — 전면 거부.
+// 허용 기대 케이스가 전부 실패하는지 확인하기 위한 상태입니다.
+// 다음 커밋에서 스키마 6-1 전문으로 교체합니다.
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "emu:firestore": "firebase emulators:start --only firestore --project demo-foom",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-foom \"vitest run -c vitest.rules.config.ts\"",
+    "test:rules:watch": "vitest -c vitest.rules.config.ts",
+    "typecheck:rules": "tsc -p tsconfig.rules.json"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.15",
@@ -27,12 +31,15 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "firebase-tools": "^15.27.0",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
   }
 }
