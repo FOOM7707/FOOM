@@ -150,6 +150,20 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 
 > 홈·검색·상세 화면은 **아직 `src/mocks/`를 씁니다.** 등록된 실데이터는 `/my/programs`에서만 보입니다 — 게시 경로(1번)가 없어 `published` 상태가 될 수 없기 때문입니다.
 
+### 결정 대기 (2026-08-14 마감 시점 — 다음 세션에 먼저 물어볼 것)
+
+**① 공급자 등록을 어떻게 열 것인가.** 지금은 `grant-provider` 스크립트뿐이고 화면이 없습니다(15-8).
+- **A — 안내 화면만.** 공급자가 아닌 사용자에게 "본인확인·자격증·심사가 필요하며 준비 중" 안내. 아래 「알려진 문제」의 막다른 길이 함께 해결됨. **권고안**
+- **B — 신청 기능까지.** 신청 폼 + 관리자 승인. 관리자 심사 화면이 선행돼야 하고, 신청 폼 필드는 "관리자가 무엇을 보고 승인하는가"가 정해져야 확정됨
+
+**② 지역 필터 권역이 7개인가 8개인가.** 17-3은 「8개 권역」이라 적혀 있는데 4번 매핑표는 7개(서울/경기·인천/강원/충청/전라/경상/제주)입니다. **17개 시도를 빠짐없이 덮고 있어 기능 영향은 없고** 숫자만 안 맞습니다. 미결정 — 임의로 고치지 마세요.
+
+### 알려진 문제
+
+- **「전문가로 활동하기」가 막다른 길입니다.** 헤더 버튼과 푸터 「전문가 가입 안내」가 둘 다 `/programs/new`로 직결돼 있어, 공급자가 아닌 사용자가 폼을 다 채운 뒤에야 `permission-denied`로 거부됩니다. 위 ①과 함께 처리
+- `src/types/firestore.ts`가 스키마 v9 기준으로 스테일합니다
+- Firebase Storage 미설정 — 프로그램 이미지(`imageUrls`)와 자격증 이미지를 올릴 곳이 없습니다
+
 **타입 주의** `src/types/firestore.ts`는 스키마 v9 이전 기준이라 스테일합니다. 그 뒤 추가·변경된 것:
 - v10 — `providerProfiles` 공개/`private` 분리, `programs.reviewedBy`, `bookings.unitPrice`·`totalAmount`, `schedules.programId`·`programStatus`
 - v11 — `users.authProvider` 2종 축소, `users.identityVerifiedAt`, `users/{uid}/private/identity`
