@@ -37,7 +37,7 @@
 | 수수료·환불·정산 관행의 근거, 경쟁 플랫폼 분석 | `docs/벤치마킹-분석-리포트.md` | — |
 | 스프린트 일정 | `docs/스프린트-로드맵.md` | — |
 
-경로는 프로젝트 루트 기준 상대경로입니다. **스키마 문서는 파일명에 버전을 넣지 않습니다** — 버전은 문서 상단 제목과 변경 이력으로만 관리하므로, 버전이 올라가도 위 경로는 그대로입니다. 현재 최신은 v13입니다.
+경로는 프로젝트 루트 기준 상대경로입니다. **스키마 문서는 파일명에 버전을 넣지 않습니다** — 버전은 문서 상단 제목과 변경 이력으로만 관리하므로, 버전이 올라가도 위 경로는 그대로입니다. 현재 최신은 v14입니다.
 
 ---
 
@@ -115,6 +115,7 @@ GitHub Flow — `main`에서 분기 → PR → 리뷰 → 병합 → 배포. `ma
 - v11 — `users.authProvider` 2종 축소, `users.identityVerifiedAt`, `users/{uid}/private/identity`
 - v12 — `bookings.participants`·`guardian`·`emergencyPhone`
 - v13 — `programs`에 필터·정렬 필드 12종(`targetAgeMin`/`Max`·`targetAgeTags`·`difficulty`·`walkingDistanceM`·`rainAlternative`·`sido`·`requiresChildInfo`·`scheduleDates`·`nextScheduleAt`/`lastScheduleAt`·`publishedAt`·`ratingAvg`/`ratingCount`·`bookingCount30d`), `aggregates` 컬렉션 신규, `programs` update 규칙을 허용목록으로 반전
+- v14 — 소셜 가입 정책 확정. `users.name` 폴백은 이메일 앞부분이 아니라 `이용자{uid 앞 4자리}`(공개 노출 필드라 이메일이 화면에 뜸), `users.phone`은 양쪽 공급자 모두 사전 심사 필요·심사 후에도 빈 값 가능, 계정 통합 안 함(소셜별 별도 계정), 전화번호 중복은 감지·기록만 하고 차단은 쿠폰 발급 시점
 
 **검색 화면 주의** `src/pages/SearchPage.tsx`는 v13 필터 설계 이전 상태입니다 — 카테고리가 단일 선택이고, 정렬이 3종뿐이며(인기순은 실제로 정렬하지 않음), 기간·대상연령·난이도·우천 필터가 없고, 목록⇄지도가 별도 토글로 남아 있습니다. 지역 필터는 `regionOfAddress()`로 주소 문자열을 파싱하는데 실제로는 `programs.region` 필드를 써야 합니다(17-3). 필터를 구현할 때 이 화면을 17번 기준으로 다시 씁니다.
 
