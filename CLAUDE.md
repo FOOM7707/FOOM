@@ -122,7 +122,10 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 
 **동작하는 것** 홈·검색·상세·등록 4개 화면. 전부 `src/mocks/`의 가짜 데이터로 돌아갑니다.
 
-**네이버 로그인은 실제로 동작합니다** (v14). 인가 요청 → 콜백 화면(`/auth/naver/callback`) → `POST /api/auth/social/naver` → Custom Token → `signInWithCustomToken`. 프로필은 서버가 네이버에서 직접 조회하고, 클라이언트는 인가코드와 state만 넘깁니다. 앱 등록 값은 15-7, 가입 규칙은 2-1·2-14.
+**네이버 로그인은 실제로 동작합니다** — 2026-08-14 실계정 로그인까지 확인했습니다 (v14).
+
+> **로그인이 안 될 때 코드부터 의심하지 마세요.** 네이버 앱이 아직 **「개발 중」 상태**라 개발자센터에 **테스트 멤버로 등록된 아이디만** 로그인됩니다. 네이버 **단체·기업 아이디는 불가**하고, **휴대폰 등 다른 기기에서도 불가**합니다(콜백이 `localhost`). 상세는 15-7.
+ 인가 요청 → 콜백 화면(`/auth/naver/callback`) → `POST /api/auth/social/naver` → Custom Token → `signInWithCustomToken`. 프로필은 서버가 네이버에서 직접 조회하고, 클라이언트는 인가코드와 state만 넘깁니다. 앱 등록 값은 15-7, 가입 규칙은 2-1·2-14.
 로컬에서 확인하려면 **에뮬레이터(`auth,functions,firestore`)와 `npm run dev`를 함께** 띄우고 `http://localhost:5173`으로 접속합니다(`127.0.0.1` 아님 — 콜백 등록값이 `localhost`).
 
 **프로토타입만 있고 연동 안 된 것**
@@ -133,6 +136,15 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 - 위치 — Geolocation·거리 계산은 실제로 동작
 
 **아예 없는 것** 업무 API 전체(5번 목록), 예약·결제, 공급자 대시보드, 관리자 페이지
+
+**관리자 페이지는 화면 코드가 한 줄도 없습니다.** 있는 것은 자물쇠뿐입니다 — 함수 진입부 권한 검사(`/admin/*`), `grant-admin` 스크립트, 보안규칙 `isAdmin()`. `GET /admin/health`·`/admin/config/status`는 진입부 동작 확인용이지 업무 기능이 아닙니다. 설계는 12-2(탭 3개).
+
+**다음 작업 순서 (2026-08-14 기준 권고)**
+1. **프로그램 등록·조회 API** — `ProgramRegisterPage`가 아직 `console.log`만 합니다. 이걸 붙여야 처음으로 진짜 데이터가 흐릅니다
+2. **관리자 심사 화면** — 12-2의 공급자 승인·프로그램 심사 2개 먼저. 정산은 거래가 생긴 뒤
+3. **예약·결제** — 이때 전화번호 직접 입력 경로(15-4 2순위)도 함께
+
+> 관리자 화면을 1번보다 먼저 만들면 **심사할 대상이 없어 빈 목록만** 보게 됩니다. 공급자 등록도 프로그램 등록도 아직 서버로 가지 않기 때문입니다.
 
 **타입 주의** `src/types/firestore.ts`는 스키마 v9 이전 기준이라 스테일합니다. 그 뒤 추가·변경된 것:
 - v10 — `providerProfiles` 공개/`private` 분리, `programs.reviewedBy`, `bookings.unitPrice`·`totalAmount`, `schedules.programId`·`programStatus`
