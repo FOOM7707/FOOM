@@ -1,0 +1,30 @@
+{
+  "name": "foom-functions",
+  "version": "0.0.0",
+  "private": true,
+  "description": "품(FOOM) Cloud Functions — 루트 프론트엔드 패키지와 독립된 의존성 트리",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc -w",
+    "typecheck": "tsc --noEmit",
+    "serve": "npm run build && firebase emulators:start --only auth,functions,firestore --project demo-foom",
+    "test": "npm run build && firebase emulators:exec --only auth,functions,firestore --project demo-foom \"vitest run\"",
+    "test:watch": "vitest",
+    "grant-admin": "npm run build && node lib/scripts/grant-admin.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^6.6.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
