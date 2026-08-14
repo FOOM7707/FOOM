@@ -48,6 +48,12 @@ jspm_packages/
 .env.*
 !.env.example
 
+# Firebase 시크릿 (로컬 에뮬레이터용 — 실제 키 값이 들어감)
+# 아래 *.local 규칙에도 걸리지만, 실수로 그 줄이 지워져도 남도록 따로 적어둡니다.
+.secret.local
+**/.secret.local
+!.secret.local.example
+
 # Build output
 dist
 dist-ssr

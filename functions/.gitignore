@@ -1,0 +1,16 @@
+# 빌드 산출물
+# 앞에 / 를 붙여 functions/lib 만 가리킵니다 — "lib/"로 두면 소스인
+# src/lib/ 까지 함께 무시돼 커밋에서 통째로 빠집니다.
+/lib/
+*.tsbuildinfo
+
+node_modules/
+
+# 로컬 에뮬레이터용 시크릿 — 실제 값이 들어가므로 절대 커밋 금지.
+# (루트 .gitignore의 *.local 규칙에도 걸리지만, 여기 명시해 실수를 한 번 더 막습니다)
+.secret.local
+
+# 함수 파라미터(비밀 아님) — 값은 각자 로컬에서 채웁니다
+.env
+.env.*
+!.env.example
