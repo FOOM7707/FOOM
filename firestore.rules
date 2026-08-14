@@ -1,12 +1,244 @@
-// [Red-A] 임시 — 전면 거부.
-// 허용 기대 케이스가 전부 실패하는지 확인하기 위한 상태입니다.
-// 다음 커밋에서 스키마 6-1 전문으로 교체합니다.
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    // ============ 공통 함수 (v10 신규 — v9까지 정의 자체가 없었음) ============
+    function isSignedIn() {
+      return request.auth != null;
     }
+
+    // Custom Claims 방식. 관리자 지정 스크립트에서
+    // admin.auth().setCustomUserClaims(uid, { admin: true })를 함께 실행해야 함
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // 수정하려는 필드에 금지 목록이 포함됐는지
+    function changed(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+
+    function programOf(programId) {
+      return get(/databases/$(database)/documents/programs/$(programId)).data;
+    }
+
+    // ============ users ============
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+
+      // (v10) 권한 상승 차단 — 생성 시 role/status를 클라이언트가 정할 수 없음.
+      // 값을 아예 안 보내거나 기본값으로 보낸 경우만 통과시킴.
+      allow create: if isSelf(uid)
+        && request.resource.data.get('role', 'consumer') == 'consumer'
+        && request.resource.data.get('status', 'active') == 'active';
+
+      allow update: if isSelf(uid) && !changed(['role', 'status']);
+      allow delete: if false;      // 탈퇴는 서버에서 status='withdrawn' 처리
+      // 관리자에게도 클라이언트 쓰기를 열지 않습니다 — role 부여는
+      // Admin SDK 스크립트 전용(12-3). 여기서 열면 브라우저에서 남의 role을
+      // 바꿀 수 있게 되어 12-3의 서술과 어긋납니다.
+    }
+
+    // (v11 신규) users/{uid}/private/identity — 본인확인 결과
+    match /users/{uid}/private/{docId} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow write: if false;      // POST /auth/identity/verify 에서만 기록
+    }
+
+    // ============ providerProfiles — 공개 프로필 ============
+    match /providerProfiles/{uid} {
+      allow read: if true;         // 프로그램 상세에 운영자 정보 표시
+      allow write: if false;       // 심사 결과 반영은 서버 전용
+    }
+
+    // 민감 정보 — 상위 문서의 공개 읽기는 여기 상속되지 않음 (2-2 주의사항 참고)
+    match /providerProfiles/{uid}/private/{docId} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow write: if false;
+    }
+
+    match /providerProfiles/{uid}/violations/{violationId} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow write: if false;       // /bookings/{id}/cancel 함수에서만 기록
+    }
+
+    // ============ programs ============
+    match /programs/{id} {
+      allow read: if resource.data.status == 'published'
+                || isSelf(resource.data.providerId)
+                || isAdmin();
+
+      // 생성은 POST /programs(Cloud Function) 전용.
+      // 규칙을 명시하지 않아 기본 거부되며, 이는 의도된 설계임 —
+      // 클라이언트 생성을 열면 status='published'로 심사를 우회할 수 있음.
+
+      // (v10) 공급자 직접 수정은 draft 단계에서만.
+      // published 상태에서 제목·설명·이미지를 자유롭게 바꿀 수 있으면
+      // "관리자가 내용을 확인하고 승인한다"는 전제가 무너집니다(승인 후 내용 교체).
+      // 심사 후 수정은 PATCH /programs/{id} 경유 → 핵심 필드가 바뀌면
+      // 서버가 status를 pending_review로 되돌려 재심사시킵니다.
+      // draft 단계에서는 가격을 포함해 자유롭게 수정 가능(아직 심사 전).
+      //
+      // (v13 정정) 금지목록 → 허용목록으로 반전.
+      // v13이 파생 필드 10여 개를 추가하면서, 금지목록 방식으로는
+      // 새 필드가 전부 클라이언트에 열린 상태가 됐습니다.
+      // ratingAvg=5.0 / bookingCount30d=999999 를 직접 써서 검색 1위를
+      // 차지하거나, sido를 바꿔 다른 지역 검색에 노출되거나,
+      // scheduleDates를 심어 회차가 0건인데 달력에 뜨게 만들 수 있었습니다.
+      // 필드를 추가할 때 목록에 넣는 걸 잊으면 "저장이 안 되는 버그"로
+      // 드러나므로, 잊었을 때 보안 사고가 되는 금지목록보다 안전합니다.
+      allow update: if isSelf(resource.data.providerId)
+        && resource.data.status == 'draft'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['title', 'description', 'category', 'qualificationType',
+                       'location', 'price', 'capacity', 'minCapacity',
+                       'scheduleType', 'availableFrom', 'availableUntil',
+                       'imageUrls', 'barrierFree',
+                       'targetAgeMin', 'targetAgeMax',
+                       'walkingDistanceM', 'rainAlternative', 'updatedAt'])
+        // (v13 정정) 값 검증은 반드시 get(키, 기본값)으로 씁니다.
+        // request.resource.data.price >= 0 처럼 직접 참조하면
+        // 그 필드가 없는 문서에서 규칙 평가가 에러로 끝나 거부됩니다 —
+        // "가격을 아직 안 넣은 draft는 제목도 못 고치는" 상태가 됩니다.
+        && request.resource.data.get('price', 0) >= 0
+        && request.resource.data.get('capacity', 0)
+             >= request.resource.data.get('minCapacity', 0)
+        && request.resource.data.get('rainAlternative', 'none')
+             in ['indoor', 'reschedule', 'none']
+        // targetAge는 명시적 null(=제한 없음)이 정상값이라 null을 먼저 걸러냅니다.
+        && (request.resource.data.get('targetAgeMin', null) == null
+            || request.resource.data.get('targetAgeMax', null) == null
+            || request.resource.data.targetAgeMin
+               <= request.resource.data.targetAgeMax);
+      // 파생 필드(targetAgeTags·sido·requiresChildInfo·difficulty·
+      // scheduleDates·nextScheduleAt·lastScheduleAt·publishedAt·
+      // ratingAvg·ratingCount·bookingCount30d)는 허용목록에 없으므로
+      // 클라이언트가 값을 넣으면 수정 전체가 거부됩니다 — 서버 전용입니다.
+
+      allow delete: if false;
+      // 관리자도 클라이언트에서 직접 쓰지 않습니다 — 심사는 반드시
+      // POST /admin/programs/{id}/review 경유(감사로그 기록 때문).
+      // allow write: if isAdmin() 을 넣으면 감사로그를 남기지 않는 우회 경로가 됩니다.
+    }
+
+    // 경로 지정 조회용
+    match /programs/{programId}/schedules/{scheduleId} {
+      allow read: if programOf(programId).status == 'published'
+                || isSelf(programOf(programId).providerId)
+                || isAdmin();
+      allow write: if false;       // 정원(remainingSlots) 조작 방지
+    }
+
+    // (v10 필수) collectionGroup 쿼리용 재귀 와일드카드.
+    // 7번의 "전체 프로그램에서 특정 날짜 회차 검색"은 collectionGroup 쿼리인데,
+    // 위 경로 지정 규칙만으로는 전부 거부됩니다 — 컬렉션 그룹 쿼리는
+    // {path=**} 형태의 규칙에서만 허용되기 때문입니다.
+    // 이 규칙은 문서에 비정규화 저장한 필드만 보고 판단하므로
+    // schedules 문서에 programId / programStatus를 함께 저장해야 합니다(2-4).
+    // (v13 명시) 여기에는 isAdmin() 절이 일부러 없습니다.
+    // 관리자 화면은 /admin/* 서버 API(Admin SDK)로 조회하므로
+    // 클라이언트에서 컬렉션그룹 쿼리를 돌릴 일이 없습니다.
+    // 관리자가 draft 회차를 봐야 할 때는 경로 지정 조회를 쓰고,
+    // 그쪽 규칙에는 isAdmin()이 있습니다.
+    match /{path=**}/schedules/{scheduleId} {
+      allow read: if resource.data.programStatus == 'published';
+      allow write: if false;
+    }
+    // ⚠️ 프론트엔드는 이 쿼리에 반드시 필터를 함께 넣어야 합니다.
+    //    collectionGroup(db, 'schedules')
+    //      .where('programStatus', '==', 'published')   // ← 없으면 permission-denied
+    //      .where('startAt', '>=', from).where('startAt', '<=', to)
+    //    Firestore는 쿼리 결과를 문서마다 검사하지 않고, "규칙이 보장하는 조건을
+    //    쿼리가 스스로 걸었는지"로 통과 여부를 판단하기 때문입니다.
+    //    공급자 본인의 미게시(draft) 회차는 이 경로로 조회되지 않으므로,
+    //    공급자 대시보드는 경로 지정 조회(programs/{id}/schedules)를 씁니다.
+
+    match /programs/{programId}/scheduleTemplates/{templateId} {
+      allow read: if isSelf(programOf(programId).providerId) || isAdmin();
+      allow write: if false;       // 캐스케이딩 정책 우회 방지
+    }
+
+    // ============ bookings / payments ============
+    match /bookings/{id} {
+      allow read: if isSelf(resource.data.consumerId)
+                || isSelf(resource.data.providerId)
+                || isAdmin();
+      allow write: if false;
+    }
+
+    match /payments/{id} {
+      allow read: if isSelf(resource.data.consumerId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ============ settlements (v10 신규 — v9에 규칙이 없어 공급자가 자기 정산을 못 봤음) ============
+    match /settlements/{settlementId} {
+      allow read: if isSelf(resource.data.providerId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /settlements/{settlementId}/items/{itemId} {
+      allow read: if isAdmin();    // 건별 명세는 관리자만 (상위 문서로 요약 확인)
+      allow write: if false;
+    }
+
+    // ============ reviews (v10 — 서버 전용으로 전환) ============
+    match /reviews/{reviewId} {
+      allow read: if true;
+
+      // v9 규칙은 "예약이 completed인가"만 검사해서, 남의 완료 예약 ID를 알면
+      // 아무 프로그램에나 리뷰를 쓸 수 있었음. 검증 항목이 5가지(예약 소유권,
+      // programId·providerId 일치, 평점 범위, 문서ID=bookingId)로 늘어나
+      // 규칙 내 get() 호출이 누적되므로 POST /reviews 서버 함수로 일원화함.
+      allow write: if false;
+    }
+
+    // ============ inquiries (v10 신규 — 규칙이 없어 1:1 문의가 동작 불가였음) ============
+    match /inquiries/{inquiryId} {
+      allow read: if isSelf(resource.data.consumerId)
+                || isSelf(resource.data.providerId)
+                || isAdmin();
+      allow write: if false;       // POST /inquiries 경유 (알림톡 트리거 포함)
+    }
+
+    match /inquiries/{inquiryId}/messages/{messageId} {
+      allow read: if isSelf(get(/databases/$(database)/documents/inquiries/$(inquiryId)).data.consumerId)
+                || isSelf(get(/databases/$(database)/documents/inquiries/$(inquiryId)).data.providerId)
+                || isAdmin();
+      allow write: if false;       // POST /inquiries/{id}/messages 경유
+    }
+
+    // ============ voucherAds ============
+    match /voucherAds/{adId} {
+      allow read: if resource.data.status == 'active' || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ============ termsAgreements (v10 신규) ============
+    match /termsAgreements/{agreementId} {
+      allow read: if isSelf(resource.data.uid) || isAdmin();
+      allow write: if false;       // 가입·동의 처리 함수에서만 기록 (법적 증빙)
+    }
+
+    // ============ notificationLogs (v10 신규) ============
+    match /notificationLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ============ aggregates (v13 신규 — 검색 캘린더·홈 지표 집계) ============
+    match /aggregates/{docId} {
+      allow read: if true;         // 파생 집계값만 담김. 개인정보 금지(2-13)
+      allow write: if false;       // syncProgramScheduleDates 등 서버 배치 전용
+    }
+
+    // ============ 명시하지 않은 모든 경로는 기본 거부 ============
+    // 새 컬렉션을 추가할 때는 반드시 이 파일에 규칙을 함께 추가할 것.
+    // 규칙을 빠뜨리면 보안 사고가 아니라 "조회가 안 되는 버그"로 나타남.
   }
 }
