@@ -18,8 +18,9 @@ import {
   notFoundHandler,
   requireAdmin,
 } from "./middleware";
+import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth";
 
-function buildRouter(): Router {
+function buildRouter(authDeps: AuthRouteDeps): Router {
   const router = express.Router();
 
   // 공개 — 로그인 불필요. 배포·에뮬레이터 동작 확인용.
@@ -30,6 +31,9 @@ function buildRouter(): Router {
       time: new Date().toISOString(),
     });
   });
+
+  // 소셜 로그인 — 로그인 전에 호출되므로 인증 미들웨어를 붙이지 않습니다.
+  router.use("/auth", buildAuthRouter(authDeps));
 
   // ── /admin/* ───────────────────────────────────────────────────────────
   // 이 두 줄이 관리자 API 전체의 차단선입니다(6-2 ①).
@@ -50,12 +54,12 @@ function buildRouter(): Router {
   return router;
 }
 
-export function createApp(): Express {
+export function createApp(authDeps: AuthRouteDeps = {}): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json());
 
-  const router = buildRouter();
+  const router = buildRouter(authDeps);
 
   // 같은 라우터를 두 곳에 붙입니다.
   //  - "/"     : 함수를 직접 호출할 때 (에뮬레이터 URL, 함수 트리거 URL)

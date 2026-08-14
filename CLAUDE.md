@@ -122,13 +122,17 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 
 **동작하는 것** 홈·검색·상세·등록 4개 화면. 전부 `src/mocks/`의 가짜 데이터로 돌아갑니다.
 
+**네이버 로그인은 실제로 동작합니다** (v14). 인가 요청 → 콜백 화면(`/auth/naver/callback`) → `POST /api/auth/social/naver` → Custom Token → `signInWithCustomToken`. 프로필은 서버가 네이버에서 직접 조회하고, 클라이언트는 인가코드와 state만 넘깁니다. 앱 등록 값은 15-7, 가입 규칙은 2-1·2-14.
+로컬에서 확인하려면 **에뮬레이터(`auth,functions,firestore`)와 `npm run dev`를 함께** 띄우고 `http://localhost:5173`으로 접속합니다(`127.0.0.1` 아님 — 콜백 등록값이 `localhost`).
+
 **프로토타입만 있고 연동 안 된 것**
-- 로그인 — 모달 UI만. **네이버는 2026-08-14 검수 통과, 키 발급 완료**(전화번호 필수 제공 포함). 앱 등록 값·콜백 URL은 15-7. 카카오는 비즈 앱 전환 + 동의항목 심사 미신청. **모달에 남아 있는 휴대폰 인증 UI는 제거 대상**(15-5)
+- 카카오 로그인 — 비즈 앱 전환 + 동의항목 심사 미신청. 붙일 때 `upsertSocialUser`의 `provider`만 갈라지고 나머지 경로는 그대로 재사용합니다
+- 약관 동의 UI — 항목별 체크박스가 없습니다. 서버가 `service`·`privacy`를 동의한 것으로 기록 중이고 마케팅 수신 동의는 받지 않습니다(P1, 2-12)
 - 날씨 — `src/lib/weather.ts`의 결정론적 mock. 실제로는 `GET /external/weather`(Cloud Functions 경유 필수, 기상청은 CORS 차단 + 키 노출 문제) 로 교체
 - 지도 — **Leaflet + OpenStreetMap 임시**. 카카오맵 키 나오면 `src/components/ProgramMap.tsx` **한 파일만** 교체하면 되도록 props를 고정해뒀습니다
 - 위치 — Geolocation·거리 계산은 실제로 동작
 
-**아예 없는 것** 백엔드 전체, 회원가입·인증 상태 관리, 예약·결제, 공급자 대시보드, 관리자 페이지
+**아예 없는 것** 업무 API 전체(5번 목록), 예약·결제, 공급자 대시보드, 관리자 페이지
 
 **타입 주의** `src/types/firestore.ts`는 스키마 v9 이전 기준이라 스테일합니다. 그 뒤 추가·변경된 것:
 - v10 — `providerProfiles` 공개/`private` 분리, `programs.reviewedBy`, `bookings.unitPrice`·`totalAmount`, `schedules.programId`·`programStatus`
