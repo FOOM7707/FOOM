@@ -14,7 +14,8 @@
     "serve": "npm run build && firebase emulators:start --only auth,functions,firestore --project demo-foom",
     "test": "npm run build && firebase emulators:exec --only auth,functions,firestore --project demo-foom \"vitest run\"",
     "test:watch": "vitest",
-    "grant-admin": "npm run build && node lib/scripts/grant-admin.js"
+    "grant-admin": "npm run build && node lib/scripts/grant-admin.js",
+    "grant-provider": "npm run build && node lib/scripts/grant-provider.js"
   },
   "dependencies": {
     "express": "^5.1.0",

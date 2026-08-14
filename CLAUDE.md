@@ -139,12 +139,16 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 
 **관리자 페이지는 화면 코드가 한 줄도 없습니다.** 있는 것은 자물쇠뿐입니다 — 함수 진입부 권한 검사(`/admin/*`), `grant-admin` 스크립트, 보안규칙 `isAdmin()`. `GET /admin/health`·`/admin/config/status`는 진입부 동작 확인용이지 업무 기능이 아닙니다. 설계는 12-2(탭 3개).
 
+**프로그램 등록은 실제로 동작합니다** (v14). `POST /programs`(draft 생성) · `GET /programs/{id}` · `GET /programs?mine=1` · `POST /programs/{id}/submit-for-review`. 등록 화면이 서버에 저장하고 `/my/programs`에서 상태를 봅니다. **파생 필드는 서버가 계산**하므로 폼에 입력칸이 없습니다(걷는 거리만 받고 난이도는 자동).
+
+> **⚠️ 공급자 자격은 임시 경로로 부여합니다** — `npm run grant-provider -- --uid <uid>`. 본인확인 벤더 계약 전이라 15-1의 정식 절차를 만들 수 없어서 둔 우회로이고, **정식 오픈 전 반드시 제거**해야 합니다(15-8, 13번 P1). 이 스크립트로 만든 계정은 `approvalStatus='pending'`·`verified=false`로 남으니 그 값으로 찾아 재심사하면 됩니다.
+
 **다음 작업 순서 (2026-08-14 기준 권고)**
-1. **프로그램 등록·조회 API** — `ProgramRegisterPage`가 아직 `console.log`만 합니다. 이걸 붙여야 처음으로 진짜 데이터가 흐릅니다
-2. **관리자 심사 화면** — 12-2의 공급자 승인·프로그램 심사 2개 먼저. 정산은 거래가 생긴 뒤
+1. **관리자 심사 화면** — 12-2의 공급자 승인·프로그램 심사 2개 먼저. 지금은 `pending_review`까지만 가고 **게시할 방법이 없습니다**. 정산은 거래가 생긴 뒤
+2. **검색 연동** — `GET /programs/search` + `rebuildSearchIndex`. 게시가 가능해진 뒤라야 의미가 있습니다
 3. **예약·결제** — 이때 전화번호 직접 입력 경로(15-4 2순위)도 함께
 
-> 관리자 화면을 1번보다 먼저 만들면 **심사할 대상이 없어 빈 목록만** 보게 됩니다. 공급자 등록도 프로그램 등록도 아직 서버로 가지 않기 때문입니다.
+> 홈·검색·상세 화면은 **아직 `src/mocks/`를 씁니다.** 등록된 실데이터는 `/my/programs`에서만 보입니다 — 게시 경로(1번)가 없어 `published` 상태가 될 수 없기 때문입니다.
 
 **타입 주의** `src/types/firestore.ts`는 스키마 v9 이전 기준이라 스테일합니다. 그 뒤 추가·변경된 것:
 - v10 — `providerProfiles` 공개/`private` 분리, `programs.reviewedBy`, `bookings.unitPrice`·`totalAmount`, `schedules.programId`·`programStatus`

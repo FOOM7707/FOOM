@@ -19,8 +19,13 @@ import {
   requireAdmin,
 } from "./middleware";
 import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth";
+import { buildProgramsRouter, type ProgramRouteDeps } from "./routes/programs";
 
-function buildRouter(authDeps: AuthRouteDeps): Router {
+export interface AppDeps extends AuthRouteDeps {
+  programDeps?: ProgramRouteDeps;
+}
+
+function buildRouter(authDeps: AppDeps): Router {
   const router = express.Router();
 
   // 공개 — 로그인 불필요. 배포·에뮬레이터 동작 확인용.
@@ -34,6 +39,9 @@ function buildRouter(authDeps: AuthRouteDeps): Router {
 
   // 소셜 로그인 — 로그인 전에 호출되므로 인증 미들웨어를 붙이지 않습니다.
   router.use("/auth", buildAuthRouter(authDeps));
+
+  // 프로그램 — 조회는 비로그인 허용, 생성·심사요청은 로그인 필수(라우터 내부에서 분기)
+  router.use("/programs", buildProgramsRouter(authDeps.programDeps));
 
   // ── /admin/* ───────────────────────────────────────────────────────────
   // 이 두 줄이 관리자 API 전체의 차단선입니다(6-2 ①).
@@ -54,7 +62,7 @@ function buildRouter(authDeps: AuthRouteDeps): Router {
   return router;
 }
 
-export function createApp(authDeps: AuthRouteDeps = {}): Express {
+export function createApp(authDeps: AppDeps = {}): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json());

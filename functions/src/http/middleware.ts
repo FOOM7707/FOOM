@@ -64,6 +64,22 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
   }
 };
 
+/**
+ * 토큰이 있으면 해석하고, 없으면 그냥 통과시킵니다.
+ *
+ * 비로그인도 볼 수 있지만 로그인하면 더 보이는 경로에 씁니다 —
+ * 예: 게시된 프로그램은 누구나, 자기 draft는 소유자만.
+ * **토큰이 깨진 경우는 통과시키지 않습니다.** 조용히 비로그인으로 강등시키면
+ * 만료된 토큰을 든 사용자가 "왜 내 것만 안 보이지"를 겪게 됩니다.
+ */
+export const optionalAuthenticate: RequestHandler = async (req, _res, next) => {
+  if (!bearerToken(req)) {
+    next();
+    return;
+  }
+  await authenticate(req, _res, next);
+};
+
 /** authenticate 다음에 붙입니다. Custom Claims의 admin === true 만 통과. */
 export const requireAdmin: RequestHandler = (req, _res, next) => {
   try {
