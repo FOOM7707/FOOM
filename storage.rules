@@ -1,0 +1,86 @@
+rules_version = '2';
+
+// 파일 저장 보안규칙 (스키마 18-5).
+//
+// **Firestore 규칙(firestore.rules)과 별개 파일입니다.** 이름과 문법이 비슷해
+// 한쪽만 고치고 다 됐다고 착각하기 쉽습니다 — 저쪽을 고쳐도 파일 접근은
+// 하나도 달라지지 않습니다.
+//
+// Cloud Functions(Admin SDK)는 이 규칙을 우회합니다. 여기서 통제하는 것은
+// **브라우저에서 오는 요청**뿐입니다(6-2와 같은 전제).
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Firestore 규칙의 isAdmin()과 같은 기준입니다 — Custom Claims만 봅니다(12-3).
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // ⚠️ contentType도 파일명도 **클라이언트가 정하는 값**입니다.
+    // 이 검사는 실수로 올린 엉뚱한 파일을 막을 뿐, 작정한 위조는 막지 못합니다.
+    // 확장자 검사를 더해도 마찬가지입니다 — 이름을 .jpg로 붙이면 그만입니다.
+    // 실제 방어선은 ① 경로 소유권 ② 크기 상한 ③ 저장 도메인이 서비스와 다른
+    // 오리진이라는 점(저장된 파일이 우리 화면의 스크립트로 실행되지 않음)입니다.
+    function looksLikeImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && request.resource.name.matches('.*\\.(jpg|jpeg|png|webp)');
+    }
+
+    function underSizeLimit() {
+      return request.resource.size < 5 * 1024 * 1024;   // 5MB
+    }
+
+    // get()만 쓰면 **문서가 없을 때 평가가 에러로 끝납니다.** exists()를 먼저 봅니다.
+    // 결과는 어차피 거부지만, 에러로 끝나면 원인이 규칙인지 데이터인지 구분되지 않습니다.
+    function isProgramOwner(programId) {
+      return firestore.exists(/databases/(default)/documents/programs/$(programId))
+        && firestore.get(/databases/(default)/documents/programs/$(programId))
+             .data.providerId == request.auth.uid;
+    }
+
+    // ── 프로그램 이미지 — 공개 ──────────────────────────────────────────
+    // 읽기를 전체 공개하는 이유: 비로그인 방문자도 홈·검색·상세에서 봅니다.
+    // 미게시(draft) 프로그램의 사진도 주소를 알면 열리지만, 사진 자체는
+    // 기밀이 아니고 파일명이 난수라 사실상 추측이 불가능합니다.
+    match /programs/{programId}/{fileId} {
+      allow read: if true;
+
+      // create/update와 delete를 나눠야 합니다. allow write로 묶으면 삭제
+      // 요청에는 request.resource가 없어 크기·타입 검사가 에러로 끝납니다.
+      allow create, update: if isSignedIn()
+        && isProgramOwner(programId)
+        && looksLikeImage()
+        && underSizeLimit();
+
+      // 파일 정리는 서버가 합니다(imageUrls에서 빠진 파일을 서버가 지움, 18-7).
+      // 클라이언트에 삭제를 열면 화면이 지운 사진과 문서에 남은 주소가 어긋납니다.
+      // 관리자도 여기로 지우지 않습니다 — 관리자 화면은 /admin/* 서버 API를 씁니다.
+      allow delete: if false;
+    }
+
+    // ── 자격증 — 비공개 ────────────────────────────────────────────────
+    // **여기가 열리면 실명과 자격번호가 그대로 노출됩니다.**
+    match /providerCertificates/{uid}/{fileId} {
+      // 본인에게도 직접 읽기를 열지 않습니다. 열어두면 클라이언트가
+      // getDownloadURL()로 **만료 없는 영구 주소**를 뽑아낼 수 있어,
+      // 서명 URL을 쓰기로 한 결정(18-6)이 우회됩니다.
+      // 열람은 서버가 발급한 5분 만료 서명 URL로만 합니다.
+      allow read: if false;
+
+      allow create, update: if isSignedIn()
+        && request.auth.uid == uid
+        && looksLikeImage()
+        && underSizeLimit();
+
+      allow delete: if false;
+    }
+
+    // ── 명시하지 않은 모든 경로는 기본 거부 ────────────────────────────
+    // 새 경로를 추가할 때는 반드시 이 파일에 규칙을 함께 추가할 것.
+  }
+}

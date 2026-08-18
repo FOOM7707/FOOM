@@ -2,6 +2,9 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "functions": [
     {
       "source": "functions",
@@ -26,6 +29,9 @@
     },
     "firestore": {
       "port": 18080
+    },
+    "storage": {
+      "port": 19199
     },
     "hub": {
       "port": 14400

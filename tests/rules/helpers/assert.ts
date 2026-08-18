@@ -26,8 +26,16 @@ export async function assertDenied(op: Promise<unknown>): Promise<void> {
   const code = String((caught as { code?: unknown })?.code ?? '')
   const message = String((caught as { message?: unknown })?.message ?? caught)
 
+  // Firestore와 Storage는 거부 코드가 다릅니다.
+  //   Firestore : permission-denied
+  //   Storage   : storage/unauthorized ("User does not have permission to access …")
+  // 둘 다 규칙이 막았다는 뜻이고, 그 외의 실패(경로 오타·픽스처 누락)는
+  // 여전히 테스트 실패로 드러나야 합니다.
   const deniedByRules =
-    code.includes('permission-denied') || /PERMISSION_DENIED/i.test(message)
+    code.includes('permission-denied') ||
+    code === 'storage/unauthorized' ||
+    /PERMISSION_DENIED/i.test(message) ||
+    /does not have permission to access/i.test(message)
 
   if (!deniedByRules) {
     throw new Error(
