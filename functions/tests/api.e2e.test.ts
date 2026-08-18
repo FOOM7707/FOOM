@@ -78,6 +78,51 @@ describe("/admin/* 진입부", () => {
     const res = await callApi("/admin/config/status", { idToken: consumerToken });
     expect(res.status).toBe(403);
   });
+
+  // 심사 엔드포인트를 라우터에 붙일 때 차단선 뒤에 붙였는지 확인합니다.
+  // 라우터 안쪽에 붙어 있으므로 새 경로를 추가해도 자동으로 보호되지만,
+  // 실수로 app.ts 쪽에 직접 매달면 이 테스트가 잡아냅니다.
+  const GUARDED = [
+    { path: "/admin/providers", method: "GET" },
+    { path: "/admin/programs", method: "GET" },
+    { path: "/admin/providers/누군가/approve", method: "POST" },
+    { path: "/admin/programs/뭔가/review", method: "POST" },
+  ];
+
+  for (const { path, method } of GUARDED) {
+    it(`${method} ${path} — 비로그인 401 / 일반 사용자 403`, async () => {
+      const body = method === "POST" ? { decision: "approved" } : undefined;
+
+      const anon = await callApi(path, { method, body });
+      expect(anon.status).toBe(401);
+
+      const consumer = await callApi(path, { method, idToken: consumerToken, body });
+      expect(consumer.status).toBe(403);
+    });
+  }
+
+  it("관리자는 심사 목록을 조회할 수 있다", async () => {
+    const res = await callApi("/admin/providers?status=pending", { idToken: adminToken });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.providers)).toBe(true);
+  });
+});
+
+describe("GET /users/me", () => {
+  it("로그인하지 않으면 401", async () => {
+    const res = await callApi("/users/me");
+    expect(res.status).toBe(401);
+  });
+
+  it("로그인하면 본인 정보를 돌려준다", async () => {
+    const uid = await createSignedUpUser();
+    const res = await callApi("/users/me", { idToken: await issueIdToken(uid) });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.uid).toBe(uid);
+    expect(res.body.user.role).toBe("consumer");
+    expect(res.body.isAdmin).toBe(false);
+  });
 });
 
 describe("없는 경로", () => {
