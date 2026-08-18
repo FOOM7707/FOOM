@@ -14,6 +14,7 @@ import express, { type Express, type Router } from "express";
 import { errorHandler, notFoundHandler } from "./middleware";
 import { buildAdminRouter, type AdminRouteDeps } from "./routes/admin";
 import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth";
+import { buildExternalRouter, type ExternalRouteDeps } from "./routes/external";
 import { buildProgramsRouter, type ProgramRouteDeps } from "./routes/programs";
 import { buildUsersRouter, type UserRouteDeps } from "./routes/users";
 
@@ -21,6 +22,7 @@ export interface AppDeps extends AuthRouteDeps {
   programDeps?: ProgramRouteDeps;
   userDeps?: UserRouteDeps;
   adminDeps?: AdminRouteDeps;
+  externalDeps?: ExternalRouteDeps;
 }
 
 function buildRouter(authDeps: AppDeps): Router {
@@ -43,6 +45,9 @@ function buildRouter(authDeps: AppDeps): Router {
 
   // 프로그램 — 조회는 비로그인 허용, 생성·심사요청은 로그인 필수(라우터 내부에서 분기)
   router.use("/programs", buildProgramsRouter(authDeps.programDeps));
+
+  // 외부 연동 — 날씨는 비로그인도 호출합니다(홈·상세가 공개 화면).
+  router.use("/external", buildExternalRouter(authDeps.externalDeps));
 
   // 관리자 — 차단선(authenticate + requireAdmin)은 라우터 안에 붙어 있습니다(6-2 ①).
   router.use("/admin", buildAdminRouter(authDeps.adminDeps));

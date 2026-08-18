@@ -66,6 +66,7 @@ describe("/admin/* 진입부", () => {
     const res = await callApi("/admin/config/status", { idToken: adminToken });
     expect(res.status).toBe(200);
     expect(Object.keys(res.body.config).sort()).toEqual([
+      "KMA_SERVICE_KEY",
       "NAVER_CLIENT_ID",
       "NAVER_CLIENT_SECRET",
     ]);

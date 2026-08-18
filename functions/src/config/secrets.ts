@@ -26,8 +26,16 @@ export const NAVER_CLIENT_ID = defineString("NAVER_CLIENT_ID", { default: "" });
 /** 네이버 로그인 Client Secret — 서버 전용. */
 export const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
 
+/**
+ * 기상청(공공데이터포털) 인증키 — 서버 전용 (16-3).
+ *
+ * 쿼리스트링에 그대로 실려 나가는 값이라 프론트에 두면 즉시 유출됩니다.
+ * **「일반 인증키(Decoding)」를 넣으세요** — 이중 인코딩 문제는 lib/kma.ts 주석 참고.
+ */
+export const KMA_SERVICE_KEY = defineSecret("KMA_SERVICE_KEY");
+
 /** 함수에 바인딩할 시크릿 목록. onRequest 옵션에 그대로 넘깁니다. */
-export const RUNTIME_SECRETS = [NAVER_CLIENT_SECRET];
+export const RUNTIME_SECRETS = [NAVER_CLIENT_SECRET, KMA_SERVICE_KEY];
 
 interface SecretLike {
   value(): string;
@@ -74,5 +82,6 @@ export function configStatus(): Record<string, ConfigState> {
   return {
     NAVER_CLIENT_ID: stateOf(NAVER_CLIENT_ID),
     NAVER_CLIENT_SECRET: stateOf(NAVER_CLIENT_SECRET),
+    KMA_SERVICE_KEY: stateOf(KMA_SERVICE_KEY),
   };
 }

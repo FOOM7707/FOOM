@@ -237,6 +237,15 @@ service cloud.firestore {
       allow write: if false;       // syncProgramScheduleDates 등 서버 배치 전용
     }
 
+    // ============ weatherCache (v17 신규 — 기상청 예보 캐시, 16-1) ============
+    // 문서ID = {nx}_{ny}_{발표일시}. 본문은 격자 단위 예보 요약뿐이고
+    // 개인정보가 없습니다. 클라이언트는 지금 GET /external/weather 만 쓰지만,
+    // 규칙은 문서(16-1)가 정한 대로 읽기 허용·쓰기 금지로 둡니다.
+    match /weatherCache/{docId} {
+      allow read: if true;
+      allow write: if false;       // GET /external/weather 서버 전용
+    }
+
     // ============ phoneIndex (v14 신규 — 전화번호 유니크 인덱스) ============
     // 문서ID = 정규화한 E.164 번호, 본문 = { uid, createdAt }.
     //
