@@ -82,8 +82,13 @@ describe("isWithinForecastRange — 예보가 닿는 기간 (16-2)", () => {
     expect(isWithinForecastRange(utc("2026-08-18T03:00:00Z"), now)).toBe(true);
   });
 
-  it("3일 뒤까지 포함", () => {
+  it("4일 뒤까지 포함 — 실측 기준(2026-08-18 확인)", () => {
     expect(isWithinForecastRange(utc("2026-08-21T03:00:00Z"), now)).toBe(true);
+    expect(isWithinForecastRange(utc("2026-08-22T03:00:00Z"), now)).toBe(true);
+  });
+
+  it("5일 뒤는 기상청을 부르지 않는다", () => {
+    expect(isWithinForecastRange(utc("2026-08-23T03:00:00Z"), now)).toBe(false);
   });
 
   it("한 달 뒤는 제외 — 억지 예보를 붙이지 않는다", () => {
