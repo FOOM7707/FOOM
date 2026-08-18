@@ -9,7 +9,11 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "emu:firestore": "firebase emulators:start --only firestore --project demo-foom",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-foom \"vitest run -c vitest.rules.config.ts\"",
+    "grant-admin": "npm --prefix functions run grant-admin --",
+    "grant-provider": "npm --prefix functions run grant-provider --",
+    "test": "npm run test:rules && npm run test:functions",
+    "test:rules": "firebase emulators:exec --config firebase.test.json --only firestore,storage --project demo-foom \"vitest run -c vitest.rules.config.ts\"",
+    "test:functions": "npm --prefix functions run build && firebase emulators:exec --config firebase.test.json --only auth,functions,firestore --project demo-foom \"npm --prefix functions run test:run\"",
     "test:rules:watch": "vitest -c vitest.rules.config.ts",
     "typecheck:rules": "tsc -p tsconfig.rules.json"
   },

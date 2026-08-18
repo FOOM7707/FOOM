@@ -1,9 +1,9 @@
 /**
  * Express 앱 조립.
  *
- * 이번 세션은 **기반만** 만듭니다. 업무 API(5번 목록)는 다음 세션에서
- * 이 라우터에 붙입니다. 지금 있는 경로는 진입부가 실제로 동작하는지
- * 확인하기 위한 최소한의 것뿐입니다.
+ * 5번의 REST 경로를 이 라우터 하나에 모읍니다. 지금 붙어 있는 것은
+ * 인증(소셜 로그인)·사용자·프로그램·관리자 심사이고, 예약·결제·검색은
+ * 아직 없습니다.
  *
  * CORS를 코드에서 처리하지 않는 이유: Hosting rewrite로 /api/** 를 이 함수에
  * 연결해 **같은 오리진**으로 만들었습니다(firebase.json). 교차 출처 요청이
@@ -11,18 +11,18 @@
  */
 
 import express, { type Express, type Router } from "express";
-import { configStatus } from "../config/secrets";
-import {
-  authenticate,
-  errorHandler,
-  notFoundHandler,
-  requireAdmin,
-} from "./middleware";
+import { errorHandler, notFoundHandler } from "./middleware";
+import { buildAdminRouter, type AdminRouteDeps } from "./routes/admin";
 import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth";
+import { buildExternalRouter, type ExternalRouteDeps } from "./routes/external";
 import { buildProgramsRouter, type ProgramRouteDeps } from "./routes/programs";
+import { buildUsersRouter, type UserRouteDeps } from "./routes/users";
 
 export interface AppDeps extends AuthRouteDeps {
   programDeps?: ProgramRouteDeps;
+  userDeps?: UserRouteDeps;
+  adminDeps?: AdminRouteDeps;
+  externalDeps?: ExternalRouteDeps;
 }
 
 function buildRouter(authDeps: AppDeps): Router {
@@ -40,24 +40,17 @@ function buildRouter(authDeps: AppDeps): Router {
   // 소셜 로그인 — 로그인 전에 호출되므로 인증 미들웨어를 붙이지 않습니다.
   router.use("/auth", buildAuthRouter(authDeps));
 
+  // 내 계정 — 로그인 필수(라우터 내부에서 붙임)
+  router.use("/users", buildUsersRouter(authDeps.userDeps));
+
   // 프로그램 — 조회는 비로그인 허용, 생성·심사요청은 로그인 필수(라우터 내부에서 분기)
   router.use("/programs", buildProgramsRouter(authDeps.programDeps));
 
-  // ── /admin/* ───────────────────────────────────────────────────────────
-  // 이 두 줄이 관리자 API 전체의 차단선입니다(6-2 ①).
-  const adminRouter = express.Router();
-  adminRouter.use(authenticate, requireAdmin);
+  // 외부 연동 — 날씨는 비로그인도 호출합니다(홈·상세가 공개 화면).
+  router.use("/external", buildExternalRouter(authDeps.externalDeps));
 
-  adminRouter.get("/health", (req, res) => {
-    res.json({ status: "ok", uid: req.auth?.uid, admin: true });
-  });
-
-  // 키가 설정됐는지만 확인합니다. **값은 절대 내보내지 않습니다.**
-  adminRouter.get("/config/status", (_req, res) => {
-    res.json({ config: configStatus() });
-  });
-
-  router.use("/admin", adminRouter);
+  // 관리자 — 차단선(authenticate + requireAdmin)은 라우터 안에 붙어 있습니다(6-2 ①).
+  router.use("/admin", buildAdminRouter(authDeps.adminDeps));
 
   return router;
 }

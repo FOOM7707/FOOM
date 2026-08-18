@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import LoginDialog from "./LoginDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { CATEGORIES } from "@/types/firestore";
 
 /**
@@ -37,6 +38,9 @@ function DisabledLink({ label, className }: { label: string; className?: string 
 
 export default function Layout() {
   const location = useLocation();
+  // 관리자에게만 메뉴를 보여줍니다(12-3). **메뉴를 숨기는 것은 보안이 아닙니다** —
+  // 누구나 주소창에 /admin 을 칠 수 있고, 실제 차단은 함수 진입부와 보안규칙이 합니다.
+  const { isAdmin } = useAuth();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -77,9 +81,19 @@ export default function Layout() {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="text-[13px] font-bold text-primary underline-offset-4 hover:underline"
+              >
+                관리자
+              </Link>
+            )}
             <LoginDialog />
+            {/* 공급자가 아닌 사용자를 등록 폼으로 바로 보내면, 폼을 다 채운 뒤에야
+                권한 거부를 만나게 됩니다. 안내 화면을 거치게 합니다(15-1). */}
             <Link
-              to="/programs/new"
+              to="/provider/apply"
               className="rounded-md bg-primary px-4 py-[7px] text-[13px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground"
             >
               전문가로 활동하기
@@ -132,7 +146,7 @@ export default function Layout() {
               </li>
               <li>
                 <Link
-                  to="/programs/new"
+                  to="/provider/apply"
                   className="text-[13px] text-[#C7D5CC] transition-colors hover:text-white"
                 >
                   전문가 가입 안내

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
 
 const SCHEDULE_OPTIONS: { value: ScheduleType; label: string; hint: string }[] = [
@@ -40,6 +41,7 @@ function optionalNumber(raw: FormDataEntryValue | null): number | null {
 
 export default function ProgramRegisterPage() {
   const { user, loading } = useAuth();
+  const { me, loading: meLoading } = useMe();
   const navigate = useNavigate();
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +103,7 @@ export default function ProgramRegisterPage() {
     }
   }
 
-  if (loading) {
+  if (loading || meLoading) {
     return <div className="container mx-auto max-w-xl px-5 py-8">불러오는 중…</div>;
   }
 
@@ -114,6 +116,27 @@ export default function ProgramRegisterPage() {
             <p className="text-sm leading-relaxed">
               프로그램 등록은 공급자 계정만 가능합니다. 우측 상단에서 로그인해 주세요.
             </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 공급자가 아니면 폼을 보여주지 않습니다. 예전에는 폼을 다 채운 뒤 저장할 때
+  // permission-denied로 거부돼, 사용자가 무엇이 문제인지 알 수 없었습니다.
+  if (me && me.role !== "provider") {
+    return (
+      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+        <Card className="bg-secondary">
+          <CardContent className="pt-6">
+            <h1 className="mb-3 text-lg font-bold">전문가 계정만 등록할 수 있습니다</h1>
+            <p className="mb-4 text-sm leading-relaxed">
+              프로그램 등록은 산림복지전문가 자격 확인을 거친 계정에만 열립니다. 등록 절차는
+              안내 화면에서 확인하실 수 있습니다.
+            </p>
+            <Button asChild>
+              <Link to="/provider/apply">전문가 등록 안내 보기</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>

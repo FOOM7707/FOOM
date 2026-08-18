@@ -95,23 +95,60 @@ export async function issueIdToken(uid: string): Promise<string> {
   return body.idToken;
 }
 
-function functionsHost(): string {
-  // emulators:exec 가 채워주는 값. 없으면 firebase.json 의 기본 포트를 씁니다.
-  return process.env.FUNCTIONS_EMULATOR_HOST ?? "127.0.0.1:5001";
+let cachedFunctionsHost: string | null = null;
+
+/**
+ * 함수 에뮬레이터 주소.
+ *
+ * 포트를 하드코딩하지 않는 이유: 개발용 에뮬레이터를 띄워둔 채로 테스트를
+ * 돌리려면 포트를 옮겨야 하는데(firebase.test.json), 그때마다 여기를 고치면
+ * 한쪽이 반드시 어긋납니다. **에뮬레이터 허브에 물어봅니다** — `emulators:exec`가
+ * 허브 주소를 환경변수로 넣어주고, 허브는 실제로 뜬 포트를 알고 있습니다.
+ */
+async function functionsHost(): Promise<string> {
+  if (cachedFunctionsHost) return cachedFunctionsHost;
+
+  const explicit = process.env.FUNCTIONS_EMULATOR_HOST;
+  if (explicit) return (cachedFunctionsHost = explicit);
+
+  const hub = process.env.FIREBASE_EMULATOR_HUB;
+  if (hub) {
+    try {
+      const res = await fetch(`http://${hub}/emulators`);
+      const body = (await res.json()) as Record<string, { host?: string; port?: number }>;
+      const port = body.functions?.port;
+      if (port) {
+        // 허브는 host를 "::1"로 줄 수 있는데, 그대로 URL에 넣으면 형식이 깨집니다.
+        const host = body.functions?.host;
+        const safeHost = !host || host === "::1" || host === "0.0.0.0" ? "127.0.0.1" : host;
+        return (cachedFunctionsHost = `${safeHost}:${port}`);
+      }
+    } catch {
+      // 허브에 못 물어보면 아래 기본값으로 갑니다.
+    }
+  }
+
+  // watch 모드로 직접 돌릴 때를 위한 firebase.json 기본 포트.
+  return (cachedFunctionsHost = "127.0.0.1:5001");
 }
 
-export function apiUrl(path: string): string {
-  return `http://${functionsHost()}/${PROJECT_ID}/${FUNCTIONS_REGION}/api${path}`;
+export async function apiUrl(path: string): Promise<string> {
+  return `http://${await functionsHost()}/${PROJECT_ID}/${FUNCTIONS_REGION}/api${path}`;
 }
 
 export async function callApi(
   path: string,
-  options: { idToken?: string } = {}
+  options: { idToken?: string; method?: string; body?: unknown } = {}
 ): Promise<{ status: number; body: any }> {
   const headers: Record<string, string> = {};
   if (options.idToken) headers.Authorization = `Bearer ${options.idToken}`;
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(apiUrl(path), { headers });
+  const res = await fetch(await apiUrl(path), {
+    method: options.method ?? "GET",
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
   const text = await res.text();
   let body: unknown;
   try {

@@ -22,6 +22,13 @@ import { firebaseAuth } from "@/lib/firebaseClient";
 
 interface AuthState {
   user: User | null;
+  /**
+   * 토큰 Custom Claims의 `admin`. 헤더의 관리자 메뉴 노출과 `/admin` 라우트
+   * 가드에 씁니다 — **둘 다 UX 처리입니다.** 실제 차단은 함수 진입부와
+   * 보안규칙이 같은 클레임을 보고 합니다(12-3). Firestore의 `users.role`이
+   * 아니라 클레임을 보는 이유도 그것입니다 — 둘이 어긋나면 클레임이 기준입니다.
+   */
+  isAdmin: boolean;
   /** 첫 상태 확인이 끝나기 전인지 — 깜빡임 방지용 */
   loading: boolean;
   logout: () => Promise<void>;
@@ -31,22 +38,35 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     return onAuthStateChanged(firebaseAuth, (next) => {
       setUser(next);
       setLoading(false);
+
+      if (!next) {
+        setIsAdmin(false);
+        return;
+      }
+      // 캐시된 토큰을 읽을 뿐이라 네트워크 요청이 아닙니다.
+      // 권한을 방금 부여받았다면 재로그인이나 토큰 갱신이 필요합니다.
+      void next
+        .getIdTokenResult()
+        .then((res) => setIsAdmin(res.claims.admin === true))
+        .catch(() => setIsAdmin(false));
     });
   }, []);
 
   const value = useMemo<AuthState>(
     () => ({
       user,
+      isAdmin,
       loading,
       logout: () => signOut(firebaseAuth),
     }),
-    [user, loading]
+    [user, isAdmin, loading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

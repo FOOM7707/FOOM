@@ -1,4 +1,10 @@
-import { getMockWeather, weatherIcon } from "@/lib/weather";
+import { useEffect, useState } from "react";
+import {
+  fetchWeather,
+  unavailableMessage,
+  weatherIcon,
+  type WeatherResult,
+} from "@/lib/weather";
 import type { LatLng } from "@/lib/geo";
 import { cn } from "@/lib/utils";
 
@@ -16,9 +22,11 @@ interface Props {
 }
 
 /**
- * 날씨 위젯 (프로토타입 — mock 데이터).
- * 와이어프레임 v2: 홈 "🌤 오늘의 날씨", 상세 "🌤 날씨 예보(진행일 기준)" 대응.
- * 데이터 출처 교체는 src/lib/weather.ts 상단 TODO 참고.
+ * 날씨 위젯 (스키마 16번 — 기상청 단기예보).
+ *
+ * **화면 렌더링을 막지 않습니다(16-3).** 자리표시자를 먼저 그리고 값이 오면
+ * 채웁니다. 예보가 없는 기간이거나 기상청이 응답하지 않으면 안내 문구로
+ * 대체하고, 카드 자체가 사라지거나 오류를 띄우지는 않습니다.
  */
 export default function WeatherWidget({
   point,
@@ -27,8 +35,34 @@ export default function WeatherWidget({
   variant = "card",
   className,
 }: Props) {
-  const w = getMockWeather(point, regionLabel, date);
+  const [result, setResult] = useState<WeatherResult | null>(null);
 
+  // 좌표를 소수점 2자리로 끊어 의존성으로 씁니다 — 부모가 객체를 새로 만들어도
+  // 값이 같으면 다시 부르지 않습니다.
+  const latKey = point.lat.toFixed(2);
+  const lngKey = point.lng.toFixed(2);
+  const dateKey = date?.toISOString().slice(0, 10) ?? "";
+
+  useEffect(() => {
+    let alive = true;
+    setResult(null);
+
+    void fetchWeather(point, regionLabel, date).then((next) => {
+      // 화면을 벗어난 뒤 도착한 응답으로 상태를 건드리지 않습니다.
+      if (alive) setResult(next);
+    });
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latKey, lngKey, dateKey, regionLabel]);
+
+  const w = result?.weather ?? null;
+  const loading = result === null;
+  const message = loading ? "날씨를 불러오는 중…" : unavailableMessage(result.reason);
+
+  // ── inline — 상세 화면 회차 옆 한 줄 ───────────────────────────────────
   if (variant === "inline") {
     return (
       <span
@@ -37,19 +71,26 @@ export default function WeatherWidget({
           className
         )}
       >
-        <span aria-hidden>{weatherIcon(w.condition)}</span>
-        <span>
-          {w.condition} {w.tempC}℃ · 강수 {w.precipProbability}%
-        </span>
-        {w.advisory && (
-          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11.5px] font-semibold text-destructive">
-            {w.advisory}
-          </span>
+        {w ? (
+          <>
+            <span aria-hidden>{weatherIcon(w.condition)}</span>
+            <span>
+              {w.condition} {w.tempC}℃ · 강수 {w.precipProbability}%
+            </span>
+            {w.advisory && (
+              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11.5px] font-semibold text-destructive">
+                {w.advisory}
+              </span>
+            )}
+          </>
+        ) : (
+          <span>{message}</span>
         )}
       </span>
     );
   }
 
+  // ── promo — 홈 프로모 카드 안 ──────────────────────────────────────────
   if (variant === "promo") {
     return (
       <div
@@ -59,26 +100,32 @@ export default function WeatherWidget({
         )}
       >
         <span className="text-4xl leading-none" aria-hidden>
-          {weatherIcon(w.condition)}
+          {w ? weatherIcon(w.condition) : "🌤"}
         </span>
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-semibold text-[#C3DFC2]">
-              {w.regionLabel} 오늘의 날씨
+              {regionLabel} 오늘의 날씨
             </span>
-            {w.advisory && (
+            {w?.advisory && (
               <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11.5px] font-semibold text-[#FFD9C2]">
                 {w.advisory}
               </span>
             )}
           </div>
-          <p className="text-[17px] font-bold text-white">
-            {w.condition} {w.tempC}℃
-            <span className="ml-2 text-[13px] font-medium text-[#C3DFC2]">
-              강수확률 {w.precipProbability}%
-            </span>
-          </p>
-          <p className="mt-0.5 truncate text-[13px] text-[#C3DFC2]">{w.comment}</p>
+          {w ? (
+            <>
+              <p className="text-[17px] font-bold text-white">
+                {w.condition} {w.tempC}℃
+                <span className="ml-2 text-[13px] font-medium text-[#C3DFC2]">
+                  강수확률 {w.precipProbability}%
+                </span>
+              </p>
+              <p className="mt-0.5 truncate text-[13px] text-[#C3DFC2]">{w.comment}</p>
+            </>
+          ) : (
+            <p className="text-[15px] font-semibold text-white/80">{message}</p>
+          )}
         </div>
         <span className="hidden shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white sm:inline">
           참고용
@@ -87,6 +134,7 @@ export default function WeatherWidget({
     );
   }
 
+  // ── card — 기본 ────────────────────────────────────────────────────────
   return (
     <div
       className={cn(
@@ -95,26 +143,34 @@ export default function WeatherWidget({
       )}
     >
       <span className="text-4xl leading-none" aria-hidden>
-        {weatherIcon(w.condition)}
+        {w ? weatherIcon(w.condition) : "🌤"}
       </span>
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex flex-wrap items-center gap-2">
           <span className="text-[13px] font-semibold text-muted-foreground">
-            {w.regionLabel}
+            {regionLabel}
           </span>
-          {w.advisory && (
+          {w?.advisory && (
             <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11.5px] font-semibold text-destructive">
               {w.advisory}
             </span>
           )}
         </div>
-        <p className="text-[17px] font-bold text-secondary-foreground">
-          {w.condition} {w.tempC}℃
-          <span className="ml-2 text-[13px] font-medium text-muted-foreground">
-            강수확률 {w.precipProbability}%
-          </span>
-        </p>
-        <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{w.comment}</p>
+        {w ? (
+          <>
+            <p className="text-[17px] font-bold text-secondary-foreground">
+              {w.condition} {w.tempC}℃
+              <span className="ml-2 text-[13px] font-medium text-muted-foreground">
+                강수확률 {w.precipProbability}%
+              </span>
+            </p>
+            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+              {w.comment}
+            </p>
+          </>
+        ) : (
+          <p className="text-[15px] font-semibold text-muted-foreground">{message}</p>
+        )}
       </div>
       <span className="hidden shrink-0 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground sm:inline">
         참고용
