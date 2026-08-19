@@ -52,22 +52,29 @@ const PHOTOS = {
     "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1200&q=80",
 };
 
+/**
+ * 등록 4단계.
+ *
+ * **문구는 짧고 단정하게 씁니다.** 이전에는 예외와 배경까지 한 문장에 넣어
+ * 두 줄이 넘었는데, 이 자리는 절차를 훑는 곳이라 길면 읽지 않고 넘깁니다.
+ * 정책의 근거(왜 소비자에게는 본인확인을 요구하지 않는지 등)는 15-1에 있습니다.
+ */
 const STEPS = [
   {
-    title: "휴대폰 본인확인",
-    body: "정산 계좌의 예금주와 자격증의 이름이 같은 사람인지 확인합니다. 소비자에게는 요구하지 않고 전문가 등록에만 있습니다.",
+    title: "본인 명의 확인",
+    body: "정산 계좌의 예금주와 자격증 이름이 같은지 확인합니다.",
   },
   {
-    title: "자격증 제출",
-    body: "숲해설가·유아숲지도사·산림치유지도사·숲길등산지도사 등 산림복지전문가 자격증 사본을 올립니다.",
+    title: "자격 서류 제출",
+    body: "숲해설가·유아숲지도사·산림치유지도사 등 자격증 사본을 올립니다.",
   },
   {
-    title: "관리자 심사",
-    body: "제출한 자격증을 운영자가 직접 확인합니다. 자동 승인은 없습니다.",
+    title: "담당자 직접 심사",
+    body: "서류가 유효한지, 이름이 일치하는지 사람이 직접 봅니다. 자동 승인은 없습니다.",
   },
   {
-    title: "프로그램 등록",
-    body: "승인되면 프로그램을 등록할 수 있습니다. 등록한 프로그램도 게시 전에 한 번 더 심사를 거칩니다.",
+    title: "프로그램 개설",
+    body: "승인되면 프로그램을 등록합니다. 게시 전 심사가 한 번 더 있습니다.",
   },
 ];
 
@@ -376,9 +383,10 @@ export default function ProviderApplyPage() {
         {/* 하단 보증 바 — 자격증을 왜 안심하고 낼 수 있는지 한 줄로 답합니다.
             문구는 실제 설계와 맞춰 적었습니다(18-3·18-6): 공개되지 않는 경로에
             저장하고, 관리자에게도 만료되는 서명 URL로만 보여줍니다. */}
-        <div className="mt-12 flex items-start gap-3 border-t border-dashed pt-8 text-[14.5px] font-semibold leading-relaxed text-muted-foreground">
+        <div className="mt-12 flex items-center gap-3 border-t border-dashed pt-8 text-[15px] font-semibold leading-relaxed text-muted-foreground">
+          {/* 시안 값 그대로 — 24px 원, 배경은 브랜드 그린 15% 투명도, 글자 12.8px */}
           <span
-            className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[12px] text-primary"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12.8px] text-primary"
             aria-hidden
           >
             ✓
