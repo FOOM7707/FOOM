@@ -50,12 +50,25 @@ export const KMA_SERVICE_KEY = defineSecret("KMA_SERVICE_KEY");
  */
 export const KAKAO_REST_API_KEY = defineSecret("KAKAO_REST_API_KEY");
 
-/** 함수에 바인딩할 시크릿 목록. onRequest 옵션에 그대로 넘깁니다. */
-export const RUNTIME_SECRETS = [NAVER_CLIENT_SECRET, KMA_SERVICE_KEY, KAKAO_REST_API_KEY];
+/**
+ * 카카오 로그인 Client Secret — **선택 값입니다.**
+ *
+ * 카카오 콘솔(제품 설정 > 카카오 로그인 > 보안)에서 발급하고 「사용함」으로 켠
+ * 앱만 토큰 교환에 함께 보냅니다. **켜지 않았는데 보내면 오히려 거부됩니다** —
+ * 그래서 비어 있으면 파라미터 자체를 넣지 않습니다(lib/kakao.ts).
+ *
+ * 켜두면 인가코드가 새어나가도 남이 토큰으로 바꾸지 못합니다. 네이버는 필수라
+ * 이미 쓰고 있습니다.
+ */
+export const KAKAO_CLIENT_SECRET = defineSecret("KAKAO_CLIENT_SECRET");
 
-interface SecretLike {
-  value(): string;
-}
+/** 함수에 바인딩할 시크릿 목록. onRequest 옵션에 그대로 넘깁니다. */
+export const RUNTIME_SECRETS = [
+  NAVER_CLIENT_SECRET,
+  KMA_SERVICE_KEY,
+  KAKAO_REST_API_KEY,
+  KAKAO_CLIENT_SECRET,
+];
 
 /**
  * 값을 안전하게 꺼냅니다. 없으면 **명확한 에러로 즉시 실패**합니다.
@@ -80,6 +93,24 @@ export function requireSecret(param: SecretLike, name: string, where: string): s
   return value;
 }
 
+interface SecretLike {
+  value(): string;
+}
+
+/**
+ * 없어도 되는 값을 꺼냅니다 — 없으면 빈 문자열입니다.
+ *
+ * `requireSecret`과 나눠 둔 이유: 없을 때 **실패해야 하는 값**과 **비워두는 게
+ * 정상인 값**을 같은 함수로 다루면, 선택 값이 빠졌을 때도 로그인 전체가 죽습니다.
+ */
+export function optionalSecret(param: SecretLike): string {
+  try {
+    return param.value() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export type ConfigState = "set" | "missing";
 
 function stateOf(param: SecretLike): ConfigState {
@@ -100,5 +131,7 @@ export function configStatus(): Record<string, ConfigState> {
     NAVER_CLIENT_SECRET: stateOf(NAVER_CLIENT_SECRET),
     KMA_SERVICE_KEY: stateOf(KMA_SERVICE_KEY),
     KAKAO_REST_API_KEY: stateOf(KAKAO_REST_API_KEY),
+    // 선택 값이라 missing이어도 정상입니다(콘솔에서 「사용함」을 켠 경우에만 필요).
+    KAKAO_CLIENT_SECRET: stateOf(KAKAO_CLIENT_SECRET),
   };
 }

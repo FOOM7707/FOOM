@@ -7,6 +7,7 @@ import ProgramDetailPage from "./pages/ProgramDetailPage";
 import ProgramRegisterPage from "./pages/ProgramRegisterPage";
 import ProviderApplyPage from "./pages/ProviderApplyPage";
 import AuthNaverCallbackPage from "./pages/AuthNaverCallbackPage";
+import AuthKakaoCallbackPage from "./pages/AuthKakaoCallbackPage";
 import MyProgramsPage from "./pages/MyProgramsPage";
 import { AuthProvider } from "./hooks/useAuth";
 
@@ -40,6 +41,7 @@ export default function App() {
             {/* 네이버 개발자센터에 등록된 콜백 주소입니다(15-7). 경로를 바꾸면
                 콘솔 등록값도 함께 바꿔야 로그인이 동작합니다. */}
             <Route path="/auth/naver/callback" element={<AuthNaverCallbackPage />} />
+            <Route path="/auth/kakao/callback" element={<AuthKakaoCallbackPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

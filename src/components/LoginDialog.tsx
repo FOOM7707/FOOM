@@ -9,6 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { startKakaoLogin } from "@/lib/kakaoAuth";
 import { startNaverLogin } from "@/lib/naverAuth";
 
 /**
@@ -18,7 +19,9 @@ import { startNaverLogin } from "@/lib/naverAuth";
  * 제거했습니다 — 소비자에게 본인확인을 요구하지 않기로 했고(15-1),
  * 이메일·비밀번호 가입도 만들지 않습니다.
  *
- * 카카오는 비즈 앱 전환 + 동의항목 심사가 남아 있어 아직 비활성입니다(15-7).
+ * **카카오는 비즈 앱 없이도 로그인이 됩니다** (v19). 비즈 앱이 필요한 것은
+ * 이메일·전화번호와 간편가입(카카오싱크)이고, 로그인 자체와 닉네임·프로필사진은
+ * 심사 없이 열립니다. 두 값이 비어도 가입이 되도록 설계돼 있습니다(2-1, 15-4).
  */
 export default function LoginDialog() {
   const { user, loading, logout } = useAuth();
@@ -40,11 +43,24 @@ export default function LoginDialog() {
     );
   }
 
+  /** 로그인 후 보고 있던 화면으로 돌아옵니다. */
+  function returnTo(): string {
+    return window.location.pathname + window.location.search;
+  }
+
   function handleNaver() {
     try {
       setError(null);
-      // 로그인 후 보고 있던 화면으로 돌아옵니다.
-      startNaverLogin(window.location.pathname + window.location.search);
+      startNaverLogin(returnTo());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "로그인을 시작하지 못했습니다.");
+    }
+  }
+
+  function handleKakao() {
+    try {
+      setError(null);
+      startKakaoLogin(returnTo());
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인을 시작하지 못했습니다.");
     }
@@ -66,9 +82,8 @@ export default function LoginDialog() {
         <div className="mt-1 space-y-2">
           <button
             type="button"
-            disabled
-            title="카카오 로그인은 심사 진행 후 열립니다"
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FEE500] text-[15px] font-semibold text-[#191600] disabled:opacity-60"
+            onClick={handleKakao}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FEE500] text-[15px] font-semibold text-[#191600] transition-opacity hover:opacity-90"
           >
             <span aria-hidden>💬</span> 카카오로 3초 만에 시작
           </button>

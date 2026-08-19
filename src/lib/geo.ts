@@ -30,7 +30,12 @@ export function formatDistance(km: number): string {
   return `${Math.round(km)}km`;
 }
 
-/** 지역 필터용 광역 시·도 목록 (와이어프레임 v2 "전체지역" 셀렉트 대응) */
+/**
+ * @deprecated 지역 **필터**는 이제 `programs.sido` 코드로 판정합니다(17-3, `lib/sido.ts`).
+ * 이 목록과 아래 `regionOfAddress`는 상세 화면의 **표시용 라벨**로만 남아 있습니다 —
+ * 주소 문자열 파싱은 "경기도 광주시"를 광주광역시로 읽는 식의 오분류가 있어
+ * 걸러내는 데 쓰면 안 됩니다.
+ */
 export const REGIONS = [
   "전체지역",
   "서울",
