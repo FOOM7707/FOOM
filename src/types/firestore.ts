@@ -35,6 +35,10 @@ export interface Program {
   imageUrls: string[];
   status: ProgramStatus;
   barrierFree: boolean;
+  /** (v13, 2-3) 평점 캐시. 서버가 계산해 넣는 파생 필드라 화면은 읽기만 합니다.
+   *  `ratingCount`가 0이면 **별점을 표시하지 않습니다** — 0.0점은 "나쁜 평가"로 읽힙니다 */
+  ratingAvg?: number;
+  ratingCount?: number;
   createdAt: string;
 }
 

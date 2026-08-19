@@ -8,9 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import AddressSearchField from "@/components/AddressSearchField";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
+import type { Place } from "@/lib/places";
 
 const SCHEDULE_OPTIONS: { value: ScheduleType; label: string; hint: string }[] = [
   { value: "single", label: "1회성", hint: "특정 날짜 1회만 진행" },
@@ -46,11 +48,19 @@ export default function ProgramRegisterPage() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 주소는 검색해서 고른 값만 씁니다 — 좌표를 함께 받아야 날씨가 붙습니다(16-4).
+  const [place, setPlace] = useState<Place | null>(null);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setBusy(true);
+
+    if (!place) {
+      setError("장소를 검색해서 선택해 주세요");
+      setBusy(false);
+      return;
+    }
 
     const form = new FormData(e.currentTarget);
     try {
@@ -64,7 +74,8 @@ export default function ProgramRegisterPage() {
           description: form.get("description"),
           category: form.get("category"),
           qualificationType: form.get("qualificationType"),
-          location: { address: form.get("address") },
+          // 주소·좌표는 한 쌍입니다. 좌표가 비면 그 프로그램에는 날씨가 안 붙습니다(16-4).
+          location: { address: place.address, lat: place.lat, lng: place.lng },
           price: Number(form.get("price")),
           capacity: Number(form.get("capacity")),
           minCapacity: Number(form.get("minCapacity")),
@@ -167,7 +178,13 @@ export default function ProgramRegisterPage() {
               <Button variant="outline" asChild>
                 <Link to="/my/programs">내 프로그램 보기</Link>
               </Button>
-              <Button variant="outline" onClick={() => setCreatedId(null)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreatedId(null);
+                  setPlace(null);
+                }}
+              >
                 하나 더 등록
               </Button>
             </div>
@@ -243,11 +260,7 @@ export default function ProgramRegisterPage() {
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="address">장소(주소)</Label>
-          <Input id="address" name="address" required placeholder="예: 강원도 홍천군 서면" />
-          <p className="text-xs text-muted-foreground">
-            지역 필터에 쓸 시도를 주소 앞부분에서 자동으로 인식합니다. 시도로 시작하는
-            주소를 입력해 주세요.
-          </p>
+          <AddressSearchField value={place} onChange={setPlace} />
         </div>
 
         <div className="flex gap-3">
