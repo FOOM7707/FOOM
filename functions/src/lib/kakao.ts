@@ -78,6 +78,32 @@ export function toSocialProfile(response: Record<string, unknown>): SocialProfil
   };
 }
 
+/**
+ * 토큰 교환 실패 원인 안내.
+ *
+ * 이 단계는 원인이 여러 갈래인데 **증상이 전부 같습니다** — 로그인이 안 되고
+ * 「인가코드가 유효하지 않다」만 뜹니다. 실제로 겪은 순서대로 적어둡니다.
+ */
+function kakaoTokenErrorHint(code: string | null, error: unknown): string {
+  if (code === "KOE010" || error === "invalid_client") {
+    return (
+      "Client Secret이 맞지 않습니다. 카카오 콘솔에서 「사용함」으로 켰다면 " +
+      "functions/.secret.local의 KAKAO_CLIENT_SECRET에 값을 넣어야 하고, " +
+      "켜지 않았다면 그 값을 비워둬야 합니다."
+    );
+  }
+  if (code === "KOE101") {
+    return "앱 키가 맞지 않습니다. KAKAO_REST_API_KEY가 REST API 키인지 확인하세요.";
+  }
+  if (code === "KOE320" || error === "invalid_grant") {
+    return (
+      "인가코드를 쓸 수 없습니다. 이미 사용됐거나(새로고침·중복 호출), 만료됐거나, " +
+      "콜백 주소가 인가 때와 다릅니다. 로그인을 처음부터 다시 시도해 보세요."
+    );
+  }
+  return "카카오 콘솔의 Redirect URI와 Client Secret 설정을 확인하세요.";
+}
+
 /** 인가 요청 주소. 서버가 만들어 302로 넘깁니다 — 근거는 routes/auth.ts */
 export function buildAuthorizeUrl(params: {
   restApiKey: string;
@@ -122,8 +148,18 @@ export function createKakaoPort(credentials: KakaoCredentials): KakaoPort {
           status: res.status,
           error: body.error,
           code: body.error_code,
+          description: body.error_description,
         });
-        throw new AppError("invalid-argument", "인가코드가 유효하지 않습니다");
+
+        // **카카오 오류 코드는 화면까지 올립니다.** 비밀값이 아니고, 이 단계의
+        // 실패는 원인이 여러 갈래(Client Secret 설정·콜백 주소 불일치·코드 재사용)인데
+        // 증상이 전부 똑같아서 코드 없이는 추측밖에 할 수 없습니다.
+        const code = typeof body.error_code === "string" ? body.error_code : null;
+        const hint = kakaoTokenErrorHint(code, body.error);
+        throw new AppError(
+          "invalid-argument",
+          `카카오 인증에 실패했습니다${code ? ` (${code})` : ""}. ${hint}`
+        );
       }
 
       const accessToken = nonEmpty(body.access_token);
