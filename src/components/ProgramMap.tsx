@@ -49,6 +49,14 @@ const LEVEL_SINGLE = 7;
 const LEVEL_MIN = 1;
 const LEVEL_MAX = 14;
 
+/**
+ * 카드가 핀 위로 차지하는 높이(px) — 사진 140 + 본문 약 95 + 핀 자리 44.
+ * `ProgramMapCard`의 생김새를 바꾸면 이 값도 같이 손봐야 합니다.
+ */
+const CARD_HEIGHT_PX = 280;
+/** 카드 머리와 지도 위쪽 사이에 남길 여백 */
+const CARD_MARGIN_PX = 12;
+
 /** 가격 핀. CustomOverlay는 HTML을 그대로 얹으므로 마커 이미지를 만들 필요가 없습니다. */
 function pinElement(label: string, active: boolean, onClick?: () => void): HTMLElement {
   const el = document.createElement("div");
@@ -273,8 +281,36 @@ export default function ProgramMap({
       selectedProgram.location.lng
     );
 
-    // 가장자리 핀을 누르면 카드가 지도 밖으로 잘립니다 — 고른 지점을 가운데로 옮깁니다.
-    map.panTo(position);
+    // 고른 지점으로 지도를 옮깁니다. **핀을 그대로 가운데 두면 카드 머리가 잘립니다** —
+    // 카드가 핀 위로 280px 올라가는데 440px 지도의 중심 위쪽 여유는 220px뿐입니다.
+    //
+    // 그래서 핀보다 **위쪽 지점**을 중심으로 잡습니다. 그러면 핀이 화면 아래쪽으로
+    // 내려가고 그만큼 카드가 들어설 자리가 생깁니다.
+    //
+    // 계산은 `panBy(0, -150)` 같은 고정값이 아니라 **투영(projection)으로** 합니다.
+    // 고정값은 지도 높이가 다르면(상세 240px / 검색 440px) 맞지 않고, 부호를 잘못
+    // 잡으면 반대로 더 잘립니다. 위경도↔픽셀 변환을 쓰면 그런 추측이 필요 없습니다.
+    const height = containerRef.current?.clientHeight ?? 0;
+    // 필요한 만큼만 올립니다. 지도가 충분히 크면 0이 되어 핀이 정가운데에 옵니다.
+    const shiftPx = Math.max(
+      0,
+      Math.min(
+        height / 2 - 48, // 너무 올리면 핀이 화면 아래로 사라집니다
+        CARD_HEIGHT_PX - height / 2 + CARD_MARGIN_PX
+      )
+    );
+
+    if (shiftPx > 0) {
+      const projection = map.getProjection();
+      const point = projection.pointFromCoords(position);
+      // y는 아래로 갈수록 커지므로, **빼면** 중심이 북쪽(위)으로 갑니다.
+      const shifted = projection.coordsFromPoint(
+        new maps.Point(point.x, point.y - shiftPx)
+      );
+      map.panTo(shifted);
+    } else {
+      map.panTo(position);
+    }
 
     const overlay = new maps.CustomOverlay({
       position,

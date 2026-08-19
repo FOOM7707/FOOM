@@ -18,6 +18,18 @@ export interface KakaoLatLng {
   getLng(): number;
 }
 
+/** 화면 픽셀 좌표. **y는 아래로 갈수록 커집니다**(남쪽) */
+export interface KakaoPoint {
+  x: number;
+  y: number;
+}
+
+/** 위경도 ↔ 픽셀 변환기. 현재 축척을 기준으로 계산합니다 */
+export interface KakaoProjection {
+  pointFromCoords(latlng: KakaoLatLng): KakaoPoint;
+  coordsFromPoint(point: KakaoPoint): KakaoLatLng;
+}
+
 export interface KakaoLatLngBounds {
   extend(latlng: KakaoLatLng): void;
 }
@@ -32,6 +44,7 @@ export interface KakaoMapInstance {
   /** 부드럽게 이동. 거리가 멀면 카카오가 알아서 즉시 이동으로 바꿉니다 */
   panTo(latlng: KakaoLatLng): void;
   relayout(): void;
+  getProjection(): KakaoProjection;
 }
 
 export interface KakaoCustomOverlay {
@@ -45,6 +58,7 @@ export interface KakaoMaps {
     options: { center: KakaoLatLng; level?: number; scrollwheel?: boolean }
   ) => KakaoMapInstance;
   LatLng: new (lat: number, lng: number) => KakaoLatLng;
+  Point: new (x: number, y: number) => KakaoPoint;
   LatLngBounds: new () => KakaoLatLngBounds;
   CustomOverlay: new (options: {
     position: KakaoLatLng;
