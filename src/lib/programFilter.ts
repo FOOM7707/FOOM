@@ -23,7 +23,7 @@ export interface ProgramFilters {
   region: RegionKey | null;
   priceMin: number;
   priceMax: number;
-  /** 「N명 이상 신청 가능」 — `capacity` 기준. null = 상관없음 */
+  /** 함께 가는 인원. null = 상관없음. 판정은 `matchesHeadcount` 참고 */
   headcount: number | null;
   /** 빈 배열 = 전체 */
   ageTags: TargetAgeTag[];
@@ -61,7 +61,28 @@ export const DIFFICULTY_LABELS: { value: Difficulty; label: string }[] = [
   { value: "hard", label: "어려움 · 3km 이상" },
 ];
 
-export const HEADCOUNT_OPTIONS = [2, 4, 10, 20] as const;
+export const HEADCOUNT_OPTIONS = [1, 2, 4, 10, 20] as const;
+
+/**
+ * 「N명이서 갈 수 있는가」 — **두 가지를 함께 봅니다.**
+ *
+ * | 필드 | 뜻 | 빠뜨리면 |
+ * |---|---|---|
+ * | `capacity` | 회차당 최대 정원 | 정원 8명짜리에 20명이 걸립니다 |
+ * | `minCapacity` | 최소 진행 인원 | **혼자 신청해도 인원 미달로 자동 취소되는 프로그램**이 「1인 가능」에 걸립니다(2-4) |
+ *
+ * 두 번째가 핵심입니다. 정원만 보면 「혼자 가도 되는 프로그램」을 고를 수 없습니다 —
+ * 최소 인원이 4명이면 혼자 신청은 받아주지만 D-1에 인원이 안 차면 폐강됩니다.
+ * 참가자 입장에서 그건 "예약이 된 것"이 아닙니다.
+ *
+ * **남은 자리(`remainingSlots`)가 아니라 정원을 봅니다.** 남은 자리는 회차마다
+ * 달라서 프로그램 단위 필터로는 성립하지 않습니다.
+ */
+export function matchesHeadcount(program: Program, headcount: number): boolean {
+  if (program.capacity < headcount) return false;
+  if (program.minCapacity > headcount) return false;
+  return true;
+}
 
 function matchesAge(program: Program, selected: TargetAgeTag[]): boolean {
   if (selected.length === 0) return true;
@@ -80,7 +101,7 @@ export function matchesFilters(program: Program, f: ProgramFilters): boolean {
   // 상한이 최대치면 "이상"이므로 위쪽을 막지 않습니다.
   if (f.priceMax < PRICE_MAX && program.price > f.priceMax) return false;
 
-  if (f.headcount != null && program.capacity < f.headcount) return false;
+  if (f.headcount != null && !matchesHeadcount(program, f.headcount)) return false;
   if (!matchesAge(program, f.ageTags)) return false;
   if (f.difficulty && program.difficulty !== f.difficulty) return false;
   if (f.barrierFree && !program.barrierFree) return false;

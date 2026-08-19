@@ -216,12 +216,14 @@ export default function FilterModal({
                   active={draft.headcount === n}
                   onClick={() => patch({ headcount: pick<number>(draft.headcount, n) })}
                 >
-                  {n}명 이상
+                  {n === 1 ? "혼자 (1인)" : `${n}명`}
                 </Chip>
               ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              한 회차에 그만큼 받을 수 있는 프로그램만 봅니다(정원 기준).
+              그 인원을 받을 수 있고, <strong>그 인원만으로도 진행되는</strong> 프로그램만
+              봅니다. 「혼자」를 고르면 최소 인원이 1명이라 <strong>인원 미달로 취소되지
+              않는</strong> 프로그램만 남습니다.
             </p>
           </Section>
 

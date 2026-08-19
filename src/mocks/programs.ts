@@ -25,7 +25,8 @@ export const mockPrograms: Program[] = [
     location: { address: "강원특별자치도 홍천군 서면", lat: 37.686, lng: 127.719 },
     price: 35000,
     capacity: 12,
-    minCapacity: 4,
+    // 혼자 와도 진행합니다 — 명상·치유는 소수로도 성립합니다.
+    minCapacity: 1,
     scheduleType: "weekly",
     imageUrls: [],
     status: "published",
@@ -136,7 +137,7 @@ export const mockPrograms: Program[] = [
     location: { address: "경기도 포천시 소흘읍", lat: 37.7524, lng: 127.1706 },
     price: 15000,
     capacity: 25,
-    minCapacity: 5,
+    minCapacity: 1,
     scheduleType: "weekly",
     imageUrls: [],
     status: "published",
