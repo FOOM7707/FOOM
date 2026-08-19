@@ -1,5 +1,18 @@
 import type { Program, ScheduleOccurrence } from "../types/firestore";
 
+/**
+ * 홈·검색·상세 화면용 가짜 데이터.
+ *
+ * TODO(백엔드 연동): `GET /programs/search`가 생기면 이 파일을 걷어냅니다(17-1).
+ *
+ * **파생 필드(`targetAgeTags`·`difficulty`·`sido`)를 값으로 박아둔 이유:**
+ * 실제로는 서버가 원본에서 계산해 문서에 저장하는 값입니다(2-3). 화면은 읽기만
+ * 하므로, 프론트에서 다시 계산하는 코드를 만들면 서버와 경계가 어긋날 때
+ * **어느 쪽이 맞는지 알 수 없게 됩니다.** 서버가 저장해줬다고 치고 그대로 둡니다.
+ *
+ * **카테고리 5종에 최소 1건씩** 넣습니다 — 홈에서 카테고리 카드를 눌렀을 때
+ * 결과가 0건이면 화면이 고장난 것처럼 보입니다.
+ */
 export const mockPrograms: Program[] = [
   {
     id: "program-001",
@@ -9,7 +22,7 @@ export const mockPrograms: Program[] = [
       "국립자연휴양림에서 진행하는 반나절 산림치유 프로그램입니다. 산림치유지도사와 함께 호흡·명상·오감 체험을 진행합니다.",
     qualificationType: "forest_healing_instructor_1",
     category: "산림치유",
-    location: { address: "강원도 홍천군 서면", lat: 37.686, lng: 127.719 },
+    location: { address: "강원특별자치도 홍천군 서면", lat: 37.686, lng: 127.719 },
     price: 35000,
     capacity: 12,
     minCapacity: 4,
@@ -17,6 +30,15 @@ export const mockPrograms: Program[] = [
     imageUrls: [],
     status: "published",
     barrierFree: true,
+    targetAgeMin: 19,
+    targetAgeMax: null,
+    targetAgeTags: ["adult", "senior"],
+    walkingDistanceM: 1500,
+    difficulty: "normal",
+    rainAlternative: "indoor",
+    sido: "gangwon",
+    ratingAvg: 4.8,
+    ratingCount: 24,
     createdAt: "2026-08-01T00:00:00Z",
   },
   {
@@ -35,6 +57,15 @@ export const mockPrograms: Program[] = [
     imageUrls: [],
     status: "published",
     barrierFree: false,
+    targetAgeMin: 3,
+    targetAgeMax: 5,
+    targetAgeTags: ["infant"],
+    walkingDistanceM: 400,
+    difficulty: "easy",
+    rainAlternative: "reschedule",
+    sido: "gyeonggi",
+    ratingAvg: 4.9,
+    ratingCount: 11,
     createdAt: "2026-08-02T00:00:00Z",
   },
   {
@@ -45,7 +76,7 @@ export const mockPrograms: Program[] = [
       "국가공인 산길안내인과 함께하는 당일 트레킹. 초급자도 무리 없는 코스로 구성했습니다.",
     qualificationType: "mountain_trail_guide",
     category: "숲길등산",
-    location: { address: "강원도 속초시", lat: 38.1198, lng: 128.4659 },
+    location: { address: "강원특별자치도 속초시", lat: 38.1198, lng: 128.4659 },
     price: 42000,
     capacity: 20,
     minCapacity: 6,
@@ -53,6 +84,15 @@ export const mockPrograms: Program[] = [
     imageUrls: [],
     status: "published",
     barrierFree: false,
+    targetAgeMin: 13,
+    targetAgeMax: null,
+    targetAgeTags: ["teen", "adult", "senior"],
+    walkingDistanceM: 7200,
+    difficulty: "hard",
+    rainAlternative: "none",
+    sido: "gangwon",
+    ratingAvg: 4.6,
+    ratingCount: 38,
     createdAt: "2026-08-03T00:00:00Z",
   },
   {
@@ -63,7 +103,7 @@ export const mockPrograms: Program[] = [
       "기업 워크숍, 단체 연수용 맞춤 산림치유 프로그램. 결제 후 채팅으로 일정을 협의합니다.",
     qualificationType: "forest_healing_instructor_1",
     category: "단체·기업",
-    location: { address: "강원도 홍천군 서면", lat: 37.686, lng: 127.719 },
+    location: { address: "강원특별자치도 홍천군 서면", lat: 37.686, lng: 127.719 },
     price: 550000,
     capacity: 30,
     minCapacity: 10,
@@ -73,7 +113,71 @@ export const mockPrograms: Program[] = [
     imageUrls: [],
     status: "published",
     barrierFree: true,
+    targetAgeMin: 19,
+    targetAgeMax: null,
+    targetAgeTags: ["adult", "senior"],
+    walkingDistanceM: 800,
+    difficulty: "easy",
+    rainAlternative: "indoor",
+    sido: "gangwon",
+    ratingAvg: 0,
+    ratingCount: 0,
     createdAt: "2026-08-04T00:00:00Z",
+  },
+  {
+    // 숲해설 카테고리가 통째로 비어 있어 홈에서 그 카드를 누르면 0건이 나왔습니다.
+    id: "program-005",
+    providerId: "provider-002",
+    title: "국립수목원 숲해설 산책",
+    description:
+      "숲해설가와 함께 수목원을 천천히 걸으며 나무와 새, 계절의 변화를 살펴봅니다. 유모차·휠체어가 다닐 수 있는 평탄한 길입니다.",
+    qualificationType: "forest_interpreter",
+    category: "숲해설",
+    location: { address: "경기도 포천시 소흘읍", lat: 37.7524, lng: 127.1706 },
+    price: 15000,
+    capacity: 25,
+    minCapacity: 5,
+    scheduleType: "weekly",
+    imageUrls: [],
+    status: "published",
+    barrierFree: true,
+    targetAgeMin: null,
+    targetAgeMax: null,
+    targetAgeTags: ["all"],
+    walkingDistanceM: 900,
+    difficulty: "easy",
+    rainAlternative: "indoor",
+    sido: "gyeonggi",
+    ratingAvg: 4.7,
+    ratingCount: 52,
+    createdAt: "2026-08-05T00:00:00Z",
+  },
+  {
+    id: "program-006",
+    providerId: "provider-003",
+    title: "한라산 둘레길 숲해설 트레킹",
+    description:
+      "제주 곶자왈과 둘레길을 숲해설가와 함께 걷습니다. 중간 휴식 2회, 초등 고학년 이상 참가 가능합니다.",
+    qualificationType: "forest_interpreter",
+    category: "숲해설",
+    location: { address: "제주특별자치도 서귀포시 남원읍", lat: 33.2896, lng: 126.7182 },
+    price: 39000,
+    capacity: 15,
+    minCapacity: 4,
+    scheduleType: "single",
+    imageUrls: [],
+    status: "published",
+    barrierFree: false,
+    targetAgeMin: 10,
+    targetAgeMax: null,
+    targetAgeTags: ["child", "teen", "adult", "senior"],
+    walkingDistanceM: 4500,
+    difficulty: "hard",
+    rainAlternative: "reschedule",
+    sido: "jeju",
+    ratingAvg: 4.5,
+    ratingCount: 9,
+    createdAt: "2026-08-06T00:00:00Z",
   },
 ];
 
@@ -83,4 +187,6 @@ export const mockSchedules: ScheduleOccurrence[] = [
   { id: "sch-003", programId: "program-002", type: "single", startAt: "2026-08-20T09:30:00Z", remainingSlots: 2 },
   { id: "sch-004", programId: "program-003", type: "series", startAt: "2026-08-22T07:00:00Z", seriesIndex: 1, seriesTotal: 4, remainingSlots: 18 },
   { id: "sch-005", programId: "program-003", type: "series", startAt: "2026-08-29T07:00:00Z", seriesIndex: 2, seriesTotal: 4, remainingSlots: 20 },
+  { id: "sch-006", programId: "program-005", type: "weekly", startAt: "2026-08-22T10:00:00Z", remainingSlots: 20 },
+  { id: "sch-007", programId: "program-006", type: "single", startAt: "2026-08-30T08:00:00Z", remainingSlots: 15 },
 ];

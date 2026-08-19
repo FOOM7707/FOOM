@@ -216,21 +216,26 @@ dev 에서 작업 → 커밋 → 푸시 → dev를 main에 병합 → 다음 작
 ### 알려진 문제
 
 - **v18 이전에 등록된 프로그램은 좌표(`location.lat`/`lng`)가 비어 있습니다.** 자동으로 안 채워져서 그 프로그램에는 날씨가 안 붙습니다 — 건수가 적은 지금은 재등록이 빠르고, 늘기 전에 백필 스크립트를 만드는 편이 낫습니다(19-6)
-- `src/types/firestore.ts`가 스키마 v9 기준으로 스테일합니다
+- `src/types/firestore.ts`가 아직 스키마 v9 기준입니다(v18에서 검색 필터 필드만 보강). 예약·결제·정산 타입이 비어 있습니다
+- **프론트엔드에는 테스트 하네스가 없습니다.** `npm test`는 보안규칙과 Cloud Functions만 돌립니다 — `src/lib/programFilter.ts`처럼 조용히 틀리는 판정 로직(연령 `all` 규칙·가격 「이상」 처리)이 검증되지 않은 채 남습니다
 - Firebase Storage — 버킷 생성(서울)과 `storage.rules`·테스트 16종까지 끝났고, **업로드 UI와 서버 연동이 남았습니다**(18번). 그때까지는 프로그램 사진도 자격증도 올릴 곳이 없어 **관리자가 텍스트만 보고 승인**하게 됩니다
   - **자격증 열람을 구현하는 날 IAM부터 확인하세요.** 서명 URL은 함수 기본 서비스 계정으로는 발급되지 않습니다 — `서비스 계정 토큰 생성자` 역할이 필요하고, **코드로는 해결되지 않습니다**(18-6)
 - 공급자 심사 목록은 `users`에서 `role=='provider'`를 훑어 만듭니다(5번 v15). 공급자가 수백 명을 넘으면 컬렉션그룹 인덱스로 바꿔야 합니다 — 잘리면 응답의 `truncated`로 화면에 표시됩니다
 
-**타입 주의** `src/types/firestore.ts`는 스키마 v9 이전 기준이라 스테일합니다. 그 뒤 추가·변경된 것:
+**타입 주의** `src/types/firestore.ts`는 여전히 스테일하지만, v18에서 **검색 필터가 쓰는 만큼은 채웠습니다** — `targetAgeMin`/`Max`·`targetAgeTags`·`walkingDistanceM`·`difficulty`·`rainAlternative`·`sido`·`ratingAvg`/`ratingCount`(전부 선택 필드). 예약·결제·정산 쪽은 손대지 않았습니다. 그 뒤 추가·변경된 것:
 - v10 — `providerProfiles` 공개/`private` 분리, `programs.reviewedBy`, `bookings.unitPrice`·`totalAmount`, `schedules.programId`·`programStatus`
 - v11 — `users.authProvider` 2종 축소, `users.identityVerifiedAt`, `users/{uid}/private/identity`
 - v12 — `bookings.participants`·`guardian`·`emergencyPhone`
 - v13 — `programs`에 필터·정렬 필드 12종(`targetAgeMin`/`Max`·`targetAgeTags`·`difficulty`·`walkingDistanceM`·`rainAlternative`·`sido`·`requiresChildInfo`·`scheduleDates`·`nextScheduleAt`/`lastScheduleAt`·`publishedAt`·`ratingAvg`/`ratingCount`·`bookingCount30d`), `aggregates` 컬렉션 신규, `programs` update 규칙을 허용목록으로 반전
 - v14 — 소셜 가입 정책 확정. `users.name` 폴백은 이메일 앞부분이 아니라 `이용자{uid 앞 4자리}`(공개 노출 필드라 이메일이 화면에 뜸), `users.phone`은 양쪽 공급자 모두 사전 심사 필요·심사 후에도 빈 값 가능, 계정 통합 안 함(소셜별 별도 계정), 전화번호 중복은 감지·기록만 하고 차단은 쿠폰 발급 시점
 
-**검색 화면 주의** `src/pages/SearchPage.tsx`는 v13 필터 설계 이전 상태입니다 — 카테고리가 단일 선택이고, 정렬이 3종뿐이며(인기순은 실제로 정렬하지 않음), 기간·대상연령·난이도·우천 필터가 없고, 목록⇄지도가 별도 토글로 남아 있습니다. 지역 필터는 `regionOfAddress()`로 주소 문자열을 파싱하는데 실제로는 `programs.region` 필드를 써야 합니다(17-3). 필터를 구현할 때 이 화면을 17번 기준으로 다시 씁니다.
+**검색 화면** `src/pages/SearchPage.tsx`의 필터는 **17-3 기준으로 다시 썼습니다** (v18). 카테고리 다중 선택 + 「필터」 버튼 뒤의 상세 필터 모달(지역·가격·인원·대상연령·난이도·배리어프리·우천대체)이고, 지역은 주소 문자열이 아니라 `sido` 코드로 판정합니다. 판정 규칙은 `src/lib/programFilter.ts`에 순수 함수로 모아뒀습니다 — **검색 API가 생기면 이 규칙이 서버로 옮겨갑니다.**
 
-**mock 주의** 카테고리 5종 중 **숲해설에 프로그램이 하나도 없습니다.** 홈에서 그 카드를 누르면 검색 결과가 0건이라 상세 화면 확인이 안 됩니다. 카테고리마다 최소 1개는 있어야 합니다.
+> **아직 남은 것 셋.** ① **기간(날짜) 필터** — 회차가 없어 `scheduleDates`가 전부 비어 있습니다. 모달에 칸만 두고 「준비 중」으로 채웠습니다(17-4 ⑦) ② **정렬 3종**(인기순·신규순·평점순)은 기준 필드를 서버가 채워야 동작합니다 — 인기순은 지금도 실제로 정렬하지 않습니다 ③ **`GET /programs/search` 미연동** — 아직 `src/mocks/`를 프론트에서 거릅니다. 목록⇄지도도 별도 토글로 남아 있습니다(17-4 ①은 합치기로 확정)
+>
+> **`src/lib/sido.ts`는 서버 `functions/src/lib/sido.ts`의 사본입니다.** 검색 API를 붙일 때까지만 두는 임시본이라 **한쪽만 고치면 결과가 갈립니다.**
+
+**mock 주의** 카테고리 5종에 최소 1건씩 들어 있습니다(v18에서 숲해설 2건 추가 — 그전에는 0건이라 홈에서 그 카드를 누르면 결과가 비었습니다). **파생 필드(`targetAgeTags`·`difficulty`·`sido`)는 mock에 값으로 박아뒀습니다** — 실제로는 서버가 계산해 저장하는 값이라, 프론트에서 다시 계산하면 서버와 경계가 어긋날 때 어느 쪽이 맞는지 알 수 없게 됩니다.
 
 ---
 

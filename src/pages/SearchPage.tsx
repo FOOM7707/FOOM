@@ -1,30 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { SlidersHorizontal } from "lucide-react";
 import { mockPrograms } from "../mocks/programs";
-import { CATEGORIES, type Category } from "../types/firestore";
+import { CATEGORIES } from "../types/firestore";
+import FilterModal from "../components/FilterModal";
 import ProgramCard from "../components/ProgramCard";
 import ProgramMap from "../components/ProgramMap";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { distanceKm, type LatLng } from "@/lib/geo";
 import {
-  REGIONS,
-  distanceKm,
-  regionOfAddress,
-  type LatLng,
-  type Region,
-} from "@/lib/geo";
+  DEFAULT_FILTERS,
+  countActiveFilters,
+  matchesFilters,
+  type ProgramFilters,
+} from "@/lib/programFilter";
 
 type SortKey = "인기순" | "낮은가격순" | "가까운거리순";
 const SORTS: SortKey[] = ["인기순", "낮은가격순", "가까운거리순"];
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
-  const initialCategory = (params.get("category") as Category) || "전체";
-  const initialRegion = (params.get("region") as Region) || "전체지역";
-  const [category, setCategory] = useState<Category>(initialCategory);
   const [keyword, setKeyword] = useState("");
-  const [region, setRegion] = useState<Region>(initialRegion);
+
+  // 카테고리는 **다중 선택**입니다(17-3). 빈 배열이 「전체」이고 별도 값을 두지
+  // 않습니다 — 「전체」를 값으로 만들면 "전체이면서 숲해설"인 상태가 생깁니다.
+  // 홈에서 카테고리 카드를 눌러 들어오면 `?category=`로 한 개가 들어옵니다.
+  const initialCategory = params.get("category");
+  const [filters, setFilters] = useState<ProgramFilters>({
+    ...DEFAULT_FILTERS,
+    categories: initialCategory ? [initialCategory] : [],
+  });
+  const [filterOpen, setFilterOpen] = useState(false);
+
   const [sort, setSort] = useState<SortKey>(
     params.get("sort") === "near" ? "가까운거리순" : "인기순"
   );
@@ -47,19 +56,22 @@ export default function SearchPage() {
     if (sort === "가까운거리순" && !position && status === "idle") request();
   }, [sort, position, status, request]);
 
+  // 검색어까지만 거른 목록. **모달의 「N개 결과 보기」가 세는 대상**이라 따로 둡니다 —
+  // 모달 안에서 만지는 값(지역·가격·연령…)은 여기서 빼고 모달이 직접 적용합니다.
+  const byKeyword = useMemo(() => {
+    const q = keyword.trim();
+    if (q === "") return mockPrograms;
+    return mockPrograms.filter(
+      (p) =>
+        p.title.includes(q) ||
+        p.description.includes(q) ||
+        p.location.address.includes(q)
+    );
+  }, [keyword]);
+
   const filtered = useMemo(() => {
-    const rows = mockPrograms
-      .filter((p) => {
-        const matchesCategory = category === "전체" || p.category === category;
-        const matchesRegion =
-          region === "전체지역" || regionOfAddress(p.location.address) === region;
-        const matchesKeyword =
-          keyword.trim() === "" ||
-          p.title.includes(keyword) ||
-          p.description.includes(keyword) ||
-          p.location.address.includes(keyword);
-        return matchesCategory && matchesRegion && matchesKeyword;
-      })
+    const rows = byKeyword
+      .filter((p) => matchesFilters(p, filters))
       .map((p) => ({
         program: p,
         distance: position ? distanceKm(position, p.location) : null,
@@ -72,7 +84,20 @@ export default function SearchPage() {
       rows.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
     }
     return rows;
-  }, [category, keyword, region, sort, position]);
+  }, [byKeyword, filters, sort, position]);
+
+  const activeFilterCount = countActiveFilters(filters);
+
+  /** 「전체」는 배타적입니다 — 개별을 고르면 전체가 풀리고, 다 풀면 전체로 돌아옵니다 */
+  function toggleCategory(c: string) {
+    setFilters((f) => {
+      const next = f.categories.includes(c)
+        ? f.categories.filter((x) => x !== c)
+        : [...f.categories, c];
+      setParams(next.length === 1 ? { category: next[0] } : {});
+      return { ...f, categories: next };
+    });
+  }
 
 
 
@@ -90,18 +115,6 @@ export default function SearchPage() {
             onChange={(e) => setKeyword(e.target.value)}
           />
 
-          <select
-            className="h-10 rounded-md border border-input bg-white px-3 text-sm"
-            value={region}
-            onChange={(e) => setRegion(e.target.value as Region)}
-            aria-label="지역 선택"
-          >
-            {REGIONS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
         </div>
 
         {status === "denied" && (
@@ -116,23 +129,52 @@ export default function SearchPage() {
           </p>
         )}
 
-        {/* 카테고리 */}
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              className={cn(
-                "rounded-full border bg-white px-3.5 py-1.5 text-[13px] text-muted-foreground",
-                c === category && "border-primary bg-primary text-primary-foreground"
-              )}
-              onClick={() => {
-                setCategory(c);
-                setParams(c === "전체" ? {} : { category: c });
-              }}
-            >
-              {c}
-            </button>
-          ))}
+        {/* 상세 필터 + 카테고리(다중 선택) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            className="flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] font-medium hover:bg-secondary"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            필터
+            {activeFilterCount > 0 && (
+              <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* 상세 필터와 카테고리는 성격이 다릅니다 — 선을 그어 갈라둡니다 */}
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+
+          {CATEGORIES.map((c) => {
+            const active =
+              c === "전체"
+                ? filters.categories.length === 0
+                : filters.categories.includes(c);
+            return (
+              <button
+                key={c}
+                type="button"
+                aria-pressed={active}
+                className={cn(
+                  "rounded-full border bg-white px-3.5 py-1.5 text-[13px] text-muted-foreground",
+                  active && "border-primary bg-primary text-primary-foreground"
+                )}
+                onClick={() => {
+                  if (c === "전체") {
+                    setFilters((f) => ({ ...f, categories: [] }));
+                    setParams({});
+                    return;
+                  }
+                  toggleCategory(c);
+                }}
+              >
+                {c}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -191,10 +233,23 @@ export default function SearchPage() {
             <ProgramCard key={program.id} program={program} distanceKm={distance} />
           ))}
           {filtered.length === 0 && (
-            <p className="py-10 text-muted-foreground">조건에 맞는 프로그램이 없습니다.</p>
+            <p className="py-10 text-muted-foreground">
+              선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요.
+            </p>
           )}
         </div>
       )}
+
+      <FilterModal
+        open={filterOpen}
+        value={filters}
+        programs={byKeyword}
+        onApply={(next) => {
+          setFilters(next);
+          setFilterOpen(false);
+        }}
+        onClose={() => setFilterOpen(false)}
+      />
     </div>
   );
 }
