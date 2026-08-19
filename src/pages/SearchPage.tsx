@@ -190,10 +190,6 @@ export default function SearchPage() {
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
-          <p className="text-[12px] text-muted-foreground">
-            프로토타입 지도입니다 — OpenStreetMap 타일을 쓰고 있으며, 최종 서비스는
-            카카오맵으로 교체됩니다.
-          </p>
         </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[18px]">

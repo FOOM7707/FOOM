@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { LocateFixed, Minus, Plus } from "lucide-react";
 import type { Program } from "@/types/firestore";
+import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { DEFAULT_CENTER, type LatLng } from "@/lib/geo";
 import {
   loadKakaoMaps,
@@ -38,6 +40,9 @@ interface Props {
 const LEVEL_OVERVIEW = 9;
 /** 한 지점만 볼 때(상세) — 1km 축척 */
 const LEVEL_SINGLE = 7;
+/** 카카오가 허용하는 축척 범위. 벗어난 값을 넣으면 조용히 무시됩니다 */
+const LEVEL_MIN = 1;
+const LEVEL_MAX = 14;
 
 /** 가격 핀. CustomOverlay는 HTML을 그대로 얹으므로 마커 이미지를 만들 필요가 없습니다. */
 function pinElement(label: string, active: boolean, onClick?: () => void): HTMLElement {
@@ -81,6 +86,43 @@ export default function ProgramMap({
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const overlaysRef = useRef<KakaoCustomOverlay[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+
+  // 「내 위치」 버튼용. 부모가 위치를 이미 넘겨준 경우(검색 화면)에는 그 값을 쓰고,
+  // 안 넘겨준 경우(상세 화면)에는 여기서 직접 물어봅니다.
+  const { position: ownPosition, status: geoStatus, request: requestLocation } =
+    useCurrentLocation();
+  const myLocation = userLocation ?? ownPosition;
+
+  // 지도를 특정 지점으로 옮기라는 신호. 값이 아니라 **매번 새 객체**를 넣는 이유는,
+  // 같은 자리를 두 번 눌러도 다시 이동해야 하기 때문입니다.
+  const [focus, setFocus] = useState<{ point: LatLng } | null>(null);
+
+  /**
+   * 확대·축소 버튼.
+   *
+   * **부호가 직관과 반대입니다** — 카카오는 숫자가 작을수록 확대라서,
+   * 확대(+) 버튼이 level을 1 **빼는** 쪽입니다.
+   */
+  function zoom(step: number) {
+    const map = mapRef.current;
+    if (!map) return;
+    const next = Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, map.getLevel() + step));
+    map.setLevel(next, { animate: true });
+  }
+
+  function goToMyLocation() {
+    if (myLocation) {
+      setFocus({ point: myLocation });
+      return;
+    }
+    // 아직 위치를 모르면 브라우저에 물어봅니다. 받아오면 아래 effect가 이동시킵니다.
+    requestLocation();
+  }
+
+  // 위치를 새로 받아온 순간 그 자리로 옮깁니다.
+  useEffect(() => {
+    if (ownPosition) setFocus({ point: ownPosition });
+  }, [ownPosition]);
 
   // SDK 로드 + 지도 인스턴스 1회 생성
   useEffect(() => {
@@ -155,14 +197,14 @@ export default function ProgramMap({
       last = p.location;
     });
 
-    if (userLocation) {
-      const position = new maps.LatLng(userLocation.lat, userLocation.lng);
+    if (myLocation) {
+      const position = new maps.LatLng(myLocation.lat, myLocation.lng);
       const overlay = new maps.CustomOverlay({ position, content: userElement() });
       overlay.setMap(map);
       overlaysRef.current.push(overlay);
       bounds.extend(position);
       points += 1;
-      last = userLocation;
+      last = myLocation;
     }
 
     // 표시할 지점이 2개 이상이면 전부 보이도록 화면을 맞춥니다.
@@ -172,7 +214,21 @@ export default function ProgramMap({
       map.setCenter(new maps.LatLng(last.lat, last.lng));
       map.setLevel(LEVEL_SINGLE);
     }
-  }, [programs, selectedId, onSelect, userLocation, status]);
+  }, [programs, selectedId, onSelect, myLocation, status]);
+
+  // 「내 위치」로 이동.
+  //
+  // **이 effect는 위 마커 effect보다 아래에 있어야 합니다.** 내 위치가 새로 들어오면
+  // 위 effect가 먼저 돌면서 "전부 보이게" 화면을 맞추는데(setBounds), 그러면 내 위치가
+  // 아니라 프로그램까지 다 나오도록 축소돼 버립니다. effect는 선언 순서대로 실행되므로
+  // 여기가 나중에 돌아 덮어씁니다.
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map || !focus) return;
+    map.setCenter(new maps.LatLng(focus.point.lat, focus.point.lng));
+    map.setLevel(LEVEL_SINGLE, { animate: true });
+  }, [focus]);
 
   // 컨테이너 크기가 바뀌면 지도에 알려줘야 합니다 — 안 하면 남는 자리가 회색으로
   // 비거나 타일이 잘린 채로 있습니다(Leaflet의 invalidateSize에 해당).
@@ -225,12 +281,74 @@ export default function ProgramMap({
     );
   }
 
+  // 위치를 못 받은 이유는 알려줘야 합니다 — 버튼을 눌렀는데 아무 일도 안 일어나면
+  // 고장으로 읽힙니다. 권한 거부는 브라우저 설정에서만 되돌릴 수 있습니다.
+  const geoMessage =
+    geoStatus === "denied"
+      ? "위치 권한이 거부돼 있습니다. 주소창 왼쪽 자물쇠에서 허용해 주세요."
+      : geoStatus === "unsupported"
+        ? "이 브라우저에서는 현재위치를 쓸 수 없습니다."
+        : null;
+
   return (
     <div
-      ref={containerRef}
-      className={cn("z-0 h-[440px] w-full overflow-hidden rounded-xl border", className)}
-      role="application"
-      aria-label="프로그램 위치 지도"
-    />
+      className={cn(
+        "relative z-0 h-[440px] w-full overflow-hidden rounded-xl border",
+        className
+      )}
+    >
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        role="application"
+        aria-label="프로그램 위치 지도"
+      />
+
+      {/* 휠이 없는 환경(노트북 터치패드·태블릿)을 위한 조작 버튼.
+          지도 위에 얹으므로 z-10 — 카카오가 타일과 오버레이에 쓰는 값보다 위입니다. */}
+      {status === "ready" && (
+        <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
+          <div className="flex flex-col overflow-hidden rounded-lg border bg-background shadow-sm">
+            <button
+              type="button"
+              onClick={() => zoom(-1)}
+              aria-label="확대"
+              title="확대"
+              className="flex h-9 w-9 items-center justify-center hover:bg-secondary"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => zoom(1)}
+              aria-label="축소"
+              title="축소"
+              className="flex h-9 w-9 items-center justify-center border-t hover:bg-secondary"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={goToMyLocation}
+            disabled={geoStatus === "loading"}
+            aria-label="내 위치로 이동"
+            title="내 위치로 이동"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background shadow-sm hover:bg-secondary disabled:opacity-60"
+          >
+            <LocateFixed
+              className={cn("h-4 w-4", myLocation && "text-primary")}
+            />
+          </button>
+        </div>
+      )}
+
+      {geoMessage && (
+        <p className="absolute inset-x-3 bottom-3 z-10 rounded-lg bg-background/95 px-3 py-2 text-xs leading-relaxed shadow-sm">
+          {geoMessage}
+        </p>
+      )}
+    </div>
   );
 }

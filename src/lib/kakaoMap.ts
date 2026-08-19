@@ -25,7 +25,9 @@ export interface KakaoLatLngBounds {
 export interface KakaoMapInstance {
   getCenter(): KakaoLatLng;
   setCenter(latlng: KakaoLatLng): void;
-  setLevel(level: number): void;
+  getLevel(): number;
+  /** 카카오는 숫자가 **작을수록** 확대입니다(1=20m, 14=전국) — Leaflet과 반대 */
+  setLevel(level: number, options?: { animate?: boolean }): void;
   setBounds(bounds: KakaoLatLngBounds): void;
   relayout(): void;
 }
