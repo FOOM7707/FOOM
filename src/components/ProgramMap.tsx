@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { LocateFixed, Minus, Plus } from "lucide-react";
 import type { Program } from "@/types/firestore";
+import ProgramMapCard from "@/components/ProgramMapCard";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { DEFAULT_CENTER, type LatLng } from "@/lib/geo";
+import { DEFAULT_CENTER, distanceKm, type LatLng } from "@/lib/geo";
 import {
   loadKakaoMaps,
   type KakaoCustomOverlay,
@@ -30,7 +32,8 @@ interface Props {
   /** 지도 초기 중심 (없으면 첫 프로그램 → 없으면 서울시청) */
   center?: LatLng | null;
   selectedId?: string | null;
-  onSelect?: (programId: string) => void;
+  /** null이면 선택 해제입니다 — 카드의 닫기 버튼이 이 값을 씁니다 */
+  onSelect?: (programId: string | null) => void;
   /** 현재위치 표시용 */
   userLocation?: LatLng | null;
   className?: string;
@@ -96,6 +99,17 @@ export default function ProgramMap({
   // 지도를 특정 지점으로 옮기라는 신호. 값이 아니라 **매번 새 객체**를 넣는 이유는,
   // 같은 자리를 두 번 눌러도 다시 이동해야 하기 때문입니다.
   const [focus, setFocus] = useState<{ point: LatLng } | null>(null);
+
+  // 카드를 담을 DOM 조각. **CustomOverlay는 HTMLElement를 받으므로** React가 그린
+  // 내용을 그대로 넘길 수 없습니다 → 빈 div를 하나 만들어 오버레이에 넘기고,
+  // 그 안으로 카드를 포털합니다. 이렇게 하면 카드를 평범한 React 컴포넌트로
+  // 유지하면서(상태·링크·아이콘 그대로) 위치만 지도가 잡아줍니다.
+  const [cardHost] = useState(() =>
+    typeof document === "undefined" ? null : document.createElement("div")
+  );
+  const cardOverlayRef = useRef<KakaoCustomOverlay | null>(null);
+
+  const selectedProgram = programs.find((p) => p.id === selectedId) ?? null;
 
   /**
    * 확대·축소 버튼.
@@ -172,10 +186,6 @@ export default function ProgramMap({
     overlaysRef.current.forEach((o) => o.setMap(null));
     overlaysRef.current = [];
 
-    const bounds = new maps.LatLngBounds();
-    let points = 0;
-    let last = null as { lat: number; lng: number } | null;
-
     programs.forEach((p) => {
       const position = new maps.LatLng(p.location.lat, p.location.lng);
       const overlay = new maps.CustomOverlay({
@@ -192,9 +202,6 @@ export default function ProgramMap({
       });
       overlay.setMap(map);
       overlaysRef.current.push(overlay);
-      bounds.extend(position);
-      points += 1;
-      last = p.location;
     });
 
     if (myLocation) {
@@ -202,19 +209,83 @@ export default function ProgramMap({
       const overlay = new maps.CustomOverlay({ position, content: userElement() });
       overlay.setMap(map);
       overlaysRef.current.push(overlay);
-      bounds.extend(position);
-      points += 1;
-      last = myLocation;
-    }
-
-    // 표시할 지점이 2개 이상이면 전부 보이도록 화면을 맞춥니다.
-    if (points > 1) {
-      map.setBounds(bounds);
-    } else if (points === 1 && last) {
-      map.setCenter(new maps.LatLng(last.lat, last.lng));
-      map.setLevel(LEVEL_SINGLE);
     }
   }, [programs, selectedId, onSelect, myLocation, status]);
+
+  // 화면 맞추기 — **표시할 지점이 바뀔 때만** 합니다.
+  //
+  // 마커 갱신과 한 덩어리로 두면 핀을 누를 때마다(selectedId 변경) 화면이 다시
+  // 맞춰집니다. 카드를 보려고 핀을 눌렀는데 지도가 통째로 움직이는 셈이라
+  // 어디를 눌렀는지 놓치게 됩니다.
+  //
+  // **배열이 아니라 좌표를 이어붙인 문자열을 의존성으로 씁니다.** 호출부가
+  // `filtered.map(...)`처럼 매번 새 배열을 넘기면 내용이 같아도 다른 값으로 취급돼,
+  // 화면이 리렌더될 때마다 지도가 원래 위치로 튕겨 돌아갑니다.
+  const pointsKey =
+    programs.map((p) => `${p.id}:${p.location.lat},${p.location.lng}`).join("|") +
+    (myLocation ? `@${myLocation.lat},${myLocation.lng}` : "");
+
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    const points: LatLng[] = programs.map((p) => p.location);
+    if (myLocation) points.push(myLocation);
+
+    if (points.length > 1) {
+      const bounds = new maps.LatLngBounds();
+      points.forEach((pt) => bounds.extend(new maps.LatLng(pt.lat, pt.lng)));
+      map.setBounds(bounds);
+    } else if (points.length === 1) {
+      map.setCenter(new maps.LatLng(points[0].lat, points[0].lng));
+      map.setLevel(LEVEL_SINGLE);
+    }
+    // programs·myLocation은 위 pointsKey가 대표합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointsKey, status]);
+
+  // 선택한 프로그램의 카드를 그 지점 위에 띄웁니다.
+  //
+  // 마커를 다시 그릴 때마다 오버레이를 만들지 않고 **카드는 따로 관리**합니다 —
+  // 같이 두면 핀 하나 바뀔 때마다 카드가 사라졌다 다시 뜹니다.
+  // 다른 핀을 누르면 selectedId가 바뀌므로 **열려 있던 카드는 자동으로 닫힙니다.**
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map || !cardHost) return;
+
+    cardOverlayRef.current?.setMap(null);
+    cardOverlayRef.current = null;
+
+    if (!selectedProgram) return;
+
+    const position = new maps.LatLng(
+      selectedProgram.location.lat,
+      selectedProgram.location.lng
+    );
+
+    // 가장자리 핀을 누르면 카드가 지도 밖으로 잘립니다 — 고른 지점을 가운데로 옮깁니다.
+    map.panTo(position);
+
+    const overlay = new maps.CustomOverlay({
+      position,
+      content: cardHost,
+      // 카드 아래 끝을 좌표에 맞춥니다. 카드 안쪽 아래 여백(pb-11)이 핀 자리입니다.
+      yAnchor: 1,
+      // 핀(1~2)보다 위에 있어야 다른 핀에 가리지 않습니다.
+      zIndex: 10,
+      // 카드 안에서 드래그·클릭할 때 지도가 따라 움직이지 않게 합니다.
+      clickable: true,
+    });
+    overlay.setMap(map);
+    cardOverlayRef.current = overlay;
+
+    return () => {
+      overlay.setMap(null);
+      cardOverlayRef.current = null;
+    };
+  }, [selectedProgram, cardHost, status]);
 
   // 「내 위치」로 이동.
   //
@@ -343,6 +414,21 @@ export default function ProgramMap({
           </button>
         </div>
       )}
+
+      {/* 카드는 지도 위(CustomOverlay 안)에 그려집니다 — 이 자리에는 자국만 남습니다 */}
+      {cardHost &&
+        selectedProgram &&
+        createPortal(
+          <ProgramMapCard
+            key={selectedProgram.id}
+            program={selectedProgram}
+            distanceKm={
+              myLocation ? distanceKm(myLocation, selectedProgram.location) : null
+            }
+            onClose={() => onSelect?.(null)}
+          />,
+          cardHost
+        )}
 
       {geoMessage && (
         <p className="absolute inset-x-3 bottom-3 z-10 rounded-lg bg-background/95 px-3 py-2 text-xs leading-relaxed shadow-sm">

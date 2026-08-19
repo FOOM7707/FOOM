@@ -29,6 +29,8 @@ export interface KakaoMapInstance {
   /** 카카오는 숫자가 **작을수록** 확대입니다(1=20m, 14=전국) — Leaflet과 반대 */
   setLevel(level: number, options?: { animate?: boolean }): void;
   setBounds(bounds: KakaoLatLngBounds): void;
+  /** 부드럽게 이동. 거리가 멀면 카카오가 알아서 즉시 이동으로 바꿉니다 */
+  panTo(latlng: KakaoLatLng): void;
   relayout(): void;
 }
 

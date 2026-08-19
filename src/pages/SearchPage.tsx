@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { X } from "lucide-react";
 import { mockPrograms } from "../mocks/programs";
 import { CATEGORIES, type Category } from "../types/firestore";
 import ProgramCard from "../components/ProgramCard";
@@ -60,9 +59,6 @@ export default function SearchPage() {
 
   const needsLocation = sort === "가까운거리순" && !position;
 
-  // 지도에서 고른 프로그램. **`filtered`에서 찾습니다** — 필터를 바꿔 목록에서
-  // 빠지면 지도에도 핀이 없으므로, 남아 있던 카드가 저절로 사라집니다.
-  const selected = filtered.find((r) => r.program.id === selectedId) ?? null;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8 pb-16">
@@ -188,46 +184,12 @@ export default function SearchPage() {
       )}
 
       {view === "map" ? (
-        <div className="space-y-3">
-          <ProgramMap
-            programs={filtered.map((r) => r.program)}
-            userLocation={position}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-
-          {/* 핀을 누르면 여기에 카드가 뜹니다. 목록형과 **같은 카드**를 씁니다 —
-              지도에서 고른 것과 목록에서 본 것이 다르게 생기면 같은 프로그램인지
-              한 번 더 확인하게 됩니다.
-
-              선택 전에도 이 자리를 비워두고 안내 문구를 둡니다. 카드가 나타날 때
-              지도가 밀려 올라가면 방금 누른 핀이 화면 밖으로 나가버립니다. */}
-          {selected ? (
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-semibold">선택한 프로그램</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(null)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  선택 해제
-                </button>
-              </div>
-              <div className="w-full max-w-[280px]">
-                <ProgramCard
-                  program={selected.program}
-                  distanceKm={selected.distance}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="rounded-lg bg-secondary px-3.5 py-2.5 text-[12.5px] text-secondary-foreground">
-              지도에서 핀을 누르면 여기에 프로그램이 표시됩니다.
-            </p>
-          )}
-        </div>
+        <ProgramMap
+          programs={filtered.map((r) => r.program)}
+          userLocation={position}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[18px]">
           {filtered.map(({ program, distance }) => (
