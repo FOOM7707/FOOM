@@ -1,22 +1,27 @@
-import { useEffect, useRef } from "react";
-import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useRef, useState } from "react";
 import type { Program } from "@/types/firestore";
 import { DEFAULT_CENTER, type LatLng } from "@/lib/geo";
+import {
+  loadKakaoMaps,
+  type KakaoCustomOverlay,
+  type KakaoMapInstance,
+  type KakaoMaps,
+} from "@/lib/kakaoMap";
 import { cn } from "@/lib/utils";
 
 /**
- * 지도 컴포넌트 (프로토타입 — Leaflet + OpenStreetMap).
+ * 지도 컴포넌트 (카카오맵).
  *
- * ⚠️ 교체 예정: 벤더 선정 문서 2번에 따라 최종 지도는 **카카오맵**입니다.
- * 카카오 개발자센터 앱 등록(JavaScript 키 발급) 전이라 키가 필요 없는
- * Leaflet+OSM으로 먼저 만들었습니다.
+ * 이전에는 Leaflet+OpenStreetMap 프로토타입이었습니다 — 카카오 개발자센터 앱 등록
+ * 전이라 키가 필요 없는 쪽으로 먼저 만들어뒀던 것이고, props를 고정해둔 덕에
+ * 호출부(검색·상세) 수정 없이 이 파일만 교체했습니다.
  *
- * TODO(연동): 카카오맵으로 교체할 때 **이 파일만** 바꾸면 되도록 설계했습니다.
- *   - 아래 props(programs / center / selectedId / onSelect / userLocation)를 그대로 유지하고
- *     내부 구현만 `kakao.maps.Map` + `kakao.maps.Marker`로 바꾸면 호출부는 수정 불필요.
- *   - index.html에 `//dapi.kakao.com/v2/maps/sdk.js?appkey=...&autoload=false` 스크립트 추가 필요.
- *   - 키는 반드시 환경변수(VITE_KAKAO_MAP_KEY)로 주입하고, 카카오 콘솔에서 도메인 제한을 걸어야 합니다.
+ * **줌 단위가 Leaflet과 반대입니다.** Leaflet은 숫자가 클수록 확대(zoom 18 = 코앞),
+ * 카카오는 숫자가 **작을수록** 확대(level 1 = 20m, level 14 = 전국)입니다. 옛 zoom 값을
+ * 그대로 옮기면 전국 지도를 보여주려다 골목이 뜹니다.
+ *
+ * 키가 없거나 도메인이 등록되지 않으면 지도 대신 안내 문구가 뜹니다 — 화면이
+ * 깨지지는 않습니다(날씨 위젯과 같은 처리, 16-4).
  */
 interface Props {
   programs: Program[];
@@ -29,36 +34,38 @@ interface Props {
   className?: string;
 }
 
-/** 기본 마커 이미지는 번들러에서 경로가 깨지므로 divIcon으로 직접 그립니다 */
-function pinIcon(label: string, active: boolean) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="
-      transform: translate(-50%, -100%);
-      white-space: nowrap;
-      background: ${active ? "#163F2E" : "#1F5C43"};
-      color: #fff;
-      font: 600 12px/1 Pretendard, 'Apple SD Gothic Neo', sans-serif;
-      padding: 6px 9px;
-      border-radius: 100px;
-      border: 2px solid #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,.25);
-    ">${label}</div>`,
-    iconSize: [0, 0],
-  });
+/** 여러 지점을 함께 볼 때(검색 목록) — 4km 축척 */
+const LEVEL_OVERVIEW = 9;
+/** 한 지점만 볼 때(상세) — 1km 축척 */
+const LEVEL_SINGLE = 7;
+
+/** 가격 핀. CustomOverlay는 HTML을 그대로 얹으므로 마커 이미지를 만들 필요가 없습니다. */
+function pinElement(label: string, active: boolean, onClick?: () => void): HTMLElement {
+  const el = document.createElement("div");
+  el.textContent = label;
+  el.style.cssText = `
+    white-space: nowrap;
+    background: ${active ? "#163F2E" : "#1F5C43"};
+    color: #fff;
+    font: 600 12px/1 Pretendard, 'Apple SD Gothic Neo', sans-serif;
+    padding: 6px 9px;
+    border-radius: 100px;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    cursor: ${onClick ? "pointer" : "default"};
+  `;
+  if (onClick) el.addEventListener("click", onClick);
+  return el;
 }
 
-function userIcon() {
-  return L.divIcon({
-    className: "",
-    html: `<div style="
-      transform: translate(-50%, -50%);
-      width: 16px; height: 16px; border-radius: 50%;
-      background: #2563eb; border: 3px solid #fff;
-      box-shadow: 0 0 0 6px rgba(37,99,235,.22);
-    "></div>`,
-    iconSize: [0, 0],
-  });
+function userElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.style.cssText = `
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #2563eb; border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(37,99,235,.22);
+  `;
+  return el;
 }
 
 export default function ProgramMap({
@@ -70,32 +77,40 @@ export default function ProgramMap({
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerLayerRef = useRef<L.LayerGroup | null>(null);
+  const mapsRef = useRef<KakaoMaps | null>(null);
+  const mapRef = useRef<KakaoMapInstance | null>(null);
+  const overlaysRef = useRef<KakaoCustomOverlay[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
-  // 지도 인스턴스 1회 생성
+  // SDK 로드 + 지도 인스턴스 1회 생성
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
 
-    const initial = center ?? (programs[0] ? programs[0].location : DEFAULT_CENTER);
-    const map = L.map(containerRef.current, {
-      center: [initial.lat, initial.lng],
-      zoom: 9,
-      scrollWheelZoom: false,
-    });
+    loadKakaoMaps()
+      .then((maps) => {
+        if (cancelled || !containerRef.current || mapRef.current) return;
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "© OpenStreetMap 기여자 | 프로토타입(최종 지도는 카카오맵으로 교체 예정)",
-    }).addTo(map);
-
-    markerLayerRef.current = L.layerGroup().addTo(map);
-    mapRef.current = map;
+        const initial = center ?? programs[0]?.location ?? DEFAULT_CENTER;
+        mapRef.current = new maps.Map(containerRef.current, {
+          center: new maps.LatLng(initial.lat, initial.lng),
+          level: LEVEL_OVERVIEW,
+          // 페이지를 스크롤하다 지도 위에서 확대돼 버리는 것을 막습니다(Leaflet 때와 동일).
+          scrollwheel: false,
+        });
+        mapsRef.current = maps;
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("unavailable");
+      });
 
     return () => {
-      map.remove();
+      cancelled = true;
+      // 카카오맵에는 Leaflet의 map.remove()에 해당하는 정리 함수가 없습니다.
+      // 컨테이너 DOM이 사라지면 지도도 함께 정리되므로 오버레이만 떼어냅니다.
+      overlaysRef.current.forEach((o) => o.setMap(null));
+      overlaysRef.current = [];
       mapRef.current = null;
-      markerLayerRef.current = null;
     };
     // 최초 1회만 — center/programs 변경은 아래 effect에서 처리
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,50 +118,80 @@ export default function ProgramMap({
 
   // 마커 갱신
   useEffect(() => {
+    const maps = mapsRef.current;
     const map = mapRef.current;
-    const layer = markerLayerRef.current;
-    if (!map || !layer) return;
+    if (!maps || !map) return;
 
-    layer.clearLayers();
+    overlaysRef.current.forEach((o) => o.setMap(null));
+    overlaysRef.current = [];
+
+    const bounds = new maps.LatLngBounds();
+    let points = 0;
+    let last = null as { lat: number; lng: number } | null;
 
     programs.forEach((p) => {
-      const marker = L.marker([p.location.lat, p.location.lng], {
-        icon: pinIcon(`${p.price.toLocaleString()}원`, p.id === selectedId),
+      const position = new maps.LatLng(p.location.lat, p.location.lng);
+      const overlay = new maps.CustomOverlay({
+        position,
+        content: pinElement(
+          `${p.price.toLocaleString()}원`,
+          p.id === selectedId,
+          onSelect ? () => onSelect(p.id) : undefined
+        ),
+        // 핀 아래 끝이 좌표를 가리키게 합니다(기본값은 가운데).
+        yAnchor: 1,
+        clickable: true,
+        zIndex: p.id === selectedId ? 2 : 1,
       });
-      marker.bindPopup(
-        `<div style="min-width:150px">
-           <strong style="font-size:13px">${p.title}</strong><br/>
-           <span style="font-size:12px;color:#6b7a72">${p.location.address}</span>
-         </div>`
-      );
-      if (onSelect) marker.on("click", () => onSelect(p.id));
-      marker.addTo(layer);
+      overlay.setMap(map);
+      overlaysRef.current.push(overlay);
+      bounds.extend(position);
+      points += 1;
+      last = p.location;
     });
 
     if (userLocation) {
-      L.marker([userLocation.lat, userLocation.lng], { icon: userIcon() })
-        .bindPopup("현재위치")
-        .addTo(layer);
+      const position = new maps.LatLng(userLocation.lat, userLocation.lng);
+      const overlay = new maps.CustomOverlay({ position, content: userElement() });
+      overlay.setMap(map);
+      overlaysRef.current.push(overlay);
+      bounds.extend(position);
+      points += 1;
+      last = userLocation;
     }
 
-    // 표시할 지점이 2개 이상이면 전부 보이도록 화면을 맞춥니다
-    const points: L.LatLngExpression[] = programs.map((p) => [
-      p.location.lat,
-      p.location.lng,
-    ]);
-    if (userLocation) points.push([userLocation.lat, userLocation.lng]);
-    if (points.length > 1) {
-      map.fitBounds(L.latLngBounds(points).pad(0.25));
-    } else if (points.length === 1) {
-      map.setView(points[0], 11);
+    // 표시할 지점이 2개 이상이면 전부 보이도록 화면을 맞춥니다.
+    if (points > 1) {
+      map.setBounds(bounds);
+    } else if (points === 1 && last) {
+      map.setCenter(new maps.LatLng(last.lat, last.lng));
+      map.setLevel(LEVEL_SINGLE);
     }
-  }, [programs, selectedId, onSelect, userLocation]);
+  }, [programs, selectedId, onSelect, userLocation, status]);
 
-  // 부모가 토글로 숨겼다 보여줄 때 타일이 회색으로 남는 문제 방지
+  // 부모가 토글로 숨겼다 보여줄 때 지도가 회색으로 남는 문제 방지
+  // (Leaflet의 invalidateSize에 해당합니다)
   useEffect(() => {
-    const id = window.setTimeout(() => mapRef.current?.invalidateSize(), 80);
+    const id = window.setTimeout(() => mapRef.current?.relayout(), 80);
     return () => window.clearTimeout(id);
   });
+
+  if (status === "unavailable") {
+    return (
+      <div
+        className={cn(
+          "flex h-[440px] w-full items-center justify-center rounded-xl border bg-muted px-6 text-center",
+          className
+        )}
+      >
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          지도를 불러오지 못했습니다.
+          <br />
+          주소는 위에 표시된 내용으로 확인해 주세요.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div

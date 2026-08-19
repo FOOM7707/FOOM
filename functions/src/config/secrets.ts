@@ -34,8 +34,24 @@ export const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
  */
 export const KMA_SERVICE_KEY = defineSecret("KMA_SERVICE_KEY");
 
+/**
+ * 카카오 REST API 키 — 서버 전용.
+ *
+ * 쓰는 곳은 두 군데입니다. ① 주소·장소 검색(지오코딩, `GET /external/kakao-map/search`)
+ * ② 카카오 로그인 토큰 교환(비즈앱 심사 통과 후).
+ *
+ * ⚠️ **카카오가 주는 키 4종 중 어느 것인지 반드시 구분하세요.**
+ *    - **REST API 키** ← 이 값. `Authorization: KakaoAK {키}` 헤더로 서버가 씁니다
+ *    - JavaScript 키 — 프론트(`.env`의 `VITE_KAKAO_MAP_KEY`). 지도 SDK가 브라우저에서
+ *      직접 쓰므로 공개돼도 되는 값이고, 도메인 제한이 실제 방어선입니다
+ *    - 네이티브 앱 키 — Android/iOS 전용. 쓰지 않습니다
+ *    - **어드민 키 — 앱 전권 키라 어디에도 넣지 않습니다.** 회원 강제 탈퇴까지 가능하고
+ *      유출되면 되돌릴 수 없습니다
+ */
+export const KAKAO_REST_API_KEY = defineSecret("KAKAO_REST_API_KEY");
+
 /** 함수에 바인딩할 시크릿 목록. onRequest 옵션에 그대로 넘깁니다. */
-export const RUNTIME_SECRETS = [NAVER_CLIENT_SECRET, KMA_SERVICE_KEY];
+export const RUNTIME_SECRETS = [NAVER_CLIENT_SECRET, KMA_SERVICE_KEY, KAKAO_REST_API_KEY];
 
 interface SecretLike {
   value(): string;
@@ -83,5 +99,6 @@ export function configStatus(): Record<string, ConfigState> {
     NAVER_CLIENT_ID: stateOf(NAVER_CLIENT_ID),
     NAVER_CLIENT_SECRET: stateOf(NAVER_CLIENT_SECRET),
     KMA_SERVICE_KEY: stateOf(KMA_SERVICE_KEY),
+    KAKAO_REST_API_KEY: stateOf(KAKAO_REST_API_KEY),
   };
 }
