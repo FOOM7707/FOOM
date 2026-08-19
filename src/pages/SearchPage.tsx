@@ -1,14 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { mockPrograms } from "../mocks/programs";
 import { CATEGORIES, type Category } from "../types/firestore";
 import ProgramCard from "../components/ProgramCard";
 import ProgramMap from "../components/ProgramMap";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { REGIONS, distanceKm, regionOfAddress, type Region } from "@/lib/geo";
+import {
+  REGIONS,
+  distanceKm,
+  regionOfAddress,
+  type LatLng,
+  type Region,
+} from "@/lib/geo";
 
 type SortKey = "인기순" | "낮은가격순" | "가까운거리순";
 const SORTS: SortKey[] = ["인기순", "낮은가격순", "가까운거리순"];
@@ -28,7 +33,19 @@ export default function SearchPage() {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { position, status, request, clear } = useCurrentLocation();
+  // 위치를 묻는 버튼은 두지 않습니다. 물어보는 시점이 두 곳뿐이라 버튼이 없어도
+  // 됩니다 — ① 「가까운거리순」을 고를 때(정렬 기준이 위치라 없으면 정렬이 안 됩니다)
+  // ② 지도의 📍 버튼을 누를 때.
+  const { position: askedPosition, status, request } = useCurrentLocation();
+  /** 지도의 📍로 받아온 위치. 목록의 거리 표시도 이 값을 함께 씁니다 */
+  const [mapPosition, setMapPosition] = useState<LatLng | null>(null);
+  const position = askedPosition ?? mapPosition;
+
+  // 「가까운거리순」을 고르면 그때 위치를 물어봅니다. 버튼을 따로 누르게 하면
+  // 정렬을 골라놓고 "왜 순서가 그대로지"가 됩니다.
+  useEffect(() => {
+    if (sort === "가까운거리순" && !position && status === "idle") request();
+  }, [sort, position, status, request]);
 
   const filtered = useMemo(() => {
     const rows = mockPrograms
@@ -57,7 +74,6 @@ export default function SearchPage() {
     return rows;
   }, [category, keyword, region, sort, position]);
 
-  const needsLocation = sort === "가까운거리순" && !position;
 
 
   return (
@@ -86,22 +102,6 @@ export default function SearchPage() {
               </option>
             ))}
           </select>
-
-          {/* 현재위치 (Geolocation) */}
-          {position ? (
-            <Button variant="secondary" size="default" onClick={clear}>
-              📍 현재위치 사용중 · 해제
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="default"
-              onClick={request}
-              disabled={status === "loading"}
-            >
-              {status === "loading" ? "위치 확인 중…" : "📍 내 현재위치"}
-            </Button>
-          )}
         </div>
 
         {status === "denied" && (
@@ -177,16 +177,11 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {needsLocation && (
-        <p className="mb-4 rounded-lg bg-secondary px-3.5 py-2.5 text-[12.5px] text-secondary-foreground">
-          가까운거리순으로 보려면 「📍 내 현재위치」를 눌러 위치를 허용해 주세요.
-        </p>
-      )}
-
       {view === "map" ? (
         <ProgramMap
           programs={filtered.map((r) => r.program)}
           userLocation={position}
+          onLocate={setMapPosition}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />

@@ -36,6 +36,8 @@ interface Props {
   onSelect?: (programId: string | null) => void;
   /** 현재위치 표시용 */
   userLocation?: LatLng | null;
+  /** 지도의 📍로 위치를 받아왔을 때 알려줍니다 — 목록 쪽 거리 표시와 값을 맞추기 위함 */
+  onLocate?: (position: LatLng) => void;
   className?: string;
 }
 
@@ -82,6 +84,7 @@ export default function ProgramMap({
   selectedId,
   onSelect,
   userLocation,
+  onLocate,
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -133,9 +136,14 @@ export default function ProgramMap({
     requestLocation();
   }
 
-  // 위치를 새로 받아온 순간 그 자리로 옮깁니다.
+  // 위치를 새로 받아온 순간 그 자리로 옮기고, 부모에게도 알려줍니다.
   useEffect(() => {
-    if (ownPosition) setFocus({ point: ownPosition });
+    if (!ownPosition) return;
+    setFocus({ point: ownPosition });
+    onLocate?.(ownPosition);
+    // onLocate는 호출부에서 매번 새 함수일 수 있어 의존성에 넣지 않습니다 —
+    // 넣으면 위치가 그대로인데도 지도가 계속 그 자리로 돌아갑니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownPosition]);
 
   // SDK 로드 + 지도 인스턴스 1회 생성
