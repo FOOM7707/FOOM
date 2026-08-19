@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { X } from "lucide-react";
 import { mockPrograms } from "../mocks/programs";
 import { CATEGORIES, type Category } from "../types/firestore";
 import ProgramCard from "../components/ProgramCard";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { REGIONS, distanceKm, regionOfAddress, type Region } from "@/lib/geo";
+import { REGIONS, distanceKm, formatDistance, regionOfAddress, type Region } from "@/lib/geo";
 
 type SortKey = "인기순" | "낮은가격순" | "가까운거리순";
 const SORTS: SortKey[] = ["인기순", "낮은가격순", "가까운거리순"];
@@ -58,6 +59,10 @@ export default function SearchPage() {
   }, [category, keyword, region, sort, position]);
 
   const needsLocation = sort === "가까운거리순" && !position;
+
+  // 지도에서 고른 프로그램. **`filtered`에서 찾습니다** — 필터를 바꿔 목록에서
+  // 빠지면 지도에도 핀이 없으므로, 남아 있던 카드가 저절로 사라집니다.
+  const selected = filtered.find((r) => r.program.id === selectedId) ?? null;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8 pb-16">
@@ -183,13 +188,61 @@ export default function SearchPage() {
       )}
 
       {view === "map" ? (
-        <div className="space-y-3">
+        <div className="relative">
           <ProgramMap
             programs={filtered.map((r) => r.program)}
             userLocation={position}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
+
+          {/* 핀을 누르면 그 프로그램이 지도 아래에 뜹니다.
+              누르기만 하고 아무것도 안 뜨면 "눌리지 않는다"로 읽힙니다 —
+              핀 색만 바뀌는 것은 사용자에게 피드백이 되지 못합니다. */}
+          {selected && (
+            <div className="absolute inset-x-3 bottom-3 z-10">
+              <Link
+                to={`/programs/${selected.program.id}`}
+                className="flex items-center gap-3 rounded-xl border bg-background p-3 pr-9 shadow-lg transition-shadow hover:shadow-xl"
+              >
+                <div
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-secondary text-[11px] font-bold text-secondary-foreground"
+                  aria-hidden
+                >
+                  {selected.program.category}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-sm font-semibold">
+                    {selected.program.title}
+                  </h3>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {selected.program.location.address}
+                    {typeof selected.distance === "number" && (
+                      <span className="ml-1.5 font-semibold text-primary">
+                        {formatDistance(selected.distance)}
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold text-secondary-foreground">
+                    {selected.program.price.toLocaleString()}원
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-semibold text-primary">
+                  자세히 →
+                </span>
+              </Link>
+
+              {/* 링크 안에 두면 닫으려다 상세로 넘어갑니다 — 형제로 둡니다 */}
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                aria-label="닫기"
+                className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[18px]">
