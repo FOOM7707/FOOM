@@ -94,8 +94,13 @@ export default function ProgramMap({
         mapRef.current = new maps.Map(containerRef.current, {
           center: new maps.LatLng(initial.lat, initial.lng),
           level: LEVEL_OVERVIEW,
-          // 페이지를 스크롤하다 지도 위에서 확대돼 버리는 것을 막습니다(Leaflet 때와 동일).
-          scrollwheel: false,
+          // 마우스 휠로 확대·축소합니다. 지도에서 기대되는 기본 동작이라 켜뒀습니다.
+          //
+          // 대가가 하나 있습니다 — 페이지를 스크롤하다 커서가 지도 위를 지나면
+          // 스크롤 대신 지도가 확대됩니다. 상세 화면처럼 지도가 본문 중간에
+          // 얇게 들어간 자리에서 걸리는데, 그게 거슬리면 「Ctrl+휠일 때만 확대」로
+          // 바꾸면 됩니다(구글 지도 임베드가 쓰는 방식).
+          scrollwheel: true,
         });
         mapsRef.current = maps;
         setStatus("ready");
@@ -169,11 +174,38 @@ export default function ProgramMap({
     }
   }, [programs, selectedId, onSelect, userLocation, status]);
 
-  // 부모가 토글로 숨겼다 보여줄 때 지도가 회색으로 남는 문제 방지
-  // (Leaflet의 invalidateSize에 해당합니다)
+  // 컨테이너 크기가 바뀌면 지도에 알려줘야 합니다 — 안 하면 남는 자리가 회색으로
+  // 비거나 타일이 잘린 채로 있습니다(Leaflet의 invalidateSize에 해당).
+  //
+  // 두 경우를 함께 처리합니다.
+  //  ① 부모가 토글로 숨겼다 다시 보여줄 때 → 렌더마다 한 번 (아래 setTimeout)
+  //  ② 창 크기가 바뀔 때 → resize 이벤트. 리렌더가 없어 ①만으로는 안 잡힙니다
+  //
+  // relayout()은 중심을 흔들어놓기도 해서, 직전 중심을 기억했다가 되돌립니다.
   useEffect(() => {
-    const id = window.setTimeout(() => mapRef.current?.relayout(), 80);
-    return () => window.clearTimeout(id);
+    function relayout() {
+      const map = mapRef.current;
+      if (!map) return;
+      const center = map.getCenter();
+      map.relayout();
+      map.setCenter(center);
+    }
+
+    const initial = window.setTimeout(relayout, 80);
+
+    // 크기 변경 중에는 이벤트가 연달아 오므로 마지막 한 번만 반영합니다.
+    let pending = 0;
+    function onResize() {
+      window.clearTimeout(pending);
+      pending = window.setTimeout(relayout, 150);
+    }
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.clearTimeout(initial);
+      window.clearTimeout(pending);
+      window.removeEventListener("resize", onResize);
+    };
   });
 
   if (status === "unavailable") {

@@ -23,6 +23,7 @@ export interface KakaoLatLngBounds {
 }
 
 export interface KakaoMapInstance {
+  getCenter(): KakaoLatLng;
   setCenter(latlng: KakaoLatLng): void;
   setLevel(level: number): void;
   setBounds(bounds: KakaoLatLngBounds): void;
