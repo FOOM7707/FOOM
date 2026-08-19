@@ -14,6 +14,18 @@
  *
  * 참고한 시안의 보라색 강조는 쓰지 않았습니다 — 브랜드 컬러는 `#1F5C43`(포레스트
  * 그린)이고 shadcn `--primary`에 매핑돼 있습니다(9-5).
+ *
+ * **크기는 시안 값을 그대로 씁니다.** 처음엔 다른 화면(`max-w-6xl`)에 맞춰 20~25%
+ * 줄였는데, 그러면 시안의 매거진 같은 느낌이 사라집니다 — 이 화면은 큰 사진과 큰
+ * 글자가 설득의 수단입니다. 기준값:
+ *
+ *   컨테이너 1440px · 좌우여백 40px
+ *   히어로 제목 72px (자간 -3px) · 히어로 사진 높이 520px · 배지 120px
+ *   지그재그 사진 560px · 제목 51px · 본문 20px · 라벨 17px
+ *   행 간격 160px · 열 간격 80px · 사진:글 = 1.2 : 0.8
+ *
+ * 다른 화면보다 넓은 것은 의도한 것입니다. 좁히면 사진이 작아지고, 사진이 작아지면
+ * 이 구성은 성립하지 않습니다.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -228,11 +240,11 @@ function FeatureRow({
   return (
     <div
       ref={ref}
-      className="grid items-center gap-8 md:gap-14 lg:grid-cols-[1.15fr_0.85fr]"
+      className="grid items-center gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:gap-[80px]"
     >
       <div
         className={cn(
-          "overflow-hidden rounded-[28px] shadow-[0_18px_40px_rgba(0,0,0,.10)]",
+          "overflow-hidden rounded-[36px] shadow-[0_24px_48px_rgba(0,0,0,.08)]",
           // 사진과 글의 좌우를 번갈아 놓습니다. 모바일에서는 사진이 항상 위입니다.
           flipped && "lg:order-2"
         )}
@@ -241,17 +253,17 @@ function FeatureRow({
           src={feature.photo}
           alt={feature.alt}
           loading="lazy"
-          className="h-[280px] w-full object-cover transition-transform duration-500 hover:scale-[1.02] md:h-[420px] lg:h-[500px]"
+          className="h-[340px] w-full object-cover transition-transform duration-500 hover:scale-[1.015] md:h-[440px] lg:h-[560px]"
         />
       </div>
 
       <div className={cn(flipped && "lg:order-1")}>
-        <p className="mb-3.5 text-[13px] font-extrabold tracking-[0.14em] text-primary">
+        <p className="mb-5 text-[15px] font-black tracking-[2px] text-primary md:text-[17px]">
           {feature.label}
         </p>
         <h3
           className={cn(
-            "whitespace-pre-line break-keep text-[28px] font-extrabold leading-[1.2] tracking-tight md:text-[40px]",
+            "whitespace-pre-line break-keep text-[32px] font-black leading-[1.2] tracking-[-1px] md:text-[51px] md:tracking-[-2px]",
             // 나타나는 효과 — 위 useReveal이 켜줍니다.
             "transition-all duration-700 ease-out",
             shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[0.94] opacity-0"
@@ -259,7 +271,7 @@ function FeatureRow({
         >
           {feature.title}
         </h3>
-        <p className="mt-5 break-keep text-[15px] leading-relaxed text-muted-foreground md:text-[17px]">
+        <p className="mt-7 break-keep text-[17px] leading-[1.6] text-muted-foreground md:text-[20px]">
           {feature.body}
         </p>
       </div>
@@ -269,16 +281,16 @@ function FeatureRow({
 
 export default function ProviderApplyPage() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 pb-24 pt-8 md:px-8">
+    <div className="mx-auto w-full max-w-[1440px] px-6 pb-[120px] pt-8 md:px-10">
       {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section className="grid items-center gap-10 md:gap-14 lg:grid-cols-2">
+      <section className="grid items-center gap-12 pb-[100px] pt-[60px] lg:grid-cols-2 lg:gap-[60px]">
         <div>
-          <h1 className="break-keep text-[38px] font-extrabold leading-[1.12] tracking-[-0.03em] md:text-[58px]">
+          <h1 className="break-keep text-[44px] font-black leading-[1.1] tracking-[-2px] md:text-[72px] md:tracking-[-3px]">
             좋아하는 숲에서,
             <br />
             걱정 없이 하세요.
           </h1>
-          <p className="mt-6 max-w-md break-keep text-[15px] leading-relaxed text-muted-foreground md:text-[17px]">
+          <p className="mt-7 max-w-lg break-keep text-[17px] leading-relaxed text-muted-foreground md:text-[19px]">
             품(FOOM)은 산림복지전문가와 지역 주민을 잇습니다. 프로그램을 여는 일에만
             집중하시도록 모집·결제·안내를 대신 맡습니다.
           </p>
@@ -289,7 +301,7 @@ export default function ProviderApplyPage() {
               기본 1초는 너무 빨라 시선을 계속 잡아채므로 24초로 늘렸고,
               움직임을 줄이는 설정을 켠 사용자에게는 멈춥니다. */}
           <div
-            className="mt-9 flex size-[104px] animate-spin items-center justify-center rounded-full border text-[28px] [animation-duration:24s] motion-reduce:animate-none"
+            className="mt-[30px] flex size-[120px] animate-spin items-center justify-center rounded-full border text-[32px] [animation-duration:24s] motion-reduce:animate-none"
             aria-hidden
           >
             🌲
@@ -300,13 +312,13 @@ export default function ProviderApplyPage() {
           <img
             src={PHOTOS.hero}
             alt="빛이 드는 숲길"
-            className="h-[320px] w-full object-cover shadow-[0_20px_44px_rgba(0,0,0,.10)] md:h-[500px]"
+            className="h-[360px] w-full object-cover shadow-[0_20px_40px_rgba(0,0,0,.08)] md:h-[520px]"
             /* 시안의 비대칭 모서리 — 오른쪽 위만 크게 굴려 사진에 방향감을 줍니다 */
             style={{ borderRadius: "36px 140px 36px 36px" }}
           />
-          <p className="mt-5 text-[17px] font-extrabold">
+          <p className="mt-5 text-[20px] font-extrabold">
             당신의 산림 재능을 마음껏 펼치세요.
-            <span className="mt-1.5 block text-[15px] font-normal text-muted-foreground">
+            <span className="mt-1.5 block text-[17px] font-normal text-muted-foreground">
               예약 관리와 정산은 품이 맡습니다.
             </span>
           </p>
@@ -314,30 +326,30 @@ export default function ProviderApplyPage() {
       </section>
 
       {/* ── 지그재그 소개 ─────────────────────────────────────────────── */}
-      <section className="mt-24 flex flex-col gap-24 border-t pt-24 md:gap-32">
+      <section className="flex flex-col gap-[100px] border-t py-[100px] lg:gap-[160px]">
         {FEATURES.map((feature, i) => (
           <FeatureRow key={feature.label} feature={feature} flipped={i % 2 === 1} />
         ))}
       </section>
 
       {/* ── 등록 절차 ────────────────────────────────────────────────── */}
-      <section className="mt-24 border-t pt-16">
-        <h2 className="break-keep text-[26px] font-extrabold tracking-tight md:text-[34px]">
+      <section className="border-t pt-[100px]">
+        <h2 className="break-keep text-[32px] font-black tracking-[-1px] md:text-[44px] md:tracking-[-2px]">
           등록은 네 단계입니다
         </h2>
-        <p className="mt-3 break-keep text-[14px] leading-relaxed text-muted-foreground md:text-[15px]">
+        <p className="mt-5 max-w-2xl break-keep text-[16px] leading-relaxed text-muted-foreground md:text-[18px]">
           참가자 안전과 프로그램 품질이 걸린 부분이라 자격증을 운영자가 직접 확인합니다.
           자동 승인은 없습니다.
         </p>
 
-        <ol className="mt-9 grid gap-4 sm:grid-cols-2">
+        <ol className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="rounded-2xl border p-5">
-              <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[13px] font-bold text-primary-foreground">
+            <li key={step.title} className="rounded-3xl border p-7">
+              <span className="flex size-9 items-center justify-center rounded-full bg-primary text-[15px] font-bold text-primary-foreground">
                 {i + 1}
               </span>
-              <p className="mt-3 font-semibold">{step.title}</p>
-              <p className="mt-1.5 break-keep text-[13px] leading-relaxed text-muted-foreground">
+              <p className="mt-4 text-[18px] font-bold">{step.title}</p>
+              <p className="mt-2 break-keep text-[14.5px] leading-relaxed text-muted-foreground">
                 {step.body}
               </p>
             </li>
@@ -349,34 +361,34 @@ export default function ProviderApplyPage() {
           시안에는 「호스트 등록 시작하기」 버튼이 있었지만 **신청 폼을 열지
           않았습니다**(15-9). 누르면 아무 일도 없는 버튼은 고장으로 읽히므로,
           그 자리에 현재 상태와 문의 안내를 둡니다. */}
-      <section className="mt-16 rounded-3xl bg-secondary px-6 py-10 md:px-10">
-        <h2 className="break-keep text-center text-[24px] font-extrabold tracking-tight md:text-[30px]">
+      <section className="mt-[100px] rounded-[36px] bg-secondary px-6 py-[60px] md:px-12">
+        <h2 className="break-keep text-center text-[30px] font-black tracking-[-1px] md:text-[40px] md:tracking-[-2px]">
           시작해 보시겠어요?
         </h2>
-        <div className="mx-auto mt-7 max-w-xl">
+        <div className="mx-auto mt-9 max-w-xl">
           <StatusPanel />
         </div>
       </section>
 
       {/* ── 자주 묻는 것 ─────────────────────────────────────────────── */}
-      <section className="mt-20">
-        <h2 className="text-[20px] font-bold">자주 묻는 것</h2>
-        <dl className="mt-5 grid gap-6 text-[13.5px] leading-relaxed md:grid-cols-3">
+      <section className="mt-[100px]">
+        <h2 className="text-[24px] font-extrabold tracking-tight">자주 묻는 것</h2>
+        <dl className="mt-7 grid gap-8 text-[15px] leading-relaxed md:grid-cols-3">
           <div>
-            <dt className="font-semibold">수수료는 얼마인가요?</dt>
+            <dt className="text-[17px] font-bold">수수료는 얼마인가요?</dt>
             <dd className="mt-1 break-keep text-muted-foreground">
               결제액의 10%입니다. 정산 시 사업소득 원천징수 3.3%가 함께 반영됩니다.
             </dd>
           </div>
           <div>
-            <dt className="font-semibold">등록하면 바로 노출되나요?</dt>
+            <dt className="text-[17px] font-bold">등록하면 바로 노출되나요?</dt>
             <dd className="mt-1 break-keep text-muted-foreground">
               아닙니다. 프로그램마다 내용·가격을 확인하는 게시 심사가 따로 있습니다. 반려되면
               사유를 보고 고쳐서 다시 요청할 수 있습니다.
             </dd>
           </div>
           <div>
-            <dt className="font-semibold">개인도 등록할 수 있나요?</dt>
+            <dt className="text-[17px] font-bold">개인도 등록할 수 있나요?</dt>
             <dd className="mt-1 break-keep text-muted-foreground">
               자격증을 보유하고 있다면 개인·단체 모두 가능합니다. 정산 계좌의 예금주와 자격증
               이름이 같아야 합니다.
