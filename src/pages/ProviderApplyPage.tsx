@@ -372,8 +372,10 @@ export default function ProviderApplyPage() {
                   aria-hidden
                 />
               </div>
-              <h3 className="text-[19px] font-extrabold tracking-[-0.5px]">{step.title}</h3>
-              <p className="mt-2.5 break-keep text-[14.5px] leading-[1.6] text-muted-foreground">
+              <h3 className="text-[21px] font-extrabold tracking-[-0.5px] md:text-[22px]">
+                {step.title}
+              </h3>
+              <p className="mt-3 break-keep text-[16px] leading-[1.65] text-muted-foreground md:text-[17px]">
                 {step.body}
               </p>
             </li>
@@ -383,7 +385,7 @@ export default function ProviderApplyPage() {
         {/* 하단 보증 바 — 자격증을 왜 안심하고 낼 수 있는지 한 줄로 답합니다.
             문구는 실제 설계와 맞춰 적었습니다(18-3·18-6): 공개되지 않는 경로에
             저장하고, 관리자에게도 만료되는 서명 URL로만 보여줍니다. */}
-        <div className="mt-12 flex items-center gap-3 border-t border-dashed pt-8 text-[15px] font-semibold leading-relaxed text-muted-foreground">
+        <div className="mt-12 flex items-center gap-3 border-t border-dashed pt-8 text-[16px] font-semibold leading-relaxed text-muted-foreground md:text-[16.5px]">
           {/* 시안 값 그대로 — 24px 원, 배경은 브랜드 그린 15% 투명도, 글자 12.8px */}
           <span
             className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[12.8px] text-primary"
