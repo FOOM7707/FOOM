@@ -332,29 +332,62 @@ export default function ProviderApplyPage() {
         ))}
       </section>
 
-      {/* ── 등록 절차 ────────────────────────────────────────────────── */}
-      <section className="border-t pt-[100px]">
-        <h2 className="break-keep text-[32px] font-black tracking-[-1px] md:text-[44px] md:tracking-[-2px]">
-          등록은 네 단계입니다
+      {/* ── 등록 절차 (전문가검증 시안) ──────────────────────────────
+          흰 카드 안에 4단계를 나란히 두고, 칸에 손을 올리면 떠오르는 구성입니다.
+          시안의 에메랄드(#10b981)는 브랜드 그린으로 바꿨습니다.
+
+          **시안의 `cursor: pointer`는 가져오지 않았습니다** — 누를 데가 없는데
+          손가락 커서가 뜨면 눌러보고 아무 일이 없어 고장으로 읽힙니다. */}
+      <section className="rounded-[32px] border bg-background p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
+        <span className="mb-3 block text-[13.5px] font-extrabold uppercase tracking-[1.5px] text-primary">
+          Verification Process
+        </span>
+        <h2 className="break-keep text-[28px] font-black tracking-[-1px] md:text-[38px]">
+          안전을 위한 4단계 전문가 검증
         </h2>
-        <p className="mt-5 max-w-2xl break-keep text-[16px] leading-relaxed text-muted-foreground md:text-[18px]">
-          참가자 안전과 프로그램 품질이 걸린 부분이라 자격증을 운영자가 직접 확인합니다.
-          자동 승인은 없습니다.
+        <p className="mt-4 max-w-[600px] break-keep text-[16px] leading-[1.6] text-muted-foreground md:text-[17px]">
+          무분별한 자동 승인은 없습니다. 자격 검증은 담당자가 직접 서류를 대조해
+          확인합니다.
         </p>
 
-        <ol className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="rounded-3xl border p-7">
-              <span className="flex size-9 items-center justify-center rounded-full bg-primary text-[15px] font-bold text-primary-foreground">
-                {i + 1}
-              </span>
-              <p className="mt-4 text-[18px] font-bold">{step.title}</p>
-              <p className="mt-2 break-keep text-[14.5px] leading-relaxed text-muted-foreground">
+            <li
+              key={step.title}
+              className="group rounded-[20px] border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-background hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <span className="rounded-full border bg-background px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                  STEP {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  className="size-2 rounded-full bg-border transition-all duration-300 group-hover:bg-primary group-hover:shadow-[0_0_10px_var(--color-primary,#1F5C43)]"
+                  aria-hidden
+                />
+              </div>
+              <h3 className="text-[19px] font-extrabold tracking-[-0.5px]">{step.title}</h3>
+              <p className="mt-2.5 break-keep text-[14.5px] leading-[1.6] text-muted-foreground">
                 {step.body}
               </p>
             </li>
           ))}
         </ol>
+
+        {/* 하단 보증 바 — 자격증을 왜 안심하고 낼 수 있는지 한 줄로 답합니다.
+            문구는 실제 설계와 맞춰 적었습니다(18-3·18-6): 공개되지 않는 경로에
+            저장하고, 관리자에게도 만료되는 서명 URL로만 보여줍니다. */}
+        <div className="mt-12 flex items-start gap-3 border-t border-dashed pt-8 text-[14.5px] font-semibold leading-relaxed text-muted-foreground">
+          <span
+            className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[12px] text-primary"
+            aria-hidden
+          >
+            ✓
+          </span>
+          <span className="break-keep">
+            제출한 자격 서류는 심사 목적 외에 쓰지 않습니다. 공개되지 않는 경로에 저장하고,
+            관리자에게도 잠시 뒤 만료되는 주소로만 보여줍니다.
+          </span>
+        </div>
       </section>
 
       {/* ── 지금 할 수 있는 것 ─────────────────────────────────────────
