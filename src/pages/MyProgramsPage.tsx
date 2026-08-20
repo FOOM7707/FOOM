@@ -20,6 +20,9 @@ interface ProgramRow {
   price: number;
   sido: string;
   difficulty: string;
+  scheduleType?: string;
+  /** 오늘~+90일 사이의 예약 가능 날짜. 서버가 회차에서 계산한 사본입니다(2-3) */
+  scheduleDates?: string[];
   reviewNote?: string | null;
   location?: { address?: string };
 }
@@ -36,6 +39,35 @@ const DIFFICULTY_LABEL: Record<string, string> = {
   normal: "보통",
   hard: "어려움",
 };
+
+/** "2026-09-05" → "9월 5일" */
+function formatDate(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${Number(m)}월 ${Number(d)}일`;
+}
+
+/**
+ * 진행 날짜 한 줄 요약.
+ * 날짜가 없는 1회성·회차제는 **심사 요청이 막혀 있으므로** 그 이유를 함께 적습니다 —
+ * 「심사 요청」을 눌러 거부당하고 나서야 알게 되면 무엇이 빠졌는지 알 수 없습니다.
+ */
+function scheduleSummary(p: ProgramRow): { text: string; warn: boolean } {
+  if (p.scheduleType === "open") {
+    return { text: "날짜 협의 (상시모집)", warn: false };
+  }
+  if (p.scheduleType === "weekly") {
+    return { text: "매주 반복 — 준비 중이라 날짜를 넣을 수 없습니다", warn: true };
+  }
+
+  const dates = p.scheduleDates ?? [];
+  if (dates.length === 0) {
+    return { text: "진행 날짜 없음 — 날짜를 넣어야 심사를 요청할 수 있습니다", warn: true };
+  }
+
+  const shown = dates.slice(0, 3).map(formatDate).join(" · ");
+  const rest = dates.length > 3 ? ` 외 ${dates.length - 3}일` : "";
+  return { text: `진행 날짜 ${shown}${rest} (총 ${dates.length}일)`, warn: false };
+}
 
 export default function MyProgramsPage() {
   const { user, loading } = useAuth();
@@ -143,14 +175,27 @@ export default function MyProgramsPage() {
 
                   <p className="text-sm">{p.price.toLocaleString()}원</p>
 
+                  {(() => {
+                    const summary = scheduleSummary(p);
+                    return (
+                      <p
+                        className={`text-[12.5px] leading-relaxed ${
+                          summary.warn ? "font-medium text-destructive" : "text-muted-foreground"
+                        }`}
+                      >
+                        {summary.text}
+                      </p>
+                    );
+                  })()}
+
                   {p.status === "hidden" && p.reviewNote && (
                     <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
                       반려 사유: {p.reviewNote}
                     </p>
                   )}
 
-                  {p.status === "draft" && (
-                    <div className="mt-1">
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {p.status === "draft" && (
                       <Button
                         size="sm"
                         onClick={() => requestReview(p.id)}
@@ -158,8 +203,15 @@ export default function MyProgramsPage() {
                       >
                         심사 요청
                       </Button>
-                    </div>
-                  )}
+                    )}
+                    {/* 수정은 모든 상태에서 됩니다. 게시 중인 프로그램의 심사 대상
+                        항목을 고치면 서버가 다시 심사로 되돌립니다(5번 v22). */}
+                    <Button size="sm" variant="outline" asChild>
+                      <Link to={`/programs/${p.id}/edit`}>
+                        {p.status === "hidden" ? "수정해서 다시 제출" : "수정"}
+                      </Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </li>

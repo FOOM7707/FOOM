@@ -65,6 +65,10 @@ export interface Program {
   rainAlternative?: RainAlternative;
   /** 17개 시도 코드. 지역 필터는 주소 문자열이 아니라 이 값으로 판정합니다 */
   sido?: Sido;
+  /** (v21, 2-3) 예약 가능한 미래 회차 날짜(`"2026-09-05"`, 오늘~+90일).
+   *  하위 회차에서 **서버가 계산해 넣는 사본**입니다 — 화면은 읽기만 합니다.
+   *  빈 배열이면 예약 가능한 날짜가 없는 프로그램입니다(상시모집은 항상 빈 배열) */
+  scheduleDates?: string[];
   /** (v13, 2-3) 평점 캐시. 서버가 계산해 넣는 파생 필드라 화면은 읽기만 합니다.
    *  `ratingCount`가 0이면 **별점을 표시하지 않습니다** — 0.0점은 "나쁜 평가"로 읽힙니다 */
   ratingAvg?: number;
@@ -81,7 +85,12 @@ export interface ScheduleOccurrence {
   endAt?: string | null;
   seriesIndex?: number | null;
   seriesTotal?: number | null;
+  /** (v21) 이 회차의 원래 정원. 예약이 `remainingSlots`를 차감해도 "3/12"를
+   *  표시할 수 있어야 하므로 두 벌로 둡니다 */
+  totalSlots?: number;
   remainingSlots: number;
+  /** (v4, 2-4) 최소인원 미달이어도 공급자가 강행 개설했는지 */
+  forceOpen?: boolean;
 }
 
 // 2-2. providerProfiles (표시에 필요한 요약 정보만 — bankAccount 등 민감정보 제외)

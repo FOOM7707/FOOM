@@ -10,6 +10,14 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
+import {
+  assertSchedulableForReview,
+  buildScheduleDocs,
+  listSchedules,
+  syncProgramScheduleDates,
+  writeScheduleDocs,
+  type ScheduleInput,
+} from "./schedules";
 
 export const PROGRAM_CATEGORIES = [
   "숲해설",
@@ -158,10 +166,18 @@ async function assertProvider(db: Firestore, uid: string): Promise<void> {
   }
 }
 
+/**
+ * draft 생성. 회차(날짜)를 함께 받습니다.
+ *
+ * 회차를 별도 요청으로 분리하지 않는 이유: 등록 화면이 한 번에 저장하는 구조인데
+ * 두 번 호출하면 프로그램만 저장되고 날짜가 빠진 중간 상태가 생깁니다. 그 상태는
+ * 화면상 정상이라 공급자가 알아차리지 못합니다.
+ */
 export async function createDraftProgram(
   db: Firestore,
   providerId: string,
-  input: ProgramDraftInput
+  input: ProgramDraftInput,
+  scheduleInputs: ScheduleInput[] = []
 ): Promise<{ id: string }> {
   await assertProvider(db, providerId);
 
@@ -180,7 +196,8 @@ export async function createDraftProgram(
   }
 
   const ref = db.collection("programs").doc();
-  await ref.set({
+  const batch = db.batch();
+  batch.set(ref, {
     providerId,
     ...input,
     ...derived,
@@ -205,6 +222,28 @@ export async function createDraftProgram(
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  if (scheduleInputs.length > 0) {
+    writeScheduleDocs(
+      db,
+      ref.id,
+      buildScheduleDocs(scheduleInputs, {
+        programId: ref.id,
+        // 상위 status 사본입니다. 게시·숨김 시 서버가 하위 회차를 일괄 갱신합니다(2-4).
+        programStatus: "draft",
+        type: input.scheduleType,
+      }),
+      batch
+    );
+  }
+
+  await batch.commit();
+
+  // 날짜 요약은 회차를 저장한 뒤 이 함수로만 계산합니다 — 등록 경로가 직접
+  // scheduleDates를 계산하면 추가·삭제 경로와 규칙이 갈라집니다(17-2).
+  if (scheduleInputs.length > 0) {
+    await syncProgramScheduleDates(db, ref.id);
+  }
 
   return { id: ref.id };
 }
@@ -240,7 +279,11 @@ export async function getProgram(
     delete data.reviewedBy;
   }
 
-  return { id: snap.id, ...data };
+  // 회차(날짜)를 함께 내려보냅니다. 상세 화면의 날짜 선택과 공급자의 회차 관리가
+  // 같은 데이터를 쓰므로, 별도 엔드포인트를 두면 두 화면이 갈라집니다.
+  const schedules = await listSchedules(db, snap.id);
+
+  return { id: snap.id, ...data, schedules };
 }
 
 /**
@@ -292,6 +335,9 @@ export async function submitProgramForReview(
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+
+    // 소유자 확인이 먼저입니다. 회차 검사를 앞에 두면 남의 프로그램에 요청했을 때
+    // "날짜가 없다"는 응답이 돌아가 그 프로그램의 존재와 상태가 새어 나갑니다.
     if (snap.get("providerId") !== uid) {
       throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
     }
@@ -305,9 +351,185 @@ export async function submitProgramForReview(
       throw new AppError("failed-precondition", "제목과 설명을 채운 뒤 요청해 주세요");
     }
 
+    // 회차가 0건이면 게시돼도 예약할 날짜가 없습니다 — 검색에는 뜨는데 예약이
+    // 안 되는 상태라 사용자는 고장으로 읽고, 공급자는 무엇이 빠졌는지 모릅니다(2-4).
+    const schedules = await tx.get(ref.collection("schedules"));
+    assertSchedulableForReview(snap.get("scheduleType") as string, schedules.size);
+
     tx.update(ref, {
       status: "pending_review",
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
+}
+
+/**
+ * 심사를 다시 받지 않아도 되는 필드 (v22).
+ *
+ * **기본은 재심사입니다.** 목록에 없는 필드가 바뀌면 게시 중이던 프로그램이
+ * `pending_review`로 돌아갑니다 — 승인 후 내용을 바꿔치기하면 "관리자가 확인하고
+ * 승인했다"는 전제가 무너지기 때문입니다(6-1).
+ *
+ * 금지목록이 아니라 **예외목록**으로 둔 이유는 보안규칙과 같습니다. 필드를 추가할 때
+ * 목록에 넣는 걸 잊으면 "괜히 재심사로 돌아가는" 불편으로 드러나지, "승인받은 내용을
+ * 몰래 고칠 수 있는" 사고로 드러나지 않습니다(2-3 v13).
+ */
+const NON_REVIEW_FIELDS = new Set([
+  "barrierFree",
+  "rainAlternative",
+  "walkingDistanceM",
+  "availableFrom",
+  "availableUntil",
+]);
+
+/** 두 값이 같은지 (location처럼 객체인 필드도 비교합니다) */
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/** 심사 대상 필드가 바뀌었는지 */
+export function needsRereview(
+  before: Record<string, unknown>,
+  after: ProgramDraftInput
+): boolean {
+  return (Object.keys(after) as Array<keyof ProgramDraftInput>).some((key) => {
+    if (NON_REVIEW_FIELDS.has(key)) return false;
+    return !sameValue(before[key], after[key]);
+  });
+}
+
+/**
+ * 일정 방식 변경 가능 여부.
+ *
+ * 이미 등록된 날짜가 있는데 방식을 바꾸면 그 날짜들이 의미를 잃습니다 —
+ * `open`(상시모집)은 회차를 쓰지 않고, `weekly`는 템플릿이 만든 회차만 씁니다.
+ * 날짜 기반끼리(`single`↔`series`)는 바꿔도 회차가 그대로 유효합니다.
+ */
+function assertScheduleTypeChangeAllowed(
+  before: string,
+  after: string,
+  scheduleCount: number
+): void {
+  if (before === after || scheduleCount === 0) return;
+
+  const dateBased = (t: string) => t === "single" || t === "series";
+  if (!dateBased(before) || !dateBased(after)) {
+    throw new AppError(
+      "failed-precondition",
+      "등록된 날짜가 있어 운영 방식을 바꿀 수 없습니다. 날짜를 먼저 지운 뒤 바꿔 주세요"
+    );
+  }
+  if (after === "single" && scheduleCount > 1) {
+    throw new AppError(
+      "failed-precondition",
+      `1회성으로 바꾸려면 날짜가 하나여야 합니다(현재 ${scheduleCount}개). 남길 날짜만 두고 나머지를 지워 주세요`
+    );
+  }
+}
+
+export interface UpdateProgramResult {
+  /** 수정 후 상태 */
+  status: string;
+  /** 재심사로 되돌아갔는지 — 화면이 안내 문구를 바꿉니다 */
+  sentToReview: boolean;
+}
+
+/**
+ * 내용 수정 (`PATCH /programs/{id}`, 스키마 5번 v10 · v22 확장).
+ *
+ * **`draft`도 이 경로로 고칩니다(v22).** 보안규칙은 `draft`의 클라이언트 직접 수정을
+ * 허용하지만, 그 길로 가면 **파생 필드가 갱신되지 않습니다** — 주소를 강원도로
+ * 바꿨는데 지역 필터에서는 경기도로 남는 식입니다. 계산이 필요한 수정은 전부 서버가
+ * 합니다(2-3).
+ */
+export async function updateProgram(
+  db: Firestore,
+  id: string,
+  uid: string,
+  input: ProgramDraftInput
+): Promise<UpdateProgramResult> {
+  const ref = db.doc(`programs/${id}`);
+  const snap = await ref.get();
+
+  // 남의 프로그램은 존재 여부도 알리지 않습니다.
+  if (!snap.exists || snap.get("providerId") !== uid) {
+    throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+  }
+
+  const before = snap.data() as Record<string, unknown>;
+  const currentStatus = before.status as string;
+
+  const schedules = await ref.collection("schedules").get();
+  assertScheduleTypeChangeAllowed(
+    before.scheduleType as string,
+    input.scheduleType,
+    schedules.size
+  );
+
+  let derived;
+  try {
+    derived = deriveProgramFields({
+      category: input.category,
+      address: input.location.address,
+      targetAgeMin: input.targetAgeMin,
+      targetAgeMax: input.targetAgeMax,
+      walkingDistanceM: input.walkingDistanceM,
+    });
+  } catch (err) {
+    throw new AppError("invalid-argument", err instanceof Error ? err.message : "주소 오류");
+  }
+
+  // 상태 전환 규칙
+  // - draft            : 아직 심사 전이라 그대로 draft
+  // - hidden(반려)     : 수정 자체가 재제출이므로 항상 pending_review
+  // - pending_review   : 이미 심사 대기 중이라 그대로
+  // - published        : 심사 대상 필드가 바뀌면 pending_review로 되돌림
+  let nextStatus = currentStatus;
+  if (currentStatus === "hidden") {
+    nextStatus = "pending_review";
+  } else if (currentStatus === "published" && needsRereview(before, input)) {
+    nextStatus = "pending_review";
+  }
+
+  const patch: Record<string, unknown> = {
+    ...input,
+    ...derived,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (nextStatus !== currentStatus) {
+    patch.status = nextStatus;
+  }
+
+  await ref.update(patch);
+
+  // 회차에 심어둔 상태 사본을 함께 맞춥니다 — collectionGroup 규칙이 이 값을 보므로,
+  // 게시가 취소됐는데 사본이 published로 남으면 검색에 계속 잡힙니다(2-4).
+  if (nextStatus !== currentStatus && !schedules.empty) {
+    const batch = db.batch();
+    schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: nextStatus }));
+    await batch.commit();
+  }
+
+  // 일정 방식이 1회성으로 바뀌면 회차 번호를 지웁니다(1회성은 번호가 없습니다).
+  if (input.scheduleType === "single" && !schedules.empty) {
+    const batch = db.batch();
+    schedules.docs.forEach((d) =>
+      batch.update(d.ref, { type: "single", seriesIndex: null, seriesTotal: null })
+    );
+    await batch.commit();
+  } else if (input.scheduleType === "series" && !schedules.empty) {
+    const ordered = schedules.docs
+      .slice()
+      .sort((a, b) => a.get("startAt").toMillis() - b.get("startAt").toMillis());
+    const batch = db.batch();
+    ordered.forEach((d, i) =>
+      batch.update(d.ref, { type: "series", seriesIndex: i + 1, seriesTotal: ordered.length })
+    );
+    await batch.commit();
+  }
+
+  return {
+    status: nextStatus,
+    sentToReview: nextStatus === "pending_review" && currentStatus !== "pending_review",
+  };
 }
