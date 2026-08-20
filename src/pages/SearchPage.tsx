@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+/**
+ * 프로그램 찾기 (스키마 17번).
+ *
+ * **`GET /programs/search`가 걸러 내려줍니다(v28).** 예전에는 `src/mocks/`를 프론트에서
+ * 걸렀는데, 판정이 화면과 서버 양쪽에 있으면 「보이는데 서버 결과에는 없는」 프로그램이
+ * 생깁니다. 이제 필터·정렬·검색어는 전부 서버가 판단하고, 화면은 요청과 표시만 합니다.
+ *
+ * **예외가 하나 있습니다 — 「가까운거리순」.** 서버는 사용자의 현재위치를 모르므로
+ * 후보를 받아 화면에서 거리로 다시 정렬합니다.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
-import { mockPrograms } from "../mocks/programs";
 import { CATEGORIES } from "../types/firestore";
 import FilterModal from "../components/FilterModal";
 import ProgramCard from "../components/ProgramCard";
@@ -10,15 +20,24 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { distanceKm, type LatLng } from "@/lib/geo";
+import { ApiError, apiFetch } from "@/lib/api";
+import type { Program } from "@/types/firestore";
 import {
   DEFAULT_FILTERS,
   countActiveFilters,
-  matchesFilters,
+  toSearchQuery,
   type ProgramFilters,
+  type SearchRow,
+  type SortKey,
 } from "@/lib/programFilter";
 
-type SortKey = "인기순" | "낮은가격순" | "가까운거리순";
-const SORTS: SortKey[] = ["인기순", "낮은가격순", "가까운거리순"];
+const SORTS: SortKey[] = ["인기순", "낮은가격순", "평점순", "가까운거리순"];
+
+interface SearchResponse {
+  programs: SearchRow[];
+  total: number;
+  truncated: boolean;
+}
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -56,35 +75,82 @@ export default function SearchPage() {
     if (sort === "가까운거리순" && !position && status === "idle") request();
   }, [sort, position, status, request]);
 
-  // 검색어까지만 거른 목록. **모달의 「N개 결과 보기」가 세는 대상**이라 따로 둡니다 —
-  // 모달 안에서 만지는 값(지역·가격·연령…)은 여기서 빼고 모달이 직접 적용합니다.
-  const byKeyword = useMemo(() => {
-    const q = keyword.trim();
-    if (q === "") return mockPrograms;
-    return mockPrograms.filter(
-      (p) =>
-        p.title.includes(q) ||
-        p.description.includes(q) ||
-        p.location.address.includes(q)
+  const [rows, setRows] = useState<SearchRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  /** 모달의 「N개 결과 보기」 — 서버가 돌려준 값입니다. 세는 중이면 null */
+  const [draftCount, setDraftCount] = useState<number | null>(null);
+
+  const search = useCallback(
+    async (f: ProgramFilters, s: SortKey, q: string): Promise<SearchResponse> =>
+      apiFetch<SearchResponse>(`/programs/search?${toSearchQuery(f, s, q)}`),
+    []
+  );
+
+  // 검색어는 타이핑 중이라 **잠깐 기다렸다** 요청합니다. 글자마다 보내면 요청이
+  // 수십 개 쌓이고, 늦게 온 응답이 먼저 온 응답을 덮어써 결과가 튑니다.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(
+      () => {
+        setLoading(true);
+        search(filters, sort, keyword)
+          .then((res) => {
+            if (cancelled) return;
+            setRows(res.programs);
+            setTotal(res.total);
+            setError(null);
+          })
+          .catch((err) => {
+            if (cancelled) return;
+            setError(err instanceof ApiError ? err.message : "목록을 불러오지 못했습니다");
+            setRows([]);
+            setTotal(0);
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+      },
+      keyword.trim() === "" ? 0 : 250
     );
-  }, [keyword]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [filters, sort, keyword, search]);
+
+  /** 모달에서 값을 만질 때 개수를 다시 셉니다. 적용 전이라 목록은 그대로입니다. */
+  const countDraft = useCallback(
+    (draft: ProgramFilters) => {
+      setDraftCount(null);
+      void search(draft, sort, keyword)
+        .then((res) => setDraftCount(res.total))
+        .catch(() => setDraftCount(null));
+    },
+    [search, sort, keyword]
+  );
+
+  // 모달을 열 때 현재 조건의 개수를 먼저 채워둡니다 — 손대기 전에도 숫자가 보입니다.
+  useEffect(() => {
+    if (filterOpen) setDraftCount(total);
+  }, [filterOpen, total]);
 
   const filtered = useMemo(() => {
-    const rows = byKeyword
-      .filter((p) => matchesFilters(p, filters))
-      .map((p) => ({
-        program: p,
-        distance: position ? distanceKm(position, p.location) : null,
-      }));
+    const withDistance = rows.map((r) => ({
+      program: r,
+      distance:
+        position && r.location.lat != null && r.location.lng != null
+          ? distanceKm(position, { lat: r.location.lat, lng: r.location.lng })
+          : null,
+    }));
 
-    if (sort === "낮은가격순") {
-      rows.sort((a, b) => a.program.price - b.program.price);
-    } else if (sort === "가까운거리순") {
-      // 현재위치가 없으면 정렬 기준이 없으므로 순서를 유지합니다
-      rows.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+    // 거리순만 화면에서 정렬합니다 — 서버는 현재위치를 모릅니다.
+    if (sort === "가까운거리순") {
+      withDistance.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
     }
-    return rows;
-  }, [byKeyword, filters, sort, position]);
+    return withDistance;
+  }, [rows, sort, position]);
 
   const activeFilterCount = countActiveFilters(filters);
 
@@ -180,7 +246,9 @@ export default function SearchPage() {
 
       {/* 결과 수 + 정렬 + 목록⇄지도 토글 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[13px] text-muted-foreground">{filtered.length}개 프로그램</p>
+        <p className="text-[13px] text-muted-foreground">
+          {loading ? "불러오는 중…" : `${total}개 프로그램`}
+        </p>
 
         <div className="flex items-center gap-2">
           <select
@@ -219,9 +287,19 @@ export default function SearchPage() {
         </div>
       </div>
 
+      {error && (
+        <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
+          {error}
+        </p>
+      )}
+
       {view === "map" ? (
         <ProgramMap
-          programs={filtered.map((r) => r.program)}
+          // 지도는 좌표가 있는 것만 찍습니다 — v18 이전에 등록된 프로그램은
+          // 좌표가 비어 있어 지도에 올릴 수 없습니다(19-6).
+          programs={filtered
+            .map((r) => r.program)
+            .filter((p) => p.location.lat != null && p.location.lng != null) as unknown as Program[]}
           userLocation={position}
           onLocate={setMapPosition}
           selectedId={selectedId}
@@ -230,11 +308,17 @@ export default function SearchPage() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[18px]">
           {filtered.map(({ program, distance }) => (
-            <ProgramCard key={program.id} program={program} distanceKm={distance} />
+            <ProgramCard
+              key={program.id}
+              program={program as unknown as Program}
+              distanceKm={distance}
+            />
           ))}
-          {filtered.length === 0 && (
-            <p className="py-10 text-muted-foreground">
-              선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요.
+          {!loading && filtered.length === 0 && (
+            <p className="col-span-full py-10 text-muted-foreground">
+              {activeFilterCount > 0 || filters.categories.length > 0 || keyword.trim() !== ""
+                ? "선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요."
+                : "아직 게시된 프로그램이 없습니다. 심사를 통과한 프로그램이 여기 나타납니다."}
             </p>
           )}
         </div>
@@ -243,7 +327,8 @@ export default function SearchPage() {
       <FilterModal
         open={filterOpen}
         value={filters}
-        programs={byKeyword}
+        count={draftCount}
+        onDraftChange={countDraft}
         onApply={(next) => {
           setFilters(next);
           setFilterOpen(false);

@@ -24,7 +24,6 @@ npm run preview   # 빌드 결과 로컬 미리보기
 ```
 src/
   types/firestore.ts     # 백엔드 스키마(FOOM_백엔드_설계_스키마_20260807.md) 기준 타입 정의
-  mocks/                 # 화면 개발용 mock 데이터 (programs, providers, schedules)
   lib/utils.ts           # shadcn/ui 표준 cn() 헬퍼
   components/
     ui/                  # shadcn/ui 스타일 기본 컴포넌트 (button, card, input, textarea, label, badge, select)
@@ -44,11 +43,11 @@ components.json          # shadcn CLI 설정 (팀원 컴퓨터에서 `npx shadcn
 
 - 로그인/회원가입 (카카오·네이버 소셜, 문자인증) — 헤더의 "로그인 (준비중)" 버튼은 비활성화 상태
 - 예약/결제 — 상세 화면의 "예약하기 (준비중)" 버튼은 비활성화 상태
-- 실제 백엔드 연동 — 모든 데이터는 `src/mocks/`의 하드코딩된 값이며, 프로그램 등록 폼 제출도 콘솔 로그만 남기고 저장되지 않음
+- ~~실제 백엔드 연동~~ — **완료.** 모든 화면이 Cloud Functions API를 씁니다(`src/mocks/`는 삭제). 남은 것은 예약·결제·정산입니다
 
 ## 백엔드 연동 시 교체 지점
 
-1. `src/mocks/programs.ts`, `src/mocks/providers.ts` → `GET /programs`, `GET /programs/{id}` 등 실제 API 호출로 교체 (API 명세는 스키마 문서 5번 참고)
+1. ~~mock → 실제 API 교체~~ — **완료.** 검색은 `GET /programs/search`, 상세는 `GET /programs/{id}`를 씁니다 (API 명세는 스키마 문서 5번)
 2. `ProgramRegisterPage.tsx`의 `handleSubmit` → `POST /programs` 호출로 교체
 3. 로그인 연동 확정 후 `Layout.tsx`의 로그인 버튼과 라우팅에 인증 가드 추가
 

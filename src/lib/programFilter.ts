@@ -1,16 +1,12 @@
-import type { Difficulty, Program, TargetAgeTag } from "@/types/firestore";
-import { isInRegion, type RegionKey } from "@/lib/sido";
+import type { Difficulty, TargetAgeTag } from "@/types/firestore";
+import type { RegionKey } from "@/lib/sido";
 
 /**
- * 검색 필터 판정 (스키마 17-3).
+ * 검색 필터 — **화면 표시용 값과 쿼리 만들기만** 남아 있습니다 (스키마 17-3).
  *
- * 화면(모달)과 떼어 순수 함수로 둡니다 — UI를 바꿔도 판정은 그대로여야 하고,
- * 나중에 `GET /programs/search`가 생기면 **이 규칙이 서버로 옮겨갑니다**(17-1).
- * 그때 대조할 원본이 한 곳에 있어야 합니다.
- *
- * ⚠️ 지금은 mock을 프론트에서 거르는 임시 구현입니다. 실제 검색은 Firestore를
- * 직접 쿼리하지 않습니다 — 논리합 30개 제한 때문에 카테고리 다중선택 × 연령
- * 다중선택만으로 상한에 닿습니다(17-1).
+ * **판정은 서버가 합니다(v28).** `GET /programs/search`가 걸러 내려주고, 규칙 원본은
+ * `functions/src/lib/programSearch.ts`입니다 — 17-1이 예고한 이동입니다.
+ * 프론트에서 Firestore를 직접 쿼리하지 않는 이유(논리합 30개 제한)도 거기 적혀 있습니다.
  */
 
 /** 가격 상한. 이 값이면 "이상"으로 보고 위쪽을 열어둡니다(17-3) */
@@ -64,51 +60,16 @@ export const DIFFICULTY_LABELS: { value: Difficulty; label: string }[] = [
 export const HEADCOUNT_OPTIONS = [1, 2, 4, 10, 20] as const;
 
 /**
- * 「N명이서 갈 수 있는가」 — **두 가지를 함께 봅니다.**
+ * ⚠️ **필터 판정은 서버로 옮겼습니다(v28).** `matchesFilters`·`matchesHeadcount`가
+ * 여기 있었는데, 이제 `functions/src/lib/programSearch.ts`가 기준입니다 —
+ * `GET /programs/search`가 그 규칙으로 걸러 내려줍니다(17-1의 예정된 이동).
  *
- * | 필드 | 뜻 | 빠뜨리면 |
- * |---|---|---|
- * | `capacity` | 회차당 최대 정원 | 정원 8명짜리에 20명이 걸립니다 |
- * | `minCapacity` | 최소 진행 인원 | **혼자 신청해도 인원 미달로 자동 취소되는 프로그램**이 「1인 가능」에 걸립니다(2-4) |
+ * **두 벌로 두지 않는 이유:** 판정이 양쪽에 있으면 어느 쪽이 맞는지 알 수 없고,
+ * 「화면에는 보이는데 서버 결과에는 없는」 프로그램이 생깁니다. 모달의
+ * 「N개 결과 보기」 숫자도 서버가 돌려준 `total`을 씁니다.
  *
- * 두 번째가 핵심입니다. 정원만 보면 「혼자 가도 되는 프로그램」을 고를 수 없습니다 —
- * 최소 인원이 4명이면 혼자 신청은 받아주지만 D-1에 인원이 안 차면 폐강됩니다.
- * 참가자 입장에서 그건 "예약이 된 것"이 아닙니다.
- *
- * **남은 자리(`remainingSlots`)가 아니라 정원을 봅니다.** 남은 자리는 회차마다
- * 달라서 프로그램 단위 필터로는 성립하지 않습니다.
+ * 여기 남은 것은 **화면 표시에만 쓰이는 값**입니다 — 라벨, 기본값, 손댄 항목 수.
  */
-export function matchesHeadcount(program: Program, headcount: number): boolean {
-  if (program.capacity < headcount) return false;
-  if (program.minCapacity > headcount) return false;
-  return true;
-}
-
-function matchesAge(program: Program, selected: TargetAgeTag[]): boolean {
-  if (selected.length === 0) return true;
-  const tags = program.targetAgeTags ?? [];
-  // 「제한 없음(all)」은 어떤 연령을 골라도 항상 포함합니다 — 빼면 전연령
-  // 프로그램이 사라져 결과가 부자연스럽게 비어 보입니다(17-3).
-  if (tags.includes("all")) return true;
-  return selected.some((tag) => tags.includes(tag));
-}
-
-export function matchesFilters(program: Program, f: ProgramFilters): boolean {
-  if (f.categories.length > 0 && !f.categories.includes(program.category)) return false;
-  if (f.region && !isInRegion(program.sido, f.region)) return false;
-
-  if (program.price < f.priceMin) return false;
-  // 상한이 최대치면 "이상"이므로 위쪽을 막지 않습니다.
-  if (f.priceMax < PRICE_MAX && program.price > f.priceMax) return false;
-
-  if (f.headcount != null && !matchesHeadcount(program, f.headcount)) return false;
-  if (!matchesAge(program, f.ageTags)) return false;
-  if (f.difficulty && program.difficulty !== f.difficulty) return false;
-  if (f.barrierFree && !program.barrierFree) return false;
-  if (f.rainAlternative && (program.rainAlternative ?? "none") === "none") return false;
-
-  return true;
-}
 
 /**
  * 모달 안에서 손댄 항목 수. 필터 버튼의 배지에 씁니다.
@@ -124,4 +85,66 @@ export function countActiveFilters(f: ProgramFilters): number {
   if (f.barrierFree) n += 1;
   if (f.rainAlternative) n += 1;
   return n;
+}
+
+export type SortKey = "인기순" | "낮은가격순" | "가까운거리순" | "평점순";
+
+/** 화면 정렬 이름 → 서버 값. 「가까운거리순」은 현재위치가 필요해 화면이 직접 합니다. */
+const SORT_TO_SERVER: Record<SortKey, string> = {
+  인기순: "popular",
+  낮은가격순: "price_asc",
+  평점순: "rating",
+  // 서버는 사용자의 위치를 모릅니다. 후보를 받아 화면에서 거리로 다시 정렬합니다.
+  가까운거리순: "popular",
+};
+
+/**
+ * 검색 API에 보낼 쿼리 문자열.
+ *
+ * **기본값은 보내지 않습니다** — 주소창과 요청이 짧아지고, 서버 기본값과 어긋날
+ * 여지도 줄어듭니다.
+ */
+export function toSearchQuery(
+  filters: ProgramFilters,
+  sort: SortKey,
+  keyword: string
+): string {
+  const q = new URLSearchParams();
+  const trimmed = keyword.trim();
+  if (trimmed !== "") q.set("keyword", trimmed);
+  if (filters.categories.length > 0) q.set("categories", filters.categories.join(","));
+  if (filters.region) q.set("region", filters.region);
+  if (filters.priceMin > 0) q.set("priceMin", String(filters.priceMin));
+  if (filters.priceMax < PRICE_MAX) q.set("priceMax", String(filters.priceMax));
+  if (filters.headcount != null) q.set("headcount", String(filters.headcount));
+  if (filters.ageTags.length > 0) q.set("ageTags", filters.ageTags.join(","));
+  if (filters.difficulty) q.set("difficulty", filters.difficulty);
+  if (filters.barrierFree) q.set("barrierFree", "1");
+  if (filters.rainAlternative) q.set("rainAlternative", "1");
+  q.set("sort", SORT_TO_SERVER[sort]);
+  return q.toString();
+}
+
+/** 검색 결과 한 줄 — 서버가 목록 카드에 필요한 값만 내려줍니다(`toRow`). */
+export interface SearchRow {
+  id: string;
+  title: string;
+  category: string;
+  price: number;
+  capacity: number;
+  minCapacity: number;
+  scheduleType: string;
+  barrierFree: boolean;
+  rainAlternative: string;
+  difficulty: string | null;
+  sido: string | null;
+  targetAgeMin: number | null;
+  targetAgeMax: number | null;
+  targetAgeTags: string[];
+  walkingDistanceM: number | null;
+  ratingAvg: number;
+  ratingCount: number;
+  scheduleDates: string[];
+  imageUrls: string[];
+  location: { address: string; lat: number | null; lng: number | null };
 }

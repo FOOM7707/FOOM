@@ -18,6 +18,7 @@ import {
 } from "../../lib/programs";
 import { AppError } from "../../lib/errors";
 import { cancelPendingEdit } from "../../lib/programEdits";
+import { parseSearchQuery, searchPrograms } from "../../lib/programSearch";
 import {
   addProgramImages,
   deleteProgramImage,
@@ -50,6 +51,17 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
         limit: Number(req.query.limit) || undefined,
       });
       res.json({ programs });
+    })
+  );
+
+  // 검색 — **로그인 불필요.** `/:id` 보다 먼저 등록해야 합니다.
+  // 뒤에 두면 "search"가 프로그램 id로 잡혀 상세 조회로 넘어갑니다.
+  router.get(
+    "/search",
+    asyncHandler(async (req, res) => {
+      const filters = parseSearchQuery(req.query as Record<string, unknown>);
+      const result = await searchPrograms(db(), filters);
+      res.json(result);
     })
   );
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type { Difficulty, Program, TargetAgeTag } from "@/types/firestore";
+import type { Difficulty, TargetAgeTag } from "@/types/firestore";
 import { REGION_KEYS, type RegionKey } from "@/lib/sido";
 import {
   AGE_TAG_LABELS,
@@ -9,7 +9,6 @@ import {
   HEADCOUNT_OPTIONS,
   PRICE_MAX,
   countActiveFilters,
-  matchesFilters,
   type ProgramFilters,
 } from "@/lib/programFilter";
 import { Button } from "@/components/ui/button";
@@ -29,8 +28,14 @@ import { cn } from "@/lib/utils";
 interface Props {
   open: boolean;
   value: ProgramFilters;
-  /** 결과 개수를 세는 대상. 카테고리·검색어까지 이미 걸러진 목록을 넘깁니다 */
-  programs: Program[];
+  /**
+   * 「N개 결과 보기」에 쓸 개수. **서버가 돌려준 값**입니다(v28) —
+   * 판정을 화면에서 다시 하면 서버 결과와 어긋나 「보이는데 없는」 프로그램이 생깁니다.
+   * 아직 세는 중이면 null입니다.
+   */
+  count: number | null;
+  /** 모달 안에서 값을 만질 때마다 알려줍니다 — 개수를 다시 세기 위함입니다 */
+  onDraftChange?: (draft: ProgramFilters) => void;
   onApply: (next: ProgramFilters) => void;
   onClose: () => void;
 }
@@ -73,7 +78,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function FilterModal({
   open,
   value,
-  programs,
+  count,
+  onDraftChange,
   onApply,
   onClose,
 }: Props) {
@@ -103,11 +109,14 @@ export default function FilterModal({
 
   if (!open) return null;
 
-  const count = programs.filter((p) => matchesFilters(p, draft)).length;
   const activeCount = countActiveFilters(draft);
 
   function patch(part: Partial<ProgramFilters>) {
-    setDraft((d) => ({ ...d, ...part }));
+    setDraft((d) => {
+      const next = { ...d, ...part };
+      onDraftChange?.(next);
+      return next;
+    });
   }
 
   function toggleAge(tag: TargetAgeTag) {
@@ -316,7 +325,9 @@ export default function FilterModal({
           >
             전체 해제
           </button>
-          <Button onClick={() => onApply(draft)}>{count}개 결과 보기</Button>
+          <Button onClick={() => onApply(draft)}>
+            {count == null ? "결과 보기" : `${count}개 결과 보기`}
+          </Button>
         </footer>
       </div>
     </div>
