@@ -18,6 +18,11 @@ import {
 } from "../../lib/programs";
 import { AppError } from "../../lib/errors";
 import { cancelPendingEdit } from "../../lib/programEdits";
+import {
+  addProgramImages,
+  deleteProgramImage,
+  reorderProgramImages,
+} from "../../lib/programImages";
 import { addSchedules, deleteSchedule, parseScheduleInputs } from "../../lib/schedules";
 import { asyncHandler, authenticate, optionalAuthenticate } from "../middleware";
 import type { Firestore } from "firebase-admin/firestore";
@@ -75,6 +80,53 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
         String(req.params.id),
         req.auth!.uid,
         input
+      );
+      res.json(result);
+    })
+  );
+
+  // ── 사진 (18-4) ──────────────────────────────────────────────────────────
+  // 업로드는 클라이언트가 Storage로 직접 하고, **기록만 서버가 합니다.**
+  // 클라이언트가 imageUrls를 직접 쓰면 남의 파일이나 외부 URL을 심을 수 있습니다.
+  router.post(
+    "/:id/images",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await addProgramImages(
+        db(),
+        String(req.params.id),
+        req.auth!.uid,
+        req.body
+      );
+      res.status(201).json(result);
+    })
+  );
+
+  // 순서 바꾸기 — 첫 장이 대표 사진이라 순서가 의미를 갖습니다(2-3).
+  router.patch(
+    "/:id/images",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await reorderProgramImages(
+        db(),
+        String(req.params.id),
+        req.auth!.uid,
+        req.body
+      );
+      res.json(result);
+    })
+  );
+
+  // 삭제 — 문서에서 빼고 파일도 지웁니다. 문서에서만 빼면 파일이 계속 쌓입니다(18-7).
+  router.delete(
+    "/:id/images",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await deleteProgramImage(
+        db(),
+        String(req.params.id),
+        req.auth!.uid,
+        req.body
       );
       res.json(result);
     })

@@ -12,6 +12,7 @@
 
 import { initializeApp, type FirebaseOptions } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
+import { connectStorageEmulator, getStorage } from "firebase/storage";
 
 const env = import.meta.env;
 
@@ -24,6 +25,8 @@ const emulatorConfig: FirebaseOptions = {
   apiKey: "demo-key",
   projectId: "demo-foom",
   authDomain: "demo-foom.firebaseapp.com",
+  // 사진 업로드에 필요합니다 — 없으면 Storage SDK가 버킷을 못 찾습니다.
+  storageBucket: "demo-foom.appspot.com",
 };
 
 const productionConfig: FirebaseOptions = {
@@ -31,14 +34,20 @@ const productionConfig: FirebaseOptions = {
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: env.VITE_FIREBASE_PROJECT_ID,
   appId: env.VITE_FIREBASE_APP_ID,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
 };
 
 export const firebaseApp = initializeApp(useEmulator ? emulatorConfig : productionConfig);
 
 export const firebaseAuth = getAuth(firebaseApp);
 
+export const firebaseStorage = getStorage(firebaseApp);
+
 if (useEmulator) {
   connectAuthEmulator(firebaseAuth, "http://127.0.0.1:9099", {
     disableWarnings: true,
   });
+  // 사진 업로드는 브라우저가 Storage로 직접 합니다(18-4). 개발 중에는
+  // 에뮬레이터에 붙어야 하고, **에뮬레이터를 storage까지 띄워야** 동작합니다.
+  connectStorageEmulator(firebaseStorage, "127.0.0.1", 9199);
 }

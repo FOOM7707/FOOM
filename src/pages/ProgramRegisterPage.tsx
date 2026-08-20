@@ -30,6 +30,7 @@ import ScheduleFields, {
   type ScheduleRowInput,
 } from "@/components/ScheduleFields";
 import SavedSchedules, { type SavedSchedule } from "@/components/SavedSchedules";
+import ProgramImageUploader from "@/components/ProgramImageUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -95,6 +96,9 @@ interface LoadedProgram {
   rainAlternative: string;
   status: string;
   schedules: SavedSchedule[];
+  imageUrls: string[];
+  /** 사진 주소와 짝을 이루는 버킷 경로. 삭제·순서 변경에 씁니다(18-4) */
+  imagePaths: string[];
   /** 승인 대기 중인 수정본 (게시 중인 프로그램만). 없으면 null */
   pendingEdit: { changedFields: string[] } | null;
   /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다 */
@@ -437,8 +441,9 @@ export default function ProgramRegisterPage() {
               작성 중(draft)으로 저장했습니다
             </h1>
             <p className="mb-4 text-sm leading-relaxed">
-              아직 검색에 노출되지 않습니다. <strong>심사를 요청</strong>하면 관리자가 내용을
-              확인한 뒤 게시합니다. 게시 전까지는 내용을 자유롭게 수정할 수 있습니다.
+              아직 검색에 노출되지 않습니다. <strong>이제 사진을 올릴 수 있습니다</strong> —
+              사진이 없으면 목록과 검색 결과에서 빈 자리로 보입니다. 사진까지 넣은 뒤{" "}
+              <strong>심사를 요청</strong>하면 관리자가 확인해 게시합니다.
             </p>
             {error && (
               <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2.5 text-[12.5px] text-destructive">
@@ -446,7 +451,12 @@ export default function ProgramRegisterPage() {
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={handleSubmitForReview} disabled={busy}>
+              {/* 사진을 올릴 수 있게 된 것은 지금부터입니다(18-3).
+                  심사 요청보다 먼저 안내해야 사진 없는 프로그램이 올라가지 않습니다. */}
+              <Button asChild>
+                <Link to={`/programs/${createdId}/edit`}>사진 추가하기</Link>
+              </Button>
+              <Button variant="outline" onClick={handleSubmitForReview} disabled={busy}>
                 심사 요청하기
               </Button>
               <Button variant="outline" asChild>
@@ -550,6 +560,27 @@ export default function ProgramRegisterPage() {
       )}
 
       <form className="flex flex-col gap-[18px]" onSubmit={handleSubmit}>
+        {/* 사진은 저장 경로에 programId가 필요해서 프로그램을 먼저 저장해야
+            올릴 수 있습니다(18-3). 등록 화면에서는 안내만 하고, 저장 후
+            수정 화면에서 올립니다. */}
+        <fieldset className="flex flex-col gap-2.5 rounded-lg border px-4 py-3.5">
+          <legend className="px-1 text-[13px] text-muted-foreground">프로그램 사진</legend>
+          {isEdit && loaded ? (
+            <ProgramImageUploader
+              programId={loaded.id}
+              imageUrls={loaded.imageUrls ?? []}
+              imagePaths={loaded.imagePaths ?? []}
+              onChanged={loadProgram}
+            />
+          ) : (
+            <p className="rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
+              사진은 <strong className="font-semibold">아래 내용을 저장한 뒤</strong> 올릴 수
+              있습니다. 저장하면 바로 사진 추가 화면으로 이어집니다 — 사진을 저장할 자리가
+              프로그램이 만들어진 뒤에 정해지기 때문입니다.
+            </p>
+          )}
+        </fieldset>
+
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="title">프로그램명</Label>
           <Input

@@ -9,6 +9,7 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
 function ensureApp() {
   if (getApps().length === 0) {
@@ -24,4 +25,17 @@ export function db(): Firestore {
 export function auth(): Auth {
   ensureApp();
   return getAuth();
+}
+
+/**
+ * 파일 저장 버킷 (스키마 18-2 — 기본 버킷 하나만 씁니다).
+ *
+ * 버킷 이름을 코드에 적지 않습니다. 배포 환경에서는 Admin SDK가 기본 버킷을
+ * 알고 있고, 에뮬레이터에서는 `STORAGE_EMULATOR_HOST`가 붙습니다 —
+ * 이름을 고정하면 두 환경 중 하나가 반드시 깨집니다.
+ */
+export function bucket() {
+  ensureApp();
+  const explicit = process.env.STORAGE_BUCKET ?? process.env.FIREBASE_STORAGE_BUCKET;
+  return explicit ? getStorage().bucket(explicit) : getStorage().bucket();
 }

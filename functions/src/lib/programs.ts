@@ -43,6 +43,11 @@ export const QUALIFICATION_TYPES = [
 /**
  * 공급자가 입력하는 필드만 받습니다 — 6-1 허용목록과 같은 집합입니다.
  * 여기 없는 필드는 요청 본문에 있어도 버립니다.
+ *
+ * **`imageUrls`는 여기 없습니다(v25).** 사진은 업로드 후 별도 경로
+ * (`POST /programs/{id}/images`)로만 기록합니다 — 요청 본문으로 받으면
+ * ① 남의 파일 주소나 외부 URL을 심을 수 있고(18-4) ② 수정 화면이 사진을 보내지
+ * 않는 순간 **기존 사진이 전부 지워집니다**(이 함수의 결과를 그대로 덮어쓰므로).
  */
 export interface ProgramDraftInput {
   title: string;
@@ -56,7 +61,6 @@ export interface ProgramDraftInput {
   scheduleType: string;
   availableFrom: string | null;
   availableUntil: string | null;
-  imageUrls: string[];
   barrierFree: boolean;
   targetAgeMin: number | null;
   targetAgeMax: number | null;
@@ -139,9 +143,6 @@ export function parseProgramInput(body: unknown): ProgramDraftInput {
     // availableFrom/Until은 open 타입 전용입니다(2-3). 다른 타입은 null로 못박습니다.
     availableFrom: scheduleType === "open" ? ((b.availableFrom as string) ?? null) : null,
     availableUntil: scheduleType === "open" ? ((b.availableUntil as string) ?? null) : null,
-    imageUrls: Array.isArray(b.imageUrls)
-      ? b.imageUrls.filter((u): u is string => typeof u === "string")
-      : [],
     barrierFree: b.barrierFree === true,
     targetAgeMin,
     targetAgeMax,
@@ -208,6 +209,12 @@ export async function createDraftProgram(
     reviewedBy: null,
     reviewedAt: null,
     reviewNote: null,
+
+    // 사진은 별도 경로로만 기록합니다(18-4). 빈 배열로 시작합니다.
+    // `imagePaths`는 주소와 짝을 이루는 버킷 경로입니다 — 주소만 저장하면
+    // 나중에 파일을 지울 때 어느 객체인지 되짚을 수 없습니다.
+    imageUrls: [],
+    imagePaths: [],
 
     // 파생 필드 초기값 — 명시적으로 넣습니다.
     // Firestore는 인덱스에 쓰인 필드가 없는 문서를 색인하지 않으므로,
