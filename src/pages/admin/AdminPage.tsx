@@ -42,6 +42,35 @@ const FIELD_LABEL: Record<string, string> = {
   imageUrls: "사진",
   targetAgeMin: "참가 연령(최소)",
   targetAgeMax: "참가 연령(최대)",
+  includes: "포함 사항",
+  excludes: "불포함 사항",
+  preparations: "준비물",
+  introBlocks: "프로그램 소개",
+};
+
+/** 포함·불포함·준비물 코드 → 한국어. 서버는 코드로만 알려줍니다(20-4). */
+const KEYWORD_LABEL: Record<string, string> = {
+  guide: "전문가 해설",
+  materials: "체험 재료",
+  refreshment: "다과·차",
+  admission: "입장료",
+  insurance: "보험",
+  souvenir: "기념품",
+  photo: "사진 촬영",
+  equipment: "장비 대여",
+  transport: "교통비",
+  parking: "주차비",
+  meal: "식사",
+  personal_gear: "개인 장비",
+  shoes: "편한 신발",
+  long_clothes: "긴 옷",
+  hat: "모자",
+  water: "물",
+  raincoat: "우비",
+  spare_clothes: "여벌 옷",
+  mat: "돗자리",
+  sunscreen: "자외선 차단제",
+  insect_repellent: "벌레 기피제",
 };
 
 const SCHEDULE_TYPE_LABEL: Record<string, string> = {
@@ -63,6 +92,27 @@ function formatFieldValue(field: string, value: unknown): string {
   if (field === "imageUrls") {
     const urls = value as string[];
     return urls.length === 0 ? "(없음)" : `사진 ${urls.length}장`;
+  }
+  // 포함·불포함·준비물 — 목록에서 고른 코드와 직접 입력을 함께 보여줍니다.
+  // **직접 입력이 심사의 핵심**이라 눈에 띄게 표시합니다(20-4).
+  if (field === "includes" || field === "excludes" || field === "preparations") {
+    const v = value as { keys?: string[]; custom?: string[] };
+    const keys = (v.keys ?? []).map((k) => KEYWORD_LABEL[k] ?? k);
+    const custom = (v.custom ?? []).map((c) => `${c}(직접 입력)`);
+    const all = [...keys, ...custom];
+    return all.length === 0 ? "(없음)" : all.join(" · ");
+  }
+  // 소개 블록 — 블록마다 소제목·사진 장수·설명을 한 줄로 요약합니다.
+  if (field === "introBlocks") {
+    const blocks = (value as Array<{ heading?: string; body?: string; images?: unknown[] }>) ?? [];
+    if (blocks.length === 0) return "(없음)";
+    return blocks
+      .map((b, i) => {
+        const photos = (b.images ?? []).length;
+        const head = b.heading?.trim() || "(소제목 없음)";
+        return `${i + 1}. ${head}${photos > 0 ? ` [사진 ${photos}장]` : ""} — ${b.body ?? ""}`;
+      })
+      .join("\n");
   }
   if (Array.isArray(value)) return value.join(", ");
   return String(value);
@@ -606,10 +656,10 @@ function ProgramEditsTab() {
                         <p className="mb-1.5 font-semibold">
                           {FIELD_LABEL[d.field] ?? d.field}
                         </p>
-                        <p className="leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
+                        <p className="whitespace-pre-line leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
                           {formatFieldValue(d.field, d.before)}
                         </p>
-                        <p className="leading-relaxed font-medium text-primary">
+                        <p className="whitespace-pre-line leading-relaxed font-medium text-primary">
                           → {formatFieldValue(d.field, d.after)}
                         </p>
                       </li>
