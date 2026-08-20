@@ -65,6 +65,20 @@ export interface Program {
   rainAlternative?: RainAlternative;
   /** 17개 시도 코드. 지역 필터는 주소 문자열이 아니라 이 값으로 판정합니다 */
   sido?: Sido;
+  /** (v26, 20-4) 포함·불포함·준비물. `keys`는 목록 코드, `custom`은 직접 입력.
+   *  **같은 항목을 `includes`와 `excludes`에 함께 넣을 수 없습니다**(서버가 거부) */
+  includes?: { keys: string[]; custom: string[] };
+  excludes?: { keys: string[]; custom: string[] };
+  preparations?: { keys: string[]; custom: string[] };
+  /** (v26, 20-2) 소개 블록 최대 5개. **배치는 저장하지 않습니다** — 사진 장수에서
+   *  화면이 정합니다(1~2장 지그재그 / 3장 가로 전체 / 0장 문단) */
+  introBlocks?: Array<{
+    heading: string;
+    body: string;
+    images: Array<{ path: string; url: string }>;
+  }>;
+  /** (v25) `imageUrls`와 같은 순서로 짝을 이루는 버킷 경로. 서버 전용 */
+  imagePaths?: string[];
   /** (v21, 2-3) 예약 가능한 미래 회차 날짜(`"2026-09-05"`, 오늘~+90일).
    *  하위 회차에서 **서버가 계산해 넣는 사본**입니다 — 화면은 읽기만 합니다.
    *  빈 배열이면 예약 가능한 날짜가 없는 프로그램입니다(상시모집은 항상 빈 배열) */

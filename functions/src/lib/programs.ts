@@ -342,6 +342,45 @@ export async function createDraftProgram(
   return { id: ref.id };
 }
 
+export interface PublicProviderProfile {
+  uid: string;
+  displayName: string | null;
+  bio: string | null;
+  profileImageUrl: string | null;
+  qualificationType: string[];
+  /** 심사를 통과했는지 — 화면의 「인증」 배지 근거값(2-2) */
+  verified: boolean;
+  ratingAvg: number;
+  ratingCount: number;
+}
+
+/**
+ * 공개 프로필만 읽습니다.
+ *
+ * **`private/profile`은 절대 건드리지 않습니다** — 정산 계좌·자격증 경로·심사 사유가
+ * 거기 있고, 하나라도 섞이면 상세 페이지를 통해 그대로 공개됩니다(2-2 v10에서
+ * 문서를 둘로 나눈 이유가 이것입니다).
+ */
+async function getPublicProviderProfile(
+  db: Firestore,
+  providerId: string
+): Promise<PublicProviderProfile | null> {
+  if (!providerId) return null;
+  const snap = await db.doc(`providerProfiles/${providerId}`).get();
+  if (!snap.exists) return null;
+
+  return {
+    uid: providerId,
+    displayName: (snap.get("displayName") as string) ?? null,
+    bio: (snap.get("bio") as string) ?? null,
+    profileImageUrl: (snap.get("profileImageUrl") as string) ?? null,
+    qualificationType: (snap.get("qualificationType") as string[]) ?? [],
+    verified: snap.get("verified") === true,
+    ratingAvg: (snap.get("ratingAvg") as number) ?? 0,
+    ratingCount: (snap.get("ratingCount") as number) ?? 0,
+  };
+}
+
 export interface ProgramReadOptions {
   /** 로그인한 경우의 uid */
   uid?: string;
@@ -377,17 +416,22 @@ export async function getProgram(
   // 같은 데이터를 쓰므로, 별도 엔드포인트를 두면 두 화면이 갈라집니다.
   const schedules = await listSchedules(db, snap.id);
 
+  // 운영자 정보도 함께 내려보냅니다 — **공개 프로필의 값만**입니다(2-2).
+  // 정산 계좌·자격증 같은 민감 필드는 `private` 하위 문서에 있어 여기 오지 않습니다.
+  // 화면이 따로 조회하게 하면 두 요청 사이에 값이 갈리고, 요청도 하나 더 늘어납니다.
+  const provider = await getPublicProviderProfile(db, data.providerId as string);
+
   // 승인 대기 중인 수정본은 소유자와 관리자에게만 보입니다 — 손님에게는 승인된
   // 게시본만 보여야 하고, 심사 전 내용이 새어 나가면 안 됩니다(v23).
   if (!isOwner && !options.isAdmin) {
     delete data.editReviewNote;
     delete data.editReviewedBy;
-    return { id: snap.id, ...data, schedules };
+    return { id: snap.id, ...data, schedules, provider };
   }
 
   const pendingEdit = await getPendingEdit(db, snap.id);
 
-  return { id: snap.id, ...data, schedules, pendingEdit };
+  return { id: snap.id, ...data, schedules, provider, pendingEdit };
 }
 
 /**
