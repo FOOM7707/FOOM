@@ -11,7 +11,7 @@
     "build": "tsc",
     "build:watch": "tsc -w",
     "typecheck": "tsc --noEmit",
-    "serve": "npm run build && firebase emulators:start --only auth,functions,firestore --project demo-foom",
+    "serve": "npm run build && firebase emulators:start --only auth,functions,firestore,storage --project demo-foom",
     "test": "npm run build && firebase emulators:exec --only auth,functions,firestore --project demo-foom \"vitest run\"",
     "test:run": "vitest run",
     "test:watch": "vitest",
