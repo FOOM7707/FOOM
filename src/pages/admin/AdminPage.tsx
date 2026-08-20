@@ -20,12 +20,53 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { ApiError, apiFetch } from "@/lib/api";
 
-type Tab = "providers" | "programs";
+type Tab = "providers" | "programs" | "edits";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "providers", label: "전문가 심사" },
   { key: "programs", label: "프로그램 심사" },
+  { key: "edits", label: "수정 승인" },
 ];
+
+/** 항목 이름 → 사람이 읽는 이름. 서버는 필드 이름으로만 알려줍니다. */
+const FIELD_LABEL: Record<string, string> = {
+  title: "프로그램명",
+  description: "소개",
+  category: "카테고리",
+  qualificationType: "자격 유형",
+  location: "장소",
+  price: "가격",
+  capacity: "최대 인원",
+  minCapacity: "최소 인원",
+  scheduleType: "운영 방식",
+  imageUrls: "사진",
+  targetAgeMin: "참가 연령(최소)",
+  targetAgeMax: "참가 연령(최대)",
+};
+
+const SCHEDULE_TYPE_LABEL: Record<string, string> = {
+  single: "1회성",
+  weekly: "매주 반복",
+  series: "회차제",
+  open: "상시모집",
+};
+
+/** 「전 → 후」에 보여줄 값. 객체·배열·빈값을 그대로 찍으면 읽을 수 없습니다. */
+function formatFieldValue(field: string, value: unknown): string {
+  if (value == null || value === "") return "(비어 있음)";
+  if (field === "location") {
+    const loc = value as { address?: string };
+    return loc.address ?? "(주소 없음)";
+  }
+  if (field === "price") return `${Number(value).toLocaleString()}원`;
+  if (field === "scheduleType") return SCHEDULE_TYPE_LABEL[String(value)] ?? String(value);
+  if (field === "imageUrls") {
+    const urls = value as string[];
+    return urls.length === 0 ? "(없음)" : `사진 ${urls.length}장`;
+  }
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
 
 interface ProviderRow {
   uid: string;
@@ -65,6 +106,14 @@ const DIFFICULTY_LABEL: Record<string, string> = {
   easy: "쉬움",
   normal: "보통",
   hard: "어려움",
+};
+
+/** 전문가 심사 상태 표기. `reviewing`은 v23에서 추가된 진행 표시입니다. */
+const APPROVAL_LABEL: Record<string, string> = {
+  pending: "심사 대기",
+  reviewing: "심사 중",
+  approved: "승인됨",
+  rejected: "반려됨",
 };
 
 const RAIN_LABEL: Record<string, string> = {
@@ -168,6 +217,23 @@ function ProvidersTab() {
     }
   }
 
+  /** 심사 착수 — 결과가 아니라 진행 표시입니다. 전문가 화면의 단계가 이걸로 움직입니다. */
+  async function startReview(uid: string) {
+    setBusyUid(uid);
+    setError(null);
+    try {
+      await apiFetch(`/admin/providers/${uid}/start-review`, {
+        method: "POST",
+        requireAuth: true,
+      });
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "처리에 실패했습니다");
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-2">
@@ -178,6 +244,7 @@ function ProvidersTab() {
           onChange={(e) => setStatus(e.target.value)}
         >
           <option value="pending">심사 대기</option>
+          <option value="reviewing">심사 중</option>
           <option value="approved">승인됨</option>
           <option value="rejected">반려됨</option>
           <option value="all">전체</option>
@@ -220,7 +287,7 @@ function ProvidersTab() {
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-[12px] font-semibold text-secondary-foreground">
-                      {p.approvalStatus ?? "상태 없음"}
+                      {APPROVAL_LABEL[p.approvalStatus ?? ""] ?? p.approvalStatus ?? "상태 없음"}
                     </span>
                   </div>
 
@@ -270,6 +337,25 @@ function ProvidersTab() {
                     <p className="mt-2 rounded-lg bg-secondary px-3 py-2 text-[12.5px] text-secondary-foreground">
                       기록된 사유: {p.approvalNote}
                     </p>
+                  )}
+
+                  {/* 「심사 시작」은 결과가 아니라 진행 표시입니다(v23).
+                      전문가 화면의 진행 단계가 이 값으로 3번 칸까지 올라갑니다 —
+                      누르지 않으면 「심사 대기」에 머물러 방치된 것처럼 보입니다. */}
+                  {p.approvalStatus === "pending" && (
+                    <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyUid === p.uid}
+                        onClick={() => void startReview(p.uid)}
+                      >
+                        심사 시작
+                      </Button>
+                      <span className="text-[12px] text-muted-foreground">
+                        신청자 화면에 「심사 중」으로 표시됩니다
+                      </span>
+                    </div>
                   )}
 
                   <DecisionBox
@@ -414,6 +500,137 @@ function ProgramsTab() {
   );
 }
 
+interface PendingEditRow {
+  id: string;
+  title: string;
+  providerId: string;
+  changedFields: string[];
+  diff: Array<{ field: string; before: unknown; after: unknown }>;
+}
+
+/**
+ * 수정 승인 (v23).
+ *
+ * 게시 중인 프로그램의 수정본입니다. **게시본은 내려가 있지 않습니다** — 손님은
+ * 지금도 승인된 내용을 보고 있고, 승인하면 그 자리에서 교체됩니다.
+ *
+ * 전체를 다시 읽게 하지 않고 **바뀐 항목만 「전 → 후」로** 보여줍니다. 프로그램
+ * 설명이 수백 자인데 통째로 두 번 보여주면 무엇이 바뀌었는지 못 찾습니다.
+ */
+function ProgramEditsTab() {
+  const [items, setItems] = useState<PendingEditRow[]>([]);
+  const [truncated, setTruncated] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ edits: PendingEditRow[]; truncated: boolean }>(
+        "/admin/program-edits",
+        { requireAuth: true }
+      );
+      setItems(res.edits);
+      setTruncated(res.truncated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "목록을 불러오지 못했습니다");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function decide(id: string, decision: "approved" | "rejected", note: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      await apiFetch(`/admin/programs/${id}/review-edit`, {
+        method: "POST",
+        body: { decision, note },
+        requireAuth: true,
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "처리에 실패했습니다");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading) return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
+
+  return (
+    <div>
+      <p className="mb-4 rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
+        게시 중인 프로그램의 수정 요청입니다. <strong>지금 손님에게는 승인된 내용이 그대로
+        보이고 있습니다</strong> — 승인하면 그 자리에서 교체되고, 반려하면 수정 내용만
+        버려집니다. 어느 쪽이든 게시가 중단되지는 않습니다.
+      </p>
+
+      {error && (
+        <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
+          {error}
+        </p>
+      )}
+
+      {truncated && (
+        <p className="mb-4 text-[12.5px] text-muted-foreground">
+          목록이 상한에 닿아 뒤가 잘렸습니다.
+        </p>
+      )}
+
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">승인 대기 중인 수정 요청이 없습니다.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {items.map((row) => (
+            <li key={row.id}>
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="font-semibold">{row.title}</p>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    바뀐 항목 {row.changedFields.length}개
+                  </p>
+
+                  <ul className="flex flex-col gap-2">
+                    {row.diff.map((d) => (
+                      <li
+                        key={d.field}
+                        className="rounded-lg border border-border px-3 py-2.5 text-[13px]"
+                      >
+                        <p className="mb-1.5 font-semibold">
+                          {FIELD_LABEL[d.field] ?? d.field}
+                        </p>
+                        <p className="leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
+                          {formatFieldValue(d.field, d.before)}
+                        </p>
+                        <p className="leading-relaxed font-medium text-primary">
+                          → {formatFieldValue(d.field, d.after)}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <DecisionBox
+                    busy={busyId === row.id}
+                    approveLabel="수정 승인"
+                    onDecide={(decision, note) => void decide(row.id, decision, note)}
+                  />
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { user, isAdmin, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("providers");
@@ -473,7 +690,13 @@ export default function AdminPage() {
         </span>
       </div>
 
-      {tab === "providers" ? <ProvidersTab /> : <ProgramsTab />}
+      {tab === "providers" ? (
+        <ProvidersTab />
+      ) : tab === "programs" ? (
+        <ProgramsTab />
+      ) : (
+        <ProgramEditsTab />
+      )}
     </div>
   );
 }

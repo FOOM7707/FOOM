@@ -16,6 +16,7 @@ import {
   parseReviewInput,
   reviewProgram,
   reviewProvider,
+  startProviderReview,
 } from "../src/lib/adminReview";
 import { createDraftProgram, parseProgramInput, submitProgramForReview } from "../src/lib/programs";
 import { kstDateString, parseScheduleInputs } from "../src/lib/schedules";
@@ -303,5 +304,57 @@ describe("프로그램 심사", () => {
 
     // 지역 필터에서 영구히 누락되는 문서를 만들지 않고 심사 대기로 남깁니다(4번).
     expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+  });
+});
+
+describe("심사 착수 (v23) — 진행 표시", () => {
+  it("pending을 reviewing으로 옮긴다", async () => {
+    const uid = await makeProvider();
+    const result = await startProviderReview(testDb, uid, ADMIN_UID);
+
+    expect(result.approvalStatus).toBe("reviewing");
+    const snap = await testDb.doc(`providerProfiles/${uid}/private/profile`).get();
+    expect(snap.get("approvalStatus")).toBe("reviewing");
+    expect(snap.get("reviewStartedBy")).toBe(ADMIN_UID);
+  });
+
+  it("인증 배지는 붙지 않는다 — 결과가 아니라 진행 표시다", async () => {
+    const uid = await makeProvider();
+    await startProviderReview(testDb, uid, ADMIN_UID);
+    expect((await testDb.doc(`providerProfiles/${uid}`).get()).get("verified")).toBe(false);
+  });
+
+  it("이미 심사 중이면 다시 시작할 수 없다", async () => {
+    const uid = await makeProvider();
+    await startProviderReview(testDb, uid, ADMIN_UID);
+    await expect(startProviderReview(testDb, uid, ADMIN_UID)).rejects.toMatchObject({
+      code: "failed-precondition",
+    });
+  });
+
+  it("심사 중 상태에서 승인할 수 있다", async () => {
+    const uid = await makeProvider();
+    await startProviderReview(testDb, uid, ADMIN_UID);
+    const result = await reviewProvider(
+      testDb,
+      uid,
+      parseReviewInput({ decision: "approved" }, ADMIN_UID)
+    );
+    expect(result.approvalStatus).toBe("approved");
+    expect(result.verified).toBe(true);
+  });
+
+  it("이미 승인된 계정은 다시 처리할 수 없다 — 진행 표시가 뒤로 돌아간다", async () => {
+    const uid = await makeProvider();
+    await reviewProvider(testDb, uid, parseReviewInput({ decision: "approved" }, ADMIN_UID));
+    await expect(
+      reviewProvider(testDb, uid, parseReviewInput({ decision: "approved" }, ADMIN_UID))
+    ).rejects.toMatchObject({ code: "failed-precondition" });
+  });
+
+  it("프로필이 없는 계정은 심사를 시작할 수 없다", async () => {
+    await expect(
+      startProviderReview(testDb, "없는계정", ADMIN_UID)
+    ).rejects.toMatchObject({ code: "not-found" });
   });
 });

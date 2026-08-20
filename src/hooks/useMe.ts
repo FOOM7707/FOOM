@@ -13,7 +13,8 @@ import { ApiError, apiFetch } from "@/lib/api";
 export interface MeProviderInfo {
   displayName: string | null;
   verified: boolean;
-  approvalStatus: "pending" | "approved" | "rejected" | null;
+  /** (v23) `reviewing` — 관리자가 심사를 시작한 상태. 진행 단계 표시에 씁니다 */
+  approvalStatus: "pending" | "reviewing" | "approved" | "rejected" | null;
   approvalNote: string | null;
 }
 

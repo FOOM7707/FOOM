@@ -166,13 +166,20 @@ describe("updateProgram — 상태 전환", () => {
     expect(result.sentToReview).toBe(false);
   });
 
-  it("게시 중인 프로그램의 제목을 고치면 재심사로 되돌아간다", async () => {
+  it("게시 중인 프로그램의 제목을 고치면 게시본은 그대로 두고 수정본이 대기한다", async () => {
+    // v23에서 바뀐 동작입니다. v22까지는 게시가 내려가 승인까지 검색에서
+    // 사라졌는데, 그러면 전문가가 오타조차 고치지 않게 됩니다.
+    // 수정본 흐름 자체는 programEdits.test.ts가 자세히 덮습니다.
     const id = await makeProgram("published");
     const result = await updateProgram(testDb, id, providerUid, validInput({ title: "바꿔치기" }));
 
-    expect(result.status).toBe("pending_review");
-    expect(result.sentToReview).toBe(true);
-    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+    expect(result.status).toBe("published");
+    expect(result.sentToReview).toBe(false);
+    expect(result.pendingEdit).toBe(true);
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("status")).toBe("published");
+    expect(snap.get("title")).toBe("가을 숲길 걷기"); // 게시본 그대로
   });
 
   it("게시 중이어도 배리어프리만 고치면 게시 상태를 유지한다", async () => {
@@ -210,12 +217,23 @@ describe("updateProgram — 상태 전환", () => {
   });
 
   it("상태가 바뀌면 회차의 상태 사본도 함께 바뀐다", async () => {
-    // 이 값이 published로 남으면 게시가 취소됐는데 검색에는 계속 잡힙니다(2-4).
+    // collectionGroup 규칙이 이 사본만 보므로, 어긋나면 상태와 검색 노출이
+    // 따로 움직입니다(2-4). 반려 → 수정 → 재심사 경로로 확인합니다.
+    const id = await makeProgram("hidden");
+    await updateProgram(testDb, id, providerUid, validInput({ title: "고친 제목" }));
+
+    const snap = await testDb.collection(`programs/${id}/schedules`).get();
+    expect(snap.docs.map((d) => d.get("programStatus"))).toEqual(["pending_review"]);
+  });
+
+  it("게시 중인 프로그램을 고쳐도 회차 사본은 published로 남는다", async () => {
+    // 게시본이 내려가지 않으므로 사본도 바뀌면 안 됩니다 — 바뀌면 게시 중인
+    // 프로그램이 검색에서 사라집니다.
     const id = await makeProgram("published");
     await updateProgram(testDb, id, providerUid, validInput({ title: "바꿔치기" }));
 
     const snap = await testDb.collection(`programs/${id}/schedules`).get();
-    expect(snap.docs.map((d) => d.get("programStatus"))).toEqual(["pending_review"]);
+    expect(snap.docs.map((d) => d.get("programStatus"))).toEqual(["published"]);
   });
 });
 

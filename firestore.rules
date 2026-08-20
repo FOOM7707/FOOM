@@ -158,6 +158,17 @@ service cloud.firestore {
     //    공급자 본인의 미게시(draft) 회차는 이 경로로 조회되지 않으므로,
     //    공급자 대시보드는 경로 지정 조회(programs/{id}/schedules)를 씁니다.
 
+    // (v23) 승인 대기 중인 수정본. 게시본을 내리지 않고 내용만 따로 보관합니다.
+    // **읽기를 소유자·관리자로 막는 이유:** 이 문서에는 아직 심사받지 않은 내용이
+    // 들어 있습니다. 손님이 읽을 수 있으면 승인 전 문구·가격이 노출되고,
+    // "게시본만 노출한다"는 이 구조의 전제가 깨집니다.
+    // 쓰기는 서버 전용 — 클라이언트가 직접 쓰면 changedFields를 위조해 심사
+    // 대상 항목을 즉시 반영 항목으로 위장할 수 있습니다.
+    match /programs/{programId}/pendingEdit/{docId} {
+      allow read: if isSelf(programOf(programId).providerId) || isAdmin();
+      allow write: if false;
+    }
+
     match /programs/{programId}/scheduleTemplates/{templateId} {
       allow read: if isSelf(programOf(programId).providerId) || isAdmin();
       allow write: if false;       // 캐스케이딩 정책 우회 방지
