@@ -26,6 +26,9 @@ export default function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/provider/apply" element={<ProviderApplyPage />} />
             <Route path="/programs/new" element={<ProgramRegisterPage />} />
+            {/* 등록과 같은 화면을 씁니다 — 받는 값과 검증이 같아서 둘로 나누면
+                한쪽만 고치는 일이 생깁니다. :id 가 있으면 수정 모드입니다. */}
+            <Route path="/programs/:id/edit" element={<ProgramRegisterPage />} />
             <Route path="/my/programs" element={<MyProgramsPage />} />
             <Route path="/programs/:id" element={<ProgramDetailPage />} />
             <Route

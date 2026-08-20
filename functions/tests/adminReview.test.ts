@@ -18,6 +18,7 @@ import {
   reviewProvider,
 } from "../src/lib/adminReview";
 import { createDraftProgram, parseProgramInput, submitProgramForReview } from "../src/lib/programs";
+import { kstDateString, parseScheduleInputs } from "../src/lib/schedules";
 import { grantProvider } from "../src/lib/providerGrant";
 import { testDb } from "./helpers";
 
@@ -59,12 +60,23 @@ function validInput(overrides: Record<string, unknown> = {}) {
   });
 }
 
-/** draft를 만들어 심사 요청까지 올려둡니다 */
+/**
+ * draft를 만들어 심사 요청까지 올려둡니다.
+ *
+ * 회차(날짜)를 함께 넣습니다 — 날짜가 없으면 서버가 심사 요청을 거부합니다(2-4).
+ * 게시돼도 예약할 날짜가 없는 프로그램이 검색에 뜨는 것을 막기 위한 검사입니다.
+ */
 async function makePendingProgram(
   providerUid: string,
   overrides: Record<string, unknown> = {}
 ): Promise<string> {
-  const { id } = await createDraftProgram(testDb, providerUid, validInput(overrides));
+  const input = validInput(overrides);
+  const date = kstDateString(new Date(Date.now() + 21 * 24 * 60 * 60 * 1000));
+  const schedules = parseScheduleInputs(
+    [{ date, startTime: "10:00", endTime: "12:00", capacity: input.capacity }],
+    { scheduleType: input.scheduleType, programCapacity: input.capacity }
+  );
+  const { id } = await createDraftProgram(testDb, providerUid, input, schedules);
   await submitProgramForReview(testDb, id, providerUid);
   return id;
 }

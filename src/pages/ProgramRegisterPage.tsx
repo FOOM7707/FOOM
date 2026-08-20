@@ -1,5 +1,20 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+/**
+ * 프로그램 등록·수정 (`/programs/new`, `/programs/:id/edit`).
+ *
+ * **한 화면이 등록과 수정을 겸합니다.** 받는 값과 검증이 완전히 같아서 화면을 둘로
+ * 나누면 한쪽만 고치는 일이 반드시 생깁니다(필드가 20개 가까이 됩니다).
+ *
+ * 수정도 **서버(`PATCH /programs/{id}`)를 거칩니다.** 보안규칙은 작성 중(draft)
+ * 문서의 클라이언트 직접 수정을 허용하지만, 그 길로 가면 지역·난이도 같은
+ * 파생 필드가 갱신되지 않아 원본과 사본이 어긋납니다(2-3).
+ *
+ * **게시 중인 프로그램의 심사 대상 필드를 고치면 서버가 재심사로 되돌립니다.**
+ * 화면은 그 결과를 응답으로 받아 안내만 합니다 — 판단을 화면에서 따라 계산하면
+ * 서버 규칙이 바뀔 때 두 곳이 어긋납니다.
+ */
+
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { CATEGORIES } from "../types/firestore";
 import type { ScheduleType } from "../types/firestore";
 import { Button } from "@/components/ui/button";
@@ -9,14 +24,33 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import AddressSearchField from "@/components/AddressSearchField";
+import ScheduleFields, {
+  emptyScheduleRow,
+  toSchedulePayload,
+  type ScheduleRowInput,
+} from "@/components/ScheduleFields";
+import SavedSchedules, { type SavedSchedule } from "@/components/SavedSchedules";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { Place } from "@/lib/places";
 
-const SCHEDULE_OPTIONS: { value: ScheduleType; label: string; hint: string }[] = [
+// 「매주 반복」은 반복 회차를 만드는 서버 경로가 아직 없어 고를 수 없습니다.
+// 고를 수 있게 두면 날짜를 넣을 방법이 없는 채로 등록되어, 영구히 예약 불가인
+// 프로그램이 생깁니다(서버도 심사 요청 단계에서 같은 이유로 거부합니다).
+const SCHEDULE_OPTIONS: {
+  value: ScheduleType;
+  label: string;
+  hint: string;
+  disabled?: boolean;
+}[] = [
   { value: "single", label: "1회성", hint: "특정 날짜 1회만 진행" },
-  { value: "weekly", label: "매주 반복", hint: "요일·시간을 정해 매주 반복 개설" },
+  {
+    value: "weekly",
+    label: "매주 반복 (준비 중)",
+    hint: "회차제로 같은 요일을 여러 줄 추가하면 같은 결과가 됩니다",
+    disabled: true,
+  },
   { value: "series", label: "회차제", hint: "여러 회차로 나눠 순차 진행" },
   { value: "open", label: "상시모집(협의형)", hint: "정원 없이 결제 후 채팅으로 일정 협의" },
 ];
@@ -41,15 +75,136 @@ function optionalNumber(raw: FormDataEntryValue | null): number | null {
   return Number(raw);
 }
 
+interface LoadedProgram {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  qualificationType: string;
+  location: { address: string; lat: number | null; lng: number | null };
+  price: number;
+  capacity: number;
+  minCapacity: number;
+  scheduleType: ScheduleType;
+  availableFrom: string | null;
+  availableUntil: string | null;
+  barrierFree: boolean;
+  targetAgeMin: number | null;
+  targetAgeMax: number | null;
+  walkingDistanceM: number | null;
+  rainAlternative: string;
+  status: string;
+  schedules: SavedSchedule[];
+}
+
 export default function ProgramRegisterPage() {
   const { user, loading } = useAuth();
   const { me, loading: meLoading } = useMe();
   const navigate = useNavigate();
+  const { id: editingId } = useParams<{ id: string }>();
+  const isEdit = editingId != null;
+
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState<LoadedProgram | null>(null);
+  const [loadingProgram, setLoadingProgram] = useState(isEdit);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // 주소는 검색해서 고른 값만 씁니다 — 좌표를 함께 받아야 날씨가 붙습니다(16-4).
   const [place, setPlace] = useState<Place | null>(null);
+  // 운영 방식·최대 인원·회차는 서로 영향을 주므로 폼 값으로 두지 않고 상태로 관리합니다
+  // (방식에 따라 날짜 칸이 바뀌고, 최대 인원이 회차 정원의 기본값이 됩니다).
+  const [scheduleType, setScheduleType] = useState<ScheduleType | null>(null);
+  const [capacity, setCapacity] = useState("");
+  const [scheduleRows, setScheduleRows] = useState<ScheduleRowInput[]>([]);
+
+  /** 수정 모드에서 기존 값을 불러와 폼을 채웁니다. */
+  const loadProgram = useCallback(async () => {
+    if (!editingId) return;
+    setLoadingProgram(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ program: LoadedProgram }>(`/programs/${editingId}`, {
+        requireAuth: true,
+      });
+      setLoaded(res.program);
+      setScheduleType(res.program.scheduleType);
+      setCapacity(String(res.program.capacity ?? ""));
+      // 저장된 주소를 그대로 다시 씁니다. 좌표가 비어 있는 옛 프로그램(v18 이전)은
+      // 주소를 다시 검색해 고르지 않으면 좌표가 계속 빈 채로 남습니다 — 그러면
+      // 상세 화면에 날씨가 붙지 않습니다(19-6).
+      setPlace({
+        address: res.program.location.address,
+        roadAddress: null,
+        placeName: null,
+        lat: res.program.location.lat ?? 0,
+        lng: res.program.location.lng ?? 0,
+        sido: null,
+      });
+      // 새로 추가할 줄은 비운 상태로 시작합니다 — 이미 저장된 날짜는 위에 따로 보여줍니다.
+      setScheduleRows([]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "프로그램을 불러오지 못했습니다");
+    } finally {
+      setLoadingProgram(false);
+    }
+  }, [editingId]);
+
+  useEffect(() => {
+    if (isEdit && user) void loadProgram();
+  }, [isEdit, user, loadProgram]);
+
+  /** 저장된 회차 삭제 — 서버가 즉시 지우고 날짜 요약을 다시 계산합니다. */
+  async function deleteSavedSchedule(scheduleId: string) {
+    if (!editingId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/programs/${editingId}/schedules/${scheduleId}`, {
+        method: "DELETE",
+        requireAuth: true,
+      });
+      await loadProgram();
+      setSavedMessage("날짜를 지웠습니다.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "날짜를 지우지 못했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function changeScheduleType(next: ScheduleType) {
+    setScheduleType(next);
+    if (isEdit) {
+      // 수정 모드에서는 이미 저장된 날짜가 있으므로 빈 줄을 자동으로 만들지 않습니다.
+      if (next !== "single" && next !== "series") setScheduleRows([]);
+      return;
+    }
+    if (next === "single") {
+      setScheduleRows((rows) => (rows.length > 0 ? rows.slice(0, 1) : [emptyScheduleRow(capacity)]));
+    } else if (next === "series") {
+      setScheduleRows((rows) => (rows.length > 0 ? rows : [emptyScheduleRow(capacity)]));
+    } else {
+      // 매주 반복·상시모집은 날짜를 받지 않습니다.
+      setScheduleRows([]);
+    }
+  }
+
+  function changeCapacity(next: string) {
+    setCapacity(next);
+    // 아직 손대지 않은 회차 정원만 따라 바꿉니다 — 회차별로 고친 값을 덮지 않습니다.
+    setScheduleRows((rows) =>
+      rows.map((r) => (r.capacity === capacity || r.capacity === "" ? { ...r, capacity: next } : r))
+    );
+  }
+
+  function resetForm() {
+    setCreatedId(null);
+    setPlace(null);
+    setScheduleType(null);
+    setCapacity("");
+    setScheduleRows([]);
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -62,32 +217,82 @@ export default function ProgramRegisterPage() {
       return;
     }
 
+    if (!scheduleType) {
+      setError("운영 방식을 선택해 주세요");
+      setBusy(false);
+      return;
+    }
+
+    const schedules = toSchedulePayload(scheduleRows, scheduleType);
+    const dateBased = scheduleType === "single" || scheduleType === "series";
+    // 날짜가 없으면 게시돼도 예약할 수 없습니다. 서버도 심사 요청 단계에서
+    // 거부하지만, 그때 알리면 등록을 마친 뒤에 되돌아와야 합니다.
+    // 수정 모드에서는 이미 저장된 날짜가 있으므로 새 줄이 비어 있어도 정상입니다.
+    const savedCount = loaded?.schedules.length ?? 0;
+    if (dateBased && schedules.length === 0 && savedCount === 0) {
+      setError("진행 날짜를 입력해 주세요");
+      setBusy(false);
+      return;
+    }
+
     const form = new FormData(e.currentTarget);
+    const body = {
+      title: form.get("title"),
+      description: form.get("description"),
+      category: form.get("category"),
+      qualificationType: form.get("qualificationType"),
+      // 주소·좌표는 한 쌍입니다. 좌표가 비면 그 프로그램에는 날씨가 안 붙습니다(16-4).
+      location: { address: place.address, lat: place.lat, lng: place.lng },
+      price: Number(form.get("price")),
+      capacity: Number(capacity),
+      minCapacity: Number(form.get("minCapacity")),
+      scheduleType,
+      availableFrom: form.get("availableFrom") || null,
+      availableUntil: form.get("availableUntil") || null,
+      barrierFree: form.get("barrierFree") === "on",
+      targetAgeMin: optionalNumber(form.get("targetAgeMin")),
+      targetAgeMax: optionalNumber(form.get("targetAgeMax")),
+      walkingDistanceM: optionalNumber(form.get("walkingDistanceM")),
+      rainAlternative: form.get("rainAlternative"),
+    };
+
+    if (isEdit && editingId) {
+      try {
+        // 내용 먼저 저장합니다. 여기서 실패하면 날짜를 추가하지 않습니다 —
+        // 순서를 뒤집으면 내용이 거부됐는데 날짜만 늘어난 상태가 남습니다.
+        const res = await apiFetch<{ status: string; sentToReview: boolean }>(
+          `/programs/${editingId}`,
+          { method: "PATCH", requireAuth: true, body }
+        );
+        if (schedules.length > 0) {
+          await apiFetch(`/programs/${editingId}/schedules`, {
+            method: "POST",
+            requireAuth: true,
+            body: { schedules },
+          });
+        }
+        await loadProgram();
+        setScheduleRows([]);
+        setSavedMessage(
+          res.sentToReview
+            ? "수정했습니다. 심사 대상 항목이 바뀌어 다시 심사를 받습니다."
+            : "수정했습니다."
+        );
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "수정에 실패했습니다");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     try {
       // 파생 필드(sido·difficulty·targetAgeTags·requiresChildInfo)는 보내지 않습니다.
       // 서버가 계산하며, 보안규칙 허용목록에도 없어 보내면 거부됩니다(2-3).
       const { id } = await apiFetch<{ id: string }>("/programs", {
         method: "POST",
         requireAuth: true,
-        body: {
-          title: form.get("title"),
-          description: form.get("description"),
-          category: form.get("category"),
-          qualificationType: form.get("qualificationType"),
-          // 주소·좌표는 한 쌍입니다. 좌표가 비면 그 프로그램에는 날씨가 안 붙습니다(16-4).
-          location: { address: place.address, lat: place.lat, lng: place.lng },
-          price: Number(form.get("price")),
-          capacity: Number(form.get("capacity")),
-          minCapacity: Number(form.get("minCapacity")),
-          scheduleType: form.get("scheduleType"),
-          availableFrom: form.get("availableFrom") || null,
-          availableUntil: form.get("availableUntil") || null,
-          barrierFree: form.get("barrierFree") === "on",
-          targetAgeMin: optionalNumber(form.get("targetAgeMin")),
-          targetAgeMax: optionalNumber(form.get("targetAgeMax")),
-          walkingDistanceM: optionalNumber(form.get("walkingDistanceM")),
-          rainAlternative: form.get("rainAlternative"),
-        },
+        body: { ...body, schedules },
       });
       setCreatedId(id);
     } catch (err) {
@@ -114,7 +319,7 @@ export default function ProgramRegisterPage() {
     }
   }
 
-  if (loading || meLoading) {
+  if (loading || meLoading || loadingProgram) {
     return <div className="container mx-auto max-w-xl px-5 py-8">불러오는 중…</div>;
   }
 
@@ -154,6 +359,24 @@ export default function ProgramRegisterPage() {
     );
   }
 
+  if (isEdit && !loaded) {
+    return (
+      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+        <Card className="bg-secondary">
+          <CardContent className="pt-6">
+            <h1 className="mb-3 text-lg font-bold">프로그램을 불러오지 못했습니다</h1>
+            <p className="mb-4 text-sm leading-relaxed">
+              {error ?? "내 프로그램에서 다시 시도해 주세요."}
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/my/programs">내 프로그램으로</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (createdId) {
     return (
       <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
@@ -180,10 +403,7 @@ export default function ProgramRegisterPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  setCreatedId(null);
-                  setPlace(null);
-                }}
+                onClick={resetForm}
               >
                 하나 더 등록
               </Button>
@@ -196,15 +416,49 @@ export default function ProgramRegisterPage() {
 
   return (
     <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
-      <h1 className="mb-2.5 text-[22px] font-bold">프로그램 등록</h1>
-      <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
-        저장하면 <strong>작성 중(draft)</strong> 상태가 되고, 심사를 요청해야 게시됩니다.
-        {" "}
-        <Link to="/my/programs" className="underline">
-          내 프로그램
-        </Link>
-        에서 상태를 확인할 수 있습니다.
-      </p>
+      <h1 className="mb-2.5 text-[22px] font-bold">
+        {isEdit ? "프로그램 수정" : "프로그램 등록"}
+      </h1>
+      {isEdit ? (
+        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+          {loaded!.status === "published" ? (
+            <>
+              현재 <strong>게시 중</strong>입니다. 제목·소개·사진·가격·정원·장소처럼{" "}
+              <strong>심사 대상 항목을 고치면 다시 심사를 받습니다</strong> — 승인된 내용이
+              말없이 바뀌는 것을 막기 위한 규칙입니다. 배리어프리·우천 대체·걷는 거리는 바로
+              반영됩니다.
+            </>
+          ) : loaded!.status === "hidden" ? (
+            <>
+              <strong>반려된 프로그램</strong>입니다. 내용을 고쳐 저장하면 자동으로 다시 심사를
+              요청합니다.
+            </>
+          ) : loaded!.status === "pending_review" ? (
+            <>
+              <strong>심사 중</strong>입니다. 지금 고친 내용으로 심사받습니다.
+            </>
+          ) : (
+            <>
+              <strong>작성 중</strong>입니다. 자유롭게 고칠 수 있고, 심사를 요청해야 게시됩니다.
+            </>
+          )}
+        </p>
+      ) : (
+        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+          저장하면 <strong>작성 중(draft)</strong> 상태가 되고, 심사를 요청해야 게시됩니다.
+          {" "}
+          <Link to="/my/programs" className="underline">
+            내 프로그램
+          </Link>
+          에서 상태를 확인할 수 있습니다.
+        </p>
+      )}
+
+      {savedMessage && (
+        <p className="mb-4 rounded-lg bg-secondary px-3 py-2.5 text-[13px] leading-relaxed text-secondary-foreground">
+          {savedMessage}
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2.5 text-[13px] leading-relaxed text-destructive">
@@ -215,7 +469,13 @@ export default function ProgramRegisterPage() {
       <form className="flex flex-col gap-[18px]" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="title">프로그램명</Label>
-          <Input id="title" name="title" required placeholder="예: 주말 산림치유 명상 프로그램" />
+          <Input
+            id="title"
+            name="title"
+            required
+            placeholder="예: 주말 산림치유 명상 프로그램"
+            defaultValue={loaded?.title ?? ""}
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -226,13 +486,14 @@ export default function ProgramRegisterPage() {
             required
             rows={4}
             placeholder="프로그램 소개를 입력하세요"
+            defaultValue={loaded?.description ?? ""}
           />
         </div>
 
         <div className="flex gap-3">
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="category">카테고리</Label>
-            <Select id="category" name="category" required defaultValue="">
+            <Select id="category" name="category" required defaultValue={loaded?.category ?? ""}>
               <option value="" disabled>
                 선택하세요
               </option>
@@ -245,7 +506,12 @@ export default function ProgramRegisterPage() {
           </div>
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="qualificationType">자격 유형</Label>
-            <Select id="qualificationType" name="qualificationType" required defaultValue="">
+            <Select
+              id="qualificationType"
+              name="qualificationType"
+              required
+              defaultValue={loaded?.qualificationType ?? ""}
+            >
               <option value="" disabled>
                 선택하세요
               </option>
@@ -266,43 +532,132 @@ export default function ProgramRegisterPage() {
         <div className="flex gap-3">
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="price">가격(원)</Label>
-            <Input id="price" name="price" type="number" min={0} required placeholder="35000" />
+            <Input
+              id="price"
+              name="price"
+              type="number"
+              min={0}
+              required
+              placeholder="35000"
+              defaultValue={loaded?.price ?? ""}
+            />
           </div>
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="minCapacity">최소 인원</Label>
-            <Input id="minCapacity" name="minCapacity" type="number" min={1} required placeholder="4" />
+            <Input
+              id="minCapacity"
+              name="minCapacity"
+              type="number"
+              min={1}
+              required
+              placeholder="4"
+              defaultValue={loaded?.minCapacity ?? ""}
+            />
           </div>
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="capacity">최대 인원</Label>
-            <Input id="capacity" name="capacity" type="number" min={1} required placeholder="12" />
+            <Input
+              id="capacity"
+              name="capacity"
+              type="number"
+              min={1}
+              required
+              placeholder="12"
+              value={capacity}
+              onChange={(e) => changeCapacity(e.target.value)}
+            />
           </div>
         </div>
 
         <fieldset className="flex flex-col gap-2.5 rounded-lg border px-4 py-3.5">
           <legend className="px-1 text-[13px] text-muted-foreground">운영 방식</legend>
           {SCHEDULE_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-start gap-2.5 text-sm">
-              <input type="radio" name="scheduleType" value={opt.value} required className="mt-1" />
+            <label
+              key={opt.value}
+              className={`flex items-start gap-2.5 text-sm ${
+                opt.disabled ? "cursor-not-allowed opacity-55" : ""
+              }`}
+            >
+              <input
+                type="radio"
+                name="scheduleType"
+                value={opt.value}
+                required
+                disabled={opt.disabled}
+                checked={scheduleType === opt.value}
+                onChange={() => changeScheduleType(opt.value)}
+                className="mt-1"
+              />
               <span>
                 <strong className="font-semibold">{opt.label}</strong>
                 <span className="block text-xs text-muted-foreground">{opt.hint}</span>
               </span>
             </label>
           ))}
-          <div className="mt-1 flex gap-3">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="availableFrom" className="text-[13px]">
-                이용 가능 시작일 (상시모집만)
-              </Label>
-              <Input id="availableFrom" name="availableFrom" type="date" />
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="availableUntil" className="text-[13px]">
-                이용 가능 종료일 (상시모집만)
-              </Label>
-              <Input id="availableUntil" name="availableUntil" type="date" />
-            </div>
+
+          <div className="mt-1.5 flex flex-col gap-3 border-t pt-3.5">
+            <p className="text-[13px] font-semibold">진행 날짜</p>
+
+            {isEdit && loaded && (
+              <>
+                <SavedSchedules
+                  scheduleType={loaded.scheduleType}
+                  schedules={loaded.schedules}
+                  onDelete={deleteSavedSchedule}
+                  busy={busy}
+                />
+                {(scheduleType === "single" || scheduleType === "series") && (
+                  <p className="text-[12.5px] text-muted-foreground">
+                    날짜를 더 열려면 아래에서 추가하고 저장하세요. 못 가는 날은 위에서
+                    지우면 됩니다.
+                  </p>
+                )}
+              </>
+            )}
+
+            <ScheduleFields
+              scheduleType={scheduleType}
+              rows={scheduleRows}
+              onChange={setScheduleRows}
+              programCapacity={capacity}
+              compact={isEdit}
+              canAdd={
+                isEdit
+                  ? scheduleType === "series" ||
+                    (scheduleType === "single" && (loaded?.schedules.length ?? 0) === 0)
+                  : undefined
+              }
+            />
           </div>
+
+          {/* 문의 가능 기간은 상시모집 전용입니다 — 다른 방식에서는 서버가 null로
+              못박으므로, 칸을 보여주면 입력해도 사라지는 것처럼 보입니다(2-3). */}
+          {scheduleType === "open" && (
+            <div className="mt-1 flex gap-3">
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Label htmlFor="availableFrom" className="text-[13px]">
+                  문의 가능 시작일
+                </Label>
+                <Input
+                  id="availableFrom"
+                  name="availableFrom"
+                  type="date"
+                  defaultValue={loaded?.availableFrom ?? ""}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Label htmlFor="availableUntil" className="text-[13px]">
+                  문의 가능 종료일
+                </Label>
+                <Input
+                  id="availableUntil"
+                  name="availableUntil"
+                  type="date"
+                  defaultValue={loaded?.availableUntil ?? ""}
+                />
+              </div>
+            </div>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-3 rounded-lg border px-4 py-3.5">
@@ -312,20 +667,41 @@ export default function ProgramRegisterPage() {
               <Label htmlFor="targetAgeMin" className="text-[13px]">
                 참가 가능 연령(최소)
               </Label>
-              <Input id="targetAgeMin" name="targetAgeMin" type="number" min={0} placeholder="비우면 제한 없음" />
+              <Input
+                id="targetAgeMin"
+                name="targetAgeMin"
+                type="number"
+                min={0}
+                placeholder="비우면 제한 없음"
+                defaultValue={loaded?.targetAgeMin ?? ""}
+              />
             </div>
             <div className="flex flex-1 flex-col gap-1.5">
               <Label htmlFor="targetAgeMax" className="text-[13px]">
                 참가 가능 연령(최대)
               </Label>
-              <Input id="targetAgeMax" name="targetAgeMax" type="number" min={0} placeholder="비우면 제한 없음" />
+              <Input
+                id="targetAgeMax"
+                name="targetAgeMax"
+                type="number"
+                min={0}
+                placeholder="비우면 제한 없음"
+                defaultValue={loaded?.targetAgeMax ?? ""}
+              />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="walkingDistanceM" className="text-[13px]">
               총 걷는 거리(m)
             </Label>
-            <Input id="walkingDistanceM" name="walkingDistanceM" type="number" min={0} placeholder="예: 2000" />
+            <Input
+              id="walkingDistanceM"
+              name="walkingDistanceM"
+              type="number"
+              min={0}
+              placeholder="예: 2000"
+              defaultValue={loaded?.walkingDistanceM ?? ""}
+            />
             <p className="text-xs text-muted-foreground">
               난이도는 이 값으로 자동 표시됩니다 — 1km 이하 쉬움 / 1~3km 보통 / 3km 이상 어려움.
             </p>
@@ -334,7 +710,12 @@ export default function ProgramRegisterPage() {
             <Label htmlFor="rainAlternative" className="text-[13px]">
               우천 시 대체 방식
             </Label>
-            <Select id="rainAlternative" name="rainAlternative" required defaultValue="none">
+            <Select
+              id="rainAlternative"
+              name="rainAlternative"
+              required
+              defaultValue={loaded?.rainAlternative ?? "none"}
+            >
               {RAIN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -345,13 +726,20 @@ export default function ProgramRegisterPage() {
         </fieldset>
 
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="barrierFree" />
+          <input type="checkbox" name="barrierFree" defaultChecked={loaded?.barrierFree ?? false} />
           배리어프리(무장애) 코스입니다
         </label>
 
-        <Button type="submit" size="lg" disabled={busy}>
-          {busy ? "저장 중…" : "작성 중으로 저장"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="lg" disabled={busy}>
+            {busy ? "저장 중…" : isEdit ? "수정 내용 저장" : "작성 중으로 저장"}
+          </Button>
+          {isEdit && (
+            <Button type="button" size="lg" variant="outline" asChild>
+              <Link to="/my/programs">내 프로그램으로</Link>
+            </Button>
+          )}
+        </div>
       </form>
     </div>
   );

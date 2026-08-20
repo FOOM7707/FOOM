@@ -14,6 +14,7 @@ import {
   parseProgramInput,
   submitProgramForReview,
 } from "../src/lib/programs";
+import { parseScheduleInputs } from "../src/lib/schedules";
 import { grantProvider } from "../src/lib/providerGrant";
 import { testDb } from "./helpers";
 
@@ -54,6 +55,23 @@ function validInput(overrides: Record<string, unknown> = {}) {
     targetAgeMax: null,
     ...overrides,
   };
+}
+
+/**
+ * 심사 요청이 가능한 프로그램 — 회차가 1건 이상 있어야 합니다(2-4).
+ * 날짜가 없으면 게시돼도 예약할 수 없어 서버가 심사 요청을 거부합니다.
+ */
+async function makeSubmittableProgram(): Promise<string> {
+  const date = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const input = parseProgramInput(validInput({ scheduleType: "series" }));
+  const schedules = parseScheduleInputs(
+    [{ date, startTime: "10:00", endTime: "12:00", capacity: 12 }],
+    { scheduleType: "series", programCapacity: input.capacity }
+  );
+  const { id } = await createDraftProgram(testDb, providerUid, input, schedules);
+  return id;
 }
 
 beforeAll(async () => {
@@ -244,33 +262,53 @@ describe("listPrograms", () => {
 
 describe("submitProgramForReview", () => {
   it("draft를 pending_review로 바꾼다", async () => {
-    const { id } = await createDraftProgram(
-      testDb,
-      providerUid,
-      parseProgramInput(validInput())
-    );
+    const id = await makeSubmittableProgram();
     await submitProgramForReview(testDb, id, providerUid);
     expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
   });
 
   it("남의 프로그램은 심사 요청할 수 없다", async () => {
-    const { id } = await createDraftProgram(
-      testDb,
-      providerUid,
-      parseProgramInput(validInput())
-    );
+    const id = await makeSubmittableProgram();
     await expect(submitProgramForReview(testDb, id, consumerUid)).rejects.toMatchObject({
       code: "not-found",
     });
   });
 
   it("이미 심사 중이면 다시 요청할 수 없다", async () => {
+    const id = await makeSubmittableProgram();
+    await submitProgramForReview(testDb, id, providerUid);
+    await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
+      code: "failed-precondition",
+    });
+  });
+
+  it("회차가 없으면 심사를 요청할 수 없다 — 게시돼도 예약할 날짜가 없다", async () => {
     const { id } = await createDraftProgram(
       testDb,
       providerUid,
-      parseProgramInput(validInput())
+      parseProgramInput(validInput({ scheduleType: "series" }))
+    );
+    await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
+      code: "failed-precondition",
+    });
+  });
+
+  it("상시모집은 회차가 없어도 심사를 요청할 수 있다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "open" }))
     );
     await submitProgramForReview(testDb, id, providerUid);
+    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+  });
+
+  it("매주 반복은 회차를 만들 경로가 없어 심사 요청이 막힌다 (준비 중)", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "weekly" }))
+    );
     await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
       code: "failed-precondition",
     });
