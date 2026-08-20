@@ -21,12 +21,25 @@ export default function ProgramCard({ program, distanceKm }: Props) {
   return (
     <Link to={`/programs/${program.id}`}>
       <Card className="overflow-hidden py-0 transition-all hover:-translate-y-0.5 hover:shadow-md">
-        <div
-          className="flex h-[120px] items-center justify-center bg-secondary text-sm font-bold text-secondary-foreground"
-          aria-hidden
-        >
-          {program.category}
-        </div>
+        {/* 대표 사진은 `imageUrls[0]`입니다(2-3 — 별도 썸네일 필드를 두지 않음).
+            **지연 로딩합니다** — 목록은 카드가 여러 장이라 보이지 않는 것까지 받으면
+            전송량이 가장 큰 화면이 됩니다(20-6).
+            사진이 없으면 카테고리를 적습니다. 회색 빈 칸은 「깨진 화면」으로 읽힙니다. */}
+        {program.imageUrls?.[0] ? (
+          <img
+            src={program.imageUrls[0]}
+            alt=""
+            loading="lazy"
+            className="h-[120px] w-full bg-secondary object-cover"
+          />
+        ) : (
+          <div
+            className="flex h-[120px] items-center justify-center bg-secondary text-sm font-bold text-secondary-foreground"
+            aria-hidden
+          >
+            {program.category}
+          </div>
+        )}
         <div className="px-4 pb-[18px] pt-3.5">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <Badge variant="secondary">{SCHEDULE_LABEL[program.scheduleType]}</Badge>

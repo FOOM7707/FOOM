@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { mockPrograms } from "../mocks/programs";
+import { apiFetch } from "@/lib/api";
+import type { SearchRow } from "@/lib/programFilter";
 import WeatherWidget from "../components/WeatherWidget";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { DEFAULT_CENTER } from "@/lib/geo";
@@ -61,15 +63,20 @@ const PHOTO_CARDS: {
 ];
 
 /**
- * 카테고리 대표 이미지 — 해당 카테고리의 게시 중 프로그램에서 imageUrls[0]을 씁니다
- * (대표 썸네일 규칙, 스키마 2-3). mock에 이미지가 없는 동안은 fallback으로 대체.
- * 자동 슬라이드는 채택하지 않음 — 이미지 1장 고정 (스키마 9-7 ①).
+ * 카테고리 대표 이미지 — 그 카테고리의 **게시 중 프로그램**에서 `imageUrls[0]`을
+ * 씁니다(대표 썸네일 규칙, 스키마 2-3).
+ *
+ * **게시된 프로그램이 없거나 사진이 없으면 준비된 사진으로 대체합니다.** 카드가
+ * 비어 보이면 「고장」으로 읽히고, 홈은 첫 화면이라 그 인상이 가장 큽니다.
+ * 자동 슬라이드는 채택하지 않았습니다 — 사진 1장 고정(9-7 ①).
  */
-function representativeImage(category: Category, fallback: string): string {
-  const program = mockPrograms.find(
-    (p) => p.category === category && p.status === "published" && p.imageUrls[0]
-  );
-  return program?.imageUrls[0] ?? fallback;
+function representativeImage(
+  rows: SearchRow[],
+  category: Category,
+  fallback: string
+): string {
+  const found = rows.find((p) => p.category === category && p.imageUrls?.[0]);
+  return found?.imageUrls[0] ?? fallback;
 }
 
 // 5. 후기 섹션 예시 데이터 (초안 그대로 — 화면 구성 확인용)
@@ -96,6 +103,16 @@ const REVIEWS = [
 
 export default function HomePage() {
   const { position, status, request } = useCurrentLocation();
+
+  // 카테고리 카드의 사진을 채우기 위해 게시된 프로그램을 한 번 읽습니다.
+  // **화면 렌더링을 막지 않습니다** — 사진이 늦게 와도 준비된 사진으로 먼저
+  // 그려지고 값이 오면 바뀝니다(날씨 위젯과 같은 방식, 16-3).
+  const [rows, setRows] = useState<SearchRow[]>([]);
+  useEffect(() => {
+    void apiFetch<{ programs: SearchRow[] }>("/programs/search?limit=100")
+      .then((res) => setRows(res.programs))
+      .catch(() => setRows([]));
+  }, []);
   const weatherPoint = position ?? DEFAULT_CENTER;
   const weatherRegion = position ? "현재위치 주변" : "서울 중구";
 
@@ -144,7 +161,7 @@ export default function HomePage() {
                 </span>
                 {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①) */}
                 <img
-                  src={representativeImage(category, fallbackImage)}
+                  src={representativeImage(rows, category, fallbackImage)}
                   alt={`${category} 프로그램`}
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
