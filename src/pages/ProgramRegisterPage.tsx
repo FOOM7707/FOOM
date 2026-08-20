@@ -95,7 +95,27 @@ interface LoadedProgram {
   rainAlternative: string;
   status: string;
   schedules: SavedSchedule[];
+  /** 승인 대기 중인 수정본 (게시 중인 프로그램만). 없으면 null */
+  pendingEdit: { changedFields: string[] } | null;
+  /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다 */
+  editReviewNote?: string | null;
 }
+
+/** 항목 이름 → 사람이 읽는 이름 */
+const FIELD_LABEL: Record<string, string> = {
+  title: "프로그램명",
+  description: "소개",
+  category: "카테고리",
+  qualificationType: "자격 유형",
+  location: "장소",
+  price: "가격",
+  capacity: "최대 인원",
+  minCapacity: "최소 인원",
+  scheduleType: "운영 방식",
+  imageUrls: "사진",
+  targetAgeMin: "참가 연령(최소)",
+  targetAgeMax: "참가 연령(최대)",
+};
 
 export default function ProgramRegisterPage() {
   const { user, loading } = useAuth();
@@ -153,6 +173,28 @@ export default function ProgramRegisterPage() {
   useEffect(() => {
     if (isEdit && user) void loadProgram();
   }, [isEdit, user, loadProgram]);
+
+  /** 승인 대기 중인 수정본을 버립니다. 게시본은 그대로 남습니다. */
+  async function cancelPendingEdit() {
+    if (!editingId) return;
+    if (!window.confirm("승인 대기 중인 수정 내용을 취소할까요? 게시된 내용은 그대로 남습니다.")) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/programs/${editingId}/pending-edit`, {
+        method: "DELETE",
+        requireAuth: true,
+      });
+      await loadProgram();
+      setSavedMessage("수정 요청을 취소했습니다. 게시된 내용은 그대로입니다.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "취소에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   /** 저장된 회차 삭제 — 서버가 즉시 지우고 날짜 요약을 다시 계산합니다. */
   async function deleteSavedSchedule(scheduleId: string) {
@@ -260,7 +302,12 @@ export default function ProgramRegisterPage() {
       try {
         // 내용 먼저 저장합니다. 여기서 실패하면 날짜를 추가하지 않습니다 —
         // 순서를 뒤집으면 내용이 거부됐는데 날짜만 늘어난 상태가 남습니다.
-        const res = await apiFetch<{ status: string; sentToReview: boolean }>(
+        const res = await apiFetch<{
+          status: string;
+          sentToReview: boolean;
+          pendingEdit: boolean;
+          changedFields: string[];
+        }>(
           `/programs/${editingId}`,
           { method: "PATCH", requireAuth: true, body }
         );
@@ -274,9 +321,13 @@ export default function ProgramRegisterPage() {
         await loadProgram();
         setScheduleRows([]);
         setSavedMessage(
-          res.sentToReview
-            ? "수정했습니다. 심사 대상 항목이 바뀌어 다시 심사를 받습니다."
-            : "수정했습니다."
+          res.pendingEdit
+            ? `수정 내용을 접수했습니다. ${res.changedFields
+                .map((f) => FIELD_LABEL[f] ?? f)
+                .join(" · ")}은(는) 관리자 승인 후 반영됩니다 — 그때까지 손님에게는 지금 게시된 내용이 그대로 보입니다.`
+            : res.sentToReview
+              ? "수정했습니다. 심사 대상 항목이 바뀌어 다시 심사를 받습니다."
+              : "수정했습니다. 바로 반영됐습니다."
         );
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "수정에 실패했습니다");
@@ -423,10 +474,10 @@ export default function ProgramRegisterPage() {
         <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
           {loaded!.status === "published" ? (
             <>
-              현재 <strong>게시 중</strong>입니다. 제목·소개·사진·가격·정원·장소처럼{" "}
-              <strong>심사 대상 항목을 고치면 다시 심사를 받습니다</strong> — 승인된 내용이
-              말없이 바뀌는 것을 막기 위한 규칙입니다. 배리어프리·우천 대체·걷는 거리는 바로
-              반영됩니다.
+              현재 <strong>게시 중</strong>입니다. 고쳐도 <strong>게시가 중단되지
+              않습니다</strong> — 제목·소개·사진·가격·정원·장소처럼 심사 대상 항목은 관리자
+              승인 후에 바뀌고, 그때까지 손님에게는 지금 내용이 그대로 보입니다. 배리어프리·
+              우천 대체·걷는 거리, 그리고 <strong>날짜는 승인 없이 바로</strong> 반영됩니다.
             </>
           ) : loaded!.status === "hidden" ? (
             <>
@@ -451,6 +502,38 @@ export default function ProgramRegisterPage() {
             내 프로그램
           </Link>
           에서 상태를 확인할 수 있습니다.
+        </p>
+      )}
+
+      {loaded?.pendingEdit && (
+        <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 px-3.5 py-3">
+          <p className="text-[13px] leading-relaxed">
+            <strong className="font-semibold text-primary">승인 대기 중인 수정 내용이 있습니다.</strong>{" "}
+            {loaded.pendingEdit.changedFields.map((f) => FIELD_LABEL[f] ?? f).join(" · ")} — 승인되면
+            반영됩니다. 지금 손님에게는 <strong>게시된 내용</strong>이 보입니다.
+          </p>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+            아래 값은 <strong>게시된 내용</strong>입니다. 다시 고쳐 저장하면 대기 중인 수정
+            내용이 새것으로 바뀝니다.
+          </p>
+          <button
+            type="button"
+            onClick={() => void cancelPendingEdit()}
+            disabled={busy}
+            className="mt-2 text-[12.5px] text-muted-foreground underline hover:text-destructive disabled:opacity-50"
+          >
+            수정 요청 취소
+          </button>
+        </div>
+      )}
+
+      {loaded?.editReviewNote && !loaded.pendingEdit && (
+        <p className="mb-4 rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
+          <strong className="font-semibold">지난 수정 요청이 반려되었습니다.</strong>
+          <br />
+          {loaded.editReviewNote}
+          <br />
+          <span className="text-[12.5px]">게시된 내용은 그대로 유지되고 있습니다.</span>
         </p>
       )}
 

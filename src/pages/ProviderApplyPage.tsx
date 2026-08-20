@@ -33,6 +33,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
+import ReviewProgress from "@/components/ReviewProgress";
 import { cn } from "@/lib/utils";
 
 /**
@@ -184,6 +185,9 @@ function StatusPanel() {
   if (me.role !== "provider") {
     return (
       <div className="space-y-3">
+        {/* 아직 접수 전이어도 단계는 보여줍니다 — 앞으로 무엇이 남았는지 알 수
+            있어야 문의할 마음이 생깁니다. */}
+        <ReviewProgress isProvider={false} approvalStatus={null} />
         <Notice>
           <b>현재 온라인 신청은 준비 중입니다.</b>
           <br />
@@ -204,11 +208,26 @@ function StatusPanel() {
   // 여기부터는 공급자 계정입니다.
   return (
     <div className="space-y-3">
-      {me.provider?.approvalStatus === "rejected" && (
+      <ReviewProgress
+        isProvider
+        approvalStatus={me.provider?.approvalStatus ?? null}
+        note={me.provider?.approvalNote ?? null}
+      />
+
+      {me.provider?.approvalStatus === "rejected" && !me.provider.approvalNote && (
         <Notice tone="warn">
           <b>심사가 반려되었습니다.</b>
           <br />
-          {me.provider.approvalNote ?? "사유가 기록되지 않았습니다. 운영자에게 문의해 주세요."}
+          사유가 기록되지 않았습니다. 운영자에게 문의해 주세요.
+        </Notice>
+      )}
+
+      {me.provider?.approvalStatus === "reviewing" && (
+        <Notice>
+          <b>담당자가 자격 서류를 확인하고 있습니다.</b>
+          <br />
+          결과가 나오면 이 화면에서 확인하실 수 있습니다. 그동안에도 프로그램 등록과 심사
+          요청은 할 수 있습니다.
         </Notice>
       )}
 

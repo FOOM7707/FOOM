@@ -17,6 +17,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
+import { discardPendingEdit } from "./programEdits";
 
 export type ReviewDecision = "approved" | "rejected";
 
@@ -47,6 +48,21 @@ export function parseReviewInput(body: unknown, adminUid: string): ReviewInput {
 
   return { decision, note: rawNote.length > 0 ? rawNote : null, adminUid };
 }
+
+/**
+ * 전문가 자격 심사 상태 (v23에서 `reviewing` 추가).
+ *
+ * **`reviewing`을 왜 두는가.** 신청한 전문가에게 「접수 → 대기 → 심사 중 → 결과」를
+ * 보여주려면 「담당자가 실제로 보기 시작했다」는 시점이 데이터에 있어야 합니다.
+ * 없이 4칸을 그리면 3번 칸이 영원히 안 켜지고, 사용자는 그걸 고장으로 읽습니다.
+ * 대신 관리자가 「심사 시작」을 한 번 눌러야 합니다.
+ */
+export const PROVIDER_APPROVAL_STATUSES = [
+  "pending",
+  "reviewing",
+  "approved",
+  "rejected",
+] as const;
 
 // ── 전문가 심사 ────────────────────────────────────────────────────────────
 
@@ -149,6 +165,41 @@ export async function listProvidersForReview(
 }
 
 /**
+ * 심사 착수 (`POST /admin/providers/{id}/start-review`).
+ *
+ * 상태만 `pending` → `reviewing`으로 옮깁니다. 승인·반려와 달리 결과가 아니라
+ * **진행 표시**이므로 `verified`는 건드리지 않습니다 — 여기서 함께 바꾸면
+ * "심사 중인데 인증 배지가 붙는" 상태가 됩니다.
+ */
+export async function startProviderReview(
+  db: Firestore,
+  uid: string,
+  adminUid: string
+): Promise<{ uid: string; approvalStatus: string }> {
+  const privateRef = db.doc(`providerProfiles/${uid}/private/profile`);
+  const snap = await privateRef.get();
+  if (!snap.exists) {
+    throw new AppError("not-found", "공급자 프로필을 찾을 수 없습니다");
+  }
+
+  const current = (snap.get("approvalStatus") as string) ?? null;
+  if (current !== "pending") {
+    throw new AppError(
+      "failed-precondition",
+      "심사 대기(pending) 상태에서만 심사를 시작할 수 있습니다"
+    );
+  }
+
+  await privateRef.update({
+    approvalStatus: "reviewing",
+    reviewStartedBy: adminUid,
+    reviewStartedAt: FieldValue.serverTimestamp(),
+  });
+
+  return { uid, approvalStatus: "reviewing" };
+}
+
+/**
  * 승인/반려 (`POST /admin/providers/{id}/approve`).
  *
  * 승인은 문서 두 개를 함께 바꿉니다 — `private/profile.approvalStatus`와
@@ -166,6 +217,16 @@ export async function reviewProvider(
   const [publicSnap, privateSnap] = await Promise.all([publicRef.get(), privateRef.get()]);
   if (!publicSnap.exists || !privateSnap.exists) {
     throw new AppError("not-found", "공급자 프로필을 찾을 수 없습니다");
+  }
+
+  const current = (privateSnap.get("approvalStatus") as string) ?? null;
+  if (current !== "pending" && current !== "reviewing") {
+    // 이미 승인·반려된 계정을 다시 처리하면 진행 표시가 뒤로 돌아갑니다.
+    // 재심사가 필요하면 대기 상태로 돌리는 별도 경로를 만듭니다.
+    throw new AppError(
+      "failed-precondition",
+      "심사 대기 또는 심사 중인 계정만 처리할 수 있습니다"
+    );
   }
 
   const approved = input.decision === "approved";
@@ -314,6 +375,13 @@ export async function reviewProgram(
     const batch = db.batch();
     schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: nextStatus }));
     await batch.commit();
+  }
+
+  // 숨김(반려) 처리 시 승인 대기 중인 수정본을 버립니다(v23).
+  // 남겨두면 나중에 이 프로그램을 되살릴 때 게시본과 수정본 중 어느 쪽이
+  // 기준인지 알 수 없어집니다.
+  if (!approved) {
+    await discardPendingEdit(db, id);
   }
 
   // TODO(2번 검색 연동): 승인 직후 rebuildSearchIndex를 1회 호출해 검색 반영

@@ -98,6 +98,19 @@ export function seedAll() {
       updatedAt: now,
     })
 
+    // ---- pendingEdit (v23) ----
+    // 게시 중 프로그램의 승인 대기 수정본. 심사 전 내용이라 손님에게 보이면 안 됩니다.
+    await setDoc(
+      doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current'),
+      {
+        title: '심사 전 제목',
+        price: 99000,
+        changedFields: ['title', 'price'],
+        submittedBy: UID.providerA,
+        submittedAt: now,
+      },
+    )
+
     // ---- schedules ----
     // 재귀 와일드카드 규칙이 programStatus만 보고 판단하므로 비정규화 저장(2-4)
     await setDoc(

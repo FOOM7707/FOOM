@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { beforeEach, describe, it } from 'vitest'
 import { assertDenied, assertSucceeds } from './helpers/assert'
-import { as, unauth, UID, setupRulesTestEnv } from './helpers/env'
+import { as, asAdmin, unauth, UID, setupRulesTestEnv } from './helpers/env'
 import { ID, seedAll } from './helpers/fixtures'
 
 setupRulesTestEnv()
@@ -95,6 +95,64 @@ describe('programs — 허용목록 방식 수정 규칙 (v13)', () => {
     await assertSucceeds(
       updateDoc(doc(db, 'programs', ID.programDraftMinimal), {
         title: '제목만 고칩니다',
+      }),
+    )
+  })
+})
+
+describe('pendingEdit — 승인 대기 중인 수정본 (v23)', () => {
+  beforeEach(seedAll)
+
+  it('소유자는 자기 수정본을 읽는다', async () => {
+    const db = as(UID.providerA)
+    await assertSucceeds(
+      getDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current')),
+    )
+  })
+
+  it('관리자는 읽는다 — 심사해야 하므로', async () => {
+    const db = asAdmin()
+    await assertSucceeds(
+      getDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current')),
+    )
+  })
+
+  it('소비자는 읽지 못한다 — 심사 전 제목·가격이 노출되면 안 된다', async () => {
+    const db = as(UID.consumer1)
+    await assertDenied(
+      getDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current')),
+    )
+  })
+
+  it('비로그인도 읽지 못한다 (게시된 프로그램이어도)', async () => {
+    const db = unauth()
+    await assertDenied(
+      getDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current')),
+    )
+  })
+
+  it('다른 공급자는 읽지 못한다', async () => {
+    const db = as(UID.providerB)
+    await assertDenied(
+      getDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current')),
+    )
+  })
+
+  it('소유자도 직접 쓰지 못한다 — changedFields를 위조해 심사를 우회할 수 있다', async () => {
+    const db = as(UID.providerA)
+    await assertDenied(
+      setDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current'), {
+        title: '심사 없이 바꾼 제목',
+        changedFields: [], // 바뀐 게 없다고 위장
+      }),
+    )
+  })
+
+  it('관리자도 직접 쓰지 못한다 — 승인은 감사로그가 남는 서버 경로로만', async () => {
+    const db = asAdmin()
+    await assertDenied(
+      updateDoc(doc(db, 'programs', ID.programPublished, 'pendingEdit', 'current'), {
+        title: '관리자가 직접 수정',
       }),
     )
   })

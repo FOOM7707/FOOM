@@ -17,6 +17,7 @@ import {
   updateProgram,
 } from "../../lib/programs";
 import { AppError } from "../../lib/errors";
+import { cancelPendingEdit } from "../../lib/programEdits";
 import { addSchedules, deleteSchedule, parseScheduleInputs } from "../../lib/schedules";
 import { asyncHandler, authenticate, optionalAuthenticate } from "../middleware";
 import type { Firestore } from "firebase-admin/firestore";
@@ -75,6 +76,16 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
         req.auth!.uid,
         input
       );
+      res.json(result);
+    })
+  );
+
+  // 수정본 취소 — 소유자만. 승인 대기 중인 수정 내용을 스스로 버립니다(v23).
+  router.delete(
+    "/:id/pending-edit",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await cancelPendingEdit(db(), String(req.params.id), req.auth!.uid);
       res.json(result);
     })
   );

@@ -24,6 +24,8 @@ interface ProgramRow {
   /** 오늘~+90일 사이의 예약 가능 날짜. 서버가 회차에서 계산한 사본입니다(2-3) */
   scheduleDates?: string[];
   reviewNote?: string | null;
+  /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다(v23) */
+  editReviewNote?: string | null;
   location?: { address?: string };
 }
 
@@ -187,6 +189,16 @@ export default function MyProgramsPage() {
                       </p>
                     );
                   })()}
+
+                  {/* 수정 요청이 반려된 경우 — 프로그램 자체는 게시 중입니다.
+                      프로그램 반려(위)와 구분해서 보여줘야 오해가 없습니다. */}
+                  {p.status === "published" && p.editReviewNote && (
+                    <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
+                      수정 요청 반려: {p.editReviewNote}
+                      <br />
+                      <span className="text-[12px]">게시된 내용은 그대로 유지되고 있습니다.</span>
+                    </p>
+                  )}
 
                   {p.status === "hidden" && p.reviewNote && (
                     <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">

@@ -10,6 +10,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
+import { getPendingEdit, savePendingEdit } from "./programEdits";
 import {
   assertSchedulableForReview,
   buildScheduleDocs,
@@ -283,7 +284,17 @@ export async function getProgram(
   // 같은 데이터를 쓰므로, 별도 엔드포인트를 두면 두 화면이 갈라집니다.
   const schedules = await listSchedules(db, snap.id);
 
-  return { id: snap.id, ...data, schedules };
+  // 승인 대기 중인 수정본은 소유자와 관리자에게만 보입니다 — 손님에게는 승인된
+  // 게시본만 보여야 하고, 심사 전 내용이 새어 나가면 안 됩니다(v23).
+  if (!isOwner && !options.isAdmin) {
+    delete data.editReviewNote;
+    delete data.editReviewedBy;
+    return { id: snap.id, ...data, schedules };
+  }
+
+  const pendingEdit = await getPendingEdit(db, snap.id);
+
+  return { id: snap.id, ...data, schedules, pendingEdit };
 }
 
 /**
@@ -363,40 +374,10 @@ export async function submitProgramForReview(
   });
 }
 
-/**
- * 심사를 다시 받지 않아도 되는 필드 (v22).
- *
- * **기본은 재심사입니다.** 목록에 없는 필드가 바뀌면 게시 중이던 프로그램이
- * `pending_review`로 돌아갑니다 — 승인 후 내용을 바꿔치기하면 "관리자가 확인하고
- * 승인했다"는 전제가 무너지기 때문입니다(6-1).
- *
- * 금지목록이 아니라 **예외목록**으로 둔 이유는 보안규칙과 같습니다. 필드를 추가할 때
- * 목록에 넣는 걸 잊으면 "괜히 재심사로 돌아가는" 불편으로 드러나지, "승인받은 내용을
- * 몰래 고칠 수 있는" 사고로 드러나지 않습니다(2-3 v13).
- */
-const NON_REVIEW_FIELDS = new Set([
-  "barrierFree",
-  "rainAlternative",
-  "walkingDistanceM",
-  "availableFrom",
-  "availableUntil",
-]);
-
-/** 두 값이 같은지 (location처럼 객체인 필드도 비교합니다) */
-function sameValue(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}
-
-/** 심사 대상 필드가 바뀌었는지 */
-export function needsRereview(
-  before: Record<string, unknown>,
-  after: ProgramDraftInput
-): boolean {
-  return (Object.keys(after) as Array<keyof ProgramDraftInput>).some((key) => {
-    if (NON_REVIEW_FIELDS.has(key)) return false;
-    return !sameValue(before[key], after[key]);
-  });
-}
+// 심사 대상/즉시 반영 필드 분류는 `programEdits.ts`가 갖고 있습니다.
+// 한쪽에만 두는 이유: 두 파일이 서로를 부르면(순환 참조) 지금은 컴파일되지만
+// 로드 순서가 바뀌는 순간 조용히 undefined가 됩니다.
+export { changedReviewFields, needsRereview, NON_REVIEW_FIELDS } from "./programEdits";
 
 /**
  * 일정 방식 변경 가능 여부.
@@ -432,6 +413,10 @@ export interface UpdateProgramResult {
   status: string;
   /** 재심사로 되돌아갔는지 — 화면이 안내 문구를 바꿉니다 */
   sentToReview: boolean;
+  /** 수정본이 승인 대기로 들어갔는지 (게시 중인 프로그램) */
+  pendingEdit: boolean;
+  /** 승인 대기로 들어간 항목 이름 */
+  changedFields: string[];
 }
 
 /**
@@ -479,15 +464,26 @@ export async function updateProgram(
     throw new AppError("invalid-argument", err instanceof Error ? err.message : "주소 오류");
   }
 
-  // 상태 전환 규칙
+  // 게시 중인 프로그램은 **게시본을 내리지 않습니다**(v23).
+  // 심사 대상 항목은 수정본으로 보관하고 승인 시 교체합니다 — 수정하면 검색에서
+  // 사라지는 구조에서는 전문가가 오타조차 고치지 않게 됩니다(programEdits.ts).
+  if (currentStatus === "published") {
+    const { pendingEdit, changedFields } = await savePendingEdit(
+      db,
+      id,
+      before,
+      input,
+      uid
+    );
+    return { status: "published", sentToReview: false, pendingEdit, changedFields };
+  }
+
+  // 상태 전환 규칙 (게시 중이 아닌 경우 — 게시본이 없으니 바로 반영합니다)
   // - draft            : 아직 심사 전이라 그대로 draft
   // - hidden(반려)     : 수정 자체가 재제출이므로 항상 pending_review
   // - pending_review   : 이미 심사 대기 중이라 그대로
-  // - published        : 심사 대상 필드가 바뀌면 pending_review로 되돌림
   let nextStatus = currentStatus;
   if (currentStatus === "hidden") {
-    nextStatus = "pending_review";
-  } else if (currentStatus === "published" && needsRereview(before, input)) {
     nextStatus = "pending_review";
   }
 
@@ -531,5 +527,7 @@ export async function updateProgram(
   return {
     status: nextStatus,
     sentToReview: nextStatus === "pending_review" && currentStatus !== "pending_review",
+    pendingEdit: false,
+    changedFields: [],
   };
 }
