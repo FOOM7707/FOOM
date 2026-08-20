@@ -31,6 +31,16 @@ import ScheduleFields, {
 } from "@/components/ScheduleFields";
 import SavedSchedules, { type SavedSchedule } from "@/components/SavedSchedules";
 import ProgramImageUploader from "@/components/ProgramImageUploader";
+import KeywordPicker from "@/components/KeywordPicker";
+import IntroBlockEditor from "@/components/IntroBlockEditor";
+import {
+  EXCLUDE_OPTIONS,
+  INCLUDE_OPTIONS,
+  PREPARATION_OPTIONS,
+  emptyKeywordField,
+  type IntroBlock,
+  type KeywordField,
+} from "@/lib/programContent";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -99,6 +109,10 @@ interface LoadedProgram {
   imageUrls: string[];
   /** 사진 주소와 짝을 이루는 버킷 경로. 삭제·순서 변경에 씁니다(18-4) */
   imagePaths: string[];
+  includes: KeywordField;
+  excludes: KeywordField;
+  preparations: KeywordField;
+  introBlocks: IntroBlock[];
   /** 승인 대기 중인 수정본 (게시 중인 프로그램만). 없으면 null */
   pendingEdit: { changedFields: string[] } | null;
   /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다 */
@@ -119,6 +133,10 @@ const FIELD_LABEL: Record<string, string> = {
   imageUrls: "사진",
   targetAgeMin: "참가 연령(최소)",
   targetAgeMax: "참가 연령(최대)",
+  includes: "포함 사항",
+  excludes: "불포함 사항",
+  preparations: "준비물",
+  introBlocks: "프로그램 소개",
 };
 
 export default function ProgramRegisterPage() {
@@ -141,6 +159,12 @@ export default function ProgramRegisterPage() {
   const [scheduleType, setScheduleType] = useState<ScheduleType | null>(null);
   const [capacity, setCapacity] = useState("");
   const [scheduleRows, setScheduleRows] = useState<ScheduleRowInput[]>([]);
+  // 포함·불포함·준비물·소개 블록도 폼 값이 아니라 상태로 둡니다 — 칩 선택과
+  // 블록 편집은 입력칸 하나로 표현되지 않습니다.
+  const [includes, setIncludes] = useState<KeywordField>(emptyKeywordField());
+  const [excludes, setExcludes] = useState<KeywordField>(emptyKeywordField());
+  const [preparations, setPreparations] = useState<KeywordField>(emptyKeywordField());
+  const [introBlocks, setIntroBlocks] = useState<IntroBlock[]>([]);
 
   /** 수정 모드에서 기존 값을 불러와 폼을 채웁니다. */
   const loadProgram = useCallback(async () => {
@@ -165,6 +189,10 @@ export default function ProgramRegisterPage() {
         lng: res.program.location.lng ?? 0,
         sido: null,
       });
+      setIncludes(res.program.includes ?? emptyKeywordField());
+      setExcludes(res.program.excludes ?? emptyKeywordField());
+      setPreparations(res.program.preparations ?? emptyKeywordField());
+      setIntroBlocks(res.program.introBlocks ?? []);
       // 새로 추가할 줄은 비운 상태로 시작합니다 — 이미 저장된 날짜는 위에 따로 보여줍니다.
       setScheduleRows([]);
     } catch (err) {
@@ -250,6 +278,10 @@ export default function ProgramRegisterPage() {
     setScheduleType(null);
     setCapacity("");
     setScheduleRows([]);
+    setIncludes(emptyKeywordField());
+    setExcludes(emptyKeywordField());
+    setPreparations(emptyKeywordField());
+    setIntroBlocks([]);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -265,6 +297,16 @@ export default function ProgramRegisterPage() {
 
     if (!scheduleType) {
       setError("운영 방식을 선택해 주세요");
+      setBusy(false);
+      return;
+    }
+
+    // 포함·불포함 모순은 서버도 거부합니다. 여기서 먼저 막는 이유: 저장을 누른
+    // 뒤에 알리면 어느 항목이 문제인지 찾기 어렵습니다.
+    const conflictKeys = includes.keys.filter((k) => excludes.keys.includes(k));
+    const conflictCustom = includes.custom.filter((c) => excludes.custom.includes(c));
+    if (conflictKeys.length > 0 || conflictCustom.length > 0) {
+      setError("같은 항목이 포함과 불포함에 함께 있습니다. 한쪽에서 빼 주세요");
       setBusy(false);
       return;
     }
@@ -300,6 +342,10 @@ export default function ProgramRegisterPage() {
       targetAgeMax: optionalNumber(form.get("targetAgeMax")),
       walkingDistanceM: optionalNumber(form.get("walkingDistanceM")),
       rainAlternative: form.get("rainAlternative"),
+      includes,
+      excludes,
+      preparations,
+      introBlocks,
     };
 
     if (isEdit && editingId) {
@@ -772,6 +818,65 @@ export default function ProgramRegisterPage() {
               </div>
             </div>
           )}
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-3 rounded-lg border px-4 py-3.5">
+          <legend className="px-1 text-[13px] text-muted-foreground">프로그램 소개</legend>
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            사진과 글만 넣으시면 <strong className="font-semibold">배치는 자동으로</strong>{" "}
+            됩니다. 상세 페이지에서 사진 장수에 따라 좌우 번갈이 또는 가로 전체로 놓입니다.
+          </p>
+          <IntroBlockEditor
+            programId={isEdit && loaded ? loaded.id : null}
+            blocks={introBlocks}
+            onChange={setIntroBlocks}
+          />
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-4 rounded-lg border px-4 py-3.5">
+          <legend className="px-1 text-[13px] text-muted-foreground">
+            포함·불포함·준비물
+          </legend>
+
+          <div className="flex flex-col gap-2">
+            <Label className="text-[13px] font-semibold">포함 사항</Label>
+            <KeywordPicker
+              tone="include"
+              options={INCLUDE_OPTIONS}
+              value={includes}
+              onChange={setIncludes}
+              conflictKeys={excludes.keys}
+              conflictCustom={excludes.custom}
+              conflictLabel="불포함 사항"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 border-t pt-3.5">
+            <Label className="text-[13px] font-semibold">불포함 사항</Label>
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              현장에서 따로 내야 하는 비용을 빠뜨리지 마세요 — 미리 알리지 않으면 분쟁이
+              됩니다.
+            </p>
+            <KeywordPicker
+              tone="exclude"
+              options={EXCLUDE_OPTIONS}
+              value={excludes}
+              onChange={setExcludes}
+              conflictKeys={includes.keys}
+              conflictCustom={includes.custom}
+              conflictLabel="포함 사항"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 border-t pt-3.5">
+            <Label className="text-[13px] font-semibold">준비물</Label>
+            <KeywordPicker
+              tone="prepare"
+              options={PREPARATION_OPTIONS}
+              value={preparations}
+              onChange={setPreparations}
+            />
+          </div>
         </fieldset>
 
         <fieldset className="flex flex-col gap-3 rounded-lg border px-4 py-3.5">

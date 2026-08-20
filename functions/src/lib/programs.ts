@@ -12,6 +12,13 @@ import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
 import { getPendingEdit, savePendingEdit } from "./programEdits";
 import {
+  introBlockPaths,
+  parseProgramContent,
+  type ProgramContentInput,
+} from "./programContent";
+import { assertPathBelongsToProgram, assertUrlPointsToPath } from "./programImages";
+import { bucket as defaultBucket } from "./firebase";
+import {
   assertSchedulableForReview,
   buildScheduleDocs,
   listSchedules,
@@ -66,6 +73,18 @@ export interface ProgramDraftInput {
   targetAgeMax: number | null;
   walkingDistanceM: number | null;
   rainAlternative: string;
+  /**
+   * 포함·불포함·준비물과 소개 블록 (20-2·20-4).
+   *
+   * **파생 필드가 아니라 공급자 입력값이므로 이 집합에 포함합니다.** 여기 두면
+   * `changedReviewFields`가 자동으로 비교 대상에 넣어, 게시 중인 프로그램의
+   * 소개 문구가 바뀌면 수정 승인 대기로 갑니다(v23) — 상세 소개는 손님이 이걸
+   * 믿고 결제하는 값이라 심사를 거쳐야 합니다.
+   */
+  includes: ProgramContentInput["includes"];
+  excludes: ProgramContentInput["excludes"];
+  preparations: ProgramContentInput["preparations"];
+  introBlocks: ProgramContentInput["introBlocks"];
 }
 
 function str(value: unknown, field: string, { max = 5000 } = {}): string {
@@ -148,6 +167,7 @@ export function parseProgramInput(body: unknown): ProgramDraftInput {
     targetAgeMax,
     walkingDistanceM: optionalNum(b.walkingDistanceM, "보행거리"),
     rainAlternative: oneOf(b.rainAlternative, RAIN_ALTERNATIVES, "우천 시 대체 방식"),
+    ...parseProgramContent(b),
   };
 }
 
@@ -165,6 +185,59 @@ async function assertProvider(db: Firestore, uid: string): Promise<void> {
       "permission-denied",
       "공급자만 프로그램을 등록할 수 있습니다. 공급자 등록을 먼저 진행해 주세요."
     );
+  }
+}
+
+/**
+ * 소개 블록에 들어 있는 사진이 정말 이 프로그램의 것인지 확인합니다.
+ *
+ * 대표 사진과 같은 검사입니다(18-4) — 경로가 이 프로그램 폴더 안인지, 주소가 그
+ * 파일을 가리키는지, 버킷에 실제로 있는지. **검사하지 않으면 소개 블록에 자격증
+ * 파일이나 외부 URL을 끼워 넣을 수 있습니다.**
+ *
+ * 대표 사진과 **같은 파일을 쓰지 못하게** 막습니다 — 한쪽에서 지우면 파일이
+ * 사라져 다른 쪽이 깨진 이미지가 됩니다.
+ */
+async function assertIntroImagesBelongToProgram(
+  db: Firestore,
+  programId: string,
+  input: ProgramDraftInput
+): Promise<void> {
+  const paths = introBlockPaths(input.introBlocks);
+  if (paths.length === 0) return;
+
+  if (new Set(paths).size !== paths.length) {
+    throw new AppError("invalid-argument", "같은 사진을 소개 블록에 여러 번 넣을 수 없습니다");
+  }
+
+  const snap = await db.doc(`programs/${programId}`).get();
+  const coverPaths = (snap.get("imagePaths") as string[] | undefined) ?? [];
+
+  // 경로·주소 검사를 **먼저 전부** 끝냅니다. 버킷 접근보다 앞에 둬야 하는 이유:
+  // ① 잘못된 경로는 버킷에 물어볼 필요가 없고 ② 버킷 준비가 안 된 환경에서
+  // 검사 자체가 저장소 오류로 뒤덮여 원인이 드러나지 않습니다.
+  for (const block of input.introBlocks) {
+    for (const image of block.images) {
+      assertPathBelongsToProgram(image.path, programId);
+      assertUrlPointsToPath(image.url, image.path);
+      if (coverPaths.includes(image.path)) {
+        throw new AppError(
+          "invalid-argument",
+          "대표 사진으로 쓰고 있는 사진은 소개 블록에 넣을 수 없습니다. 따로 올려 주세요"
+        );
+      }
+    }
+  }
+
+  const bucket = defaultBucket();
+  for (const path of paths) {
+    const [exists] = await bucket.file(path).exists();
+    if (!exists) {
+      throw new AppError(
+        "failed-precondition",
+        "업로드가 완료되지 않은 사진이 있습니다. 다시 시도해 주세요"
+      );
+    }
   }
 }
 
@@ -197,10 +270,23 @@ export async function createDraftProgram(
     throw new AppError("invalid-argument", err instanceof Error ? err.message : "주소 오류");
   }
 
+  // 사진 경로에는 programId가 들어가는데(18-3) 등록 시점에는 아직 없습니다.
+  // 그래서 사진이 붙은 소개 블록은 등록 단계에서 받을 수 없습니다 — 저장 후
+  // 수정 화면에서 넣습니다. 화면도 같은 순서로 안내합니다.
+  if (introBlockPaths(input.introBlocks).length > 0) {
+    throw new AppError(
+      "failed-precondition",
+      "소개 블록 사진은 프로그램을 저장한 뒤에 넣을 수 있습니다"
+    );
+  }
+
   const ref = db.collection("programs").doc();
   const batch = db.batch();
   batch.set(ref, {
     providerId,
+    // 포함·불포함·준비물·소개 블록도 여기 들어 있습니다 — `parseProgramInput`이
+    // 요청에 없어도 빈 값으로 채우므로 필드가 빠지는 일은 없습니다.
+    // (필드가 없으면 화면이 undefined를 만나 목록 렌더링에서 터집니다.)
     ...input,
     ...derived,
     status: "draft",
@@ -457,6 +543,8 @@ export async function updateProgram(
     input.scheduleType,
     schedules.size
   );
+
+  await assertIntroImagesBelongToProgram(db, id, input);
 
   let derived;
   try {

@@ -66,7 +66,7 @@ function parseImageInputs(value: unknown): ImageInput[] {
 }
 
 /** ② 경로가 이 프로그램의 폴더인지. 상위로 빠져나가는 경로도 막습니다. */
-function assertPathBelongsToProgram(path: string, programId: string): void {
+export function assertPathBelongsToProgram(path: string, programId: string): void {
   const prefix = `programs/${programId}/`;
   if (!path.startsWith(prefix) || path.includes("..")) {
     throw new AppError("invalid-argument", "이 프로그램의 사진 경로가 아닙니다");
@@ -79,7 +79,7 @@ function assertPathBelongsToProgram(path: string, programId: string): void {
 }
 
 /** ④ 주소가 그 파일을 가리키는지. 외부 URL·남의 파일 주소를 걸러냅니다. */
-function assertUrlPointsToPath(url: string, path: string): void {
+export function assertUrlPointsToPath(url: string, path: string): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
