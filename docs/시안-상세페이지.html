@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FOOM - 상세 페이지</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            forest: {
+              DEFAULT: '#1b3b2b',
+              dark: '#12281d',
+              light: '#f2f7f4',
+              border: '#cce0d5',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg-color: #ffffff;
+      --forest: #1b3b2b;
+      --text-dark: #111111;
+      --text-muted: #666666;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-dark); line-height: 1.4; padding-bottom: 120px; overflow-x: hidden; }
+
+    .container-full { max-width: 1440px; margin: 0 auto; padding: 0 40px; }
+
+    /* Nav */
+    nav { padding: 32px 0; display: flex; justify-content: space-between; align-items: center; border-b: 1px solid #f0f0f0; margin-bottom: 30px; }
+    .logo { font-size: 2.2rem; font-weight: 900; letter-spacing: -1px; color: var(--forest); }
+
+    /* 상세정보 접기/펼치기 아코디언 스타일 */
+    .detail-fold-wrapper {
+      position: relative;
+      max-height: 480px;
+      overflow: hidden;
+      transition: max-height 0.5s ease;
+    }
+
+    .detail-fold-wrapper.expanded {
+      max-height: none;
+    }
+
+    .detail-fold-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 220px;
+      background: linear-gradient(to top, rgba(255,255,255,1) 15%, rgba(255,255,255,0));
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 20px;
+      z-index: 10;
+    }
+
+    .detail-fold-wrapper.expanded .detail-fold-overlay {
+      display: none;
+    }
+
+    .btn-more-toggle {
+      background-color: #ffffff;
+      color: var(--text-dark);
+      border: 1px solid var(--text-dark);
+      padding: 16px 48px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .btn-more-toggle:hover {
+      background-color: #f9f9f9;
+    }
+
+    @media (max-width: 1024px) {
+      .container-full { padding: 0 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container-full">
+    <!-- Header Nav -->
+    <nav>
+      <div class="logo">FOOM</div>
+      <div class="text-sm font-bold text-gray-500">산림 치유 & 힐링 플랫폼</div>
+    </nav>
+
+    <!-- ===== [수정 요청 반영] 스크린샷과 동일한 상단 상세 레이아웃 ===== -->
+    <div class="py-6 border-b border-gray-100">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        <!-- Left: Image Slider Mockup (1/5 Badge & Carousel Buttons) -->
+        <div class="lg:col-span-6 relative group rounded-2xl overflow-hidden shadow-md aspect-[4/3] bg-gray-900">
+          <img src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80" alt="광릉숲 이머시브 명상" class="w-full h-full object-cover">
+          
+          <!-- Slider Left/Right Arrows -->
+          <button class="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center text-sm font-bold backdrop-blur-xs hover:bg-black/60">
+            ‹
+          </button>
+          <button class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center text-sm font-bold backdrop-blur-xs hover:bg-black/60">
+            ›
+          </button>
+
+          <!-- Bottom Left Overlay Tag -->
+          <div class="absolute bottom-4 left-4 text-white font-extrabold text-lg sm:text-xl drop-shadow-md tracking-tight">
+            FOOM 이머시브 명상
+          </div>
+
+          <!-- Page Indicator Badge (1/5) -->
+          <div class="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-white font-medium">
+            1 / 5
+          </div>
+        </div>
+
+        <!-- Right: Title, Price & Care Badge -->
+        <div class="lg:col-span-6 flex flex-col justify-between self-stretch py-1 space-y-6">
+          
+          <div>
+            <!-- Header Title & Share Button -->
+            <div class="flex justify-between items-start gap-4">
+              <h1 class="text-2xl sm:text-3xl font-black text-gray-900 leading-snug tracking-tight">
+                [광릉숲] 암흑 이머시브 명상 + 힐링 패키지
+              </h1>
+              <button class="p-2 text-gray-500 hover:bg-gray-100 rounded-full shrink-0">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+              </button>
+            </div>
+
+            <!-- Price Info -->
+            <div class="flex items-baseline gap-2.5 mt-4">
+              <span class="text-red-500 font-black text-3xl">33%</span>
+              <span class="text-3xl sm:text-4xl font-black text-gray-900">20,000원</span>
+              <span class="text-gray-400 line-through text-lg font-normal">30,000원</span>
+            </div>
+          </div>
+
+          <!-- FOOM Care Banner Box (Exact Mock from Frip Care) -->
+          <div class="p-4 bg-emerald-50/80 border border-emerald-100 rounded-2xl flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-xs">
+                ✓
+              </div>
+              <div>
+                <div class="text-sm font-bold text-gray-900">FOOM 케어 무료 지원</div>
+                <div class="text-xs text-gray-500 mt-0.5">FOOM 참여 시 안심케어를 1년간 무료 지원해 드려요.</div>
+              </div>
+            </div>
+            <button class="text-gray-400 hover:text-gray-600 text-sm font-bold px-1">ⓘ</button>
+          </div>
+
+          <!-- Host Profile & Wish Button Line -->
+          <div class="pt-4 border-t border-gray-100 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-forest text-white font-black rounded-xl flex items-center justify-center text-xs">
+                광릉
+              </div>
+              <div>
+                <div class="font-black text-gray-900 text-sm flex items-center gap-1">
+                  광릉숲 치유센터 <span class="text-gray-400 text-xs">›</span>
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">
+                  프로그램 3 · 후기 40 · 찜 23
+                </div>
+              </div>
+            </div>
+            
+            <!-- Heart Wish Icon Button -->
+            <button class="p-2.5 text-gray-400 hover:text-red-500 border border-gray-200 rounded-full transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.684a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== 키워드 칩 태그 섹션 ===== -->
+    <section class="py-8 border-b border-gray-100 space-y-6">
+      <!-- 포함 사항 -->
+      <div>
+        <h3 class="text-base font-black text-gray-900 mb-3">포함 사항</h3>
+        <div class="flex flex-wrap gap-2.5">
+          <span class="px-4 py-2 bg-forest-light text-forest border border-forest-border rounded-full text-sm font-bold shadow-xs">
+            🧘‍♂️ 암흑 이머시브 명상 체험
+          </span>
+          <span class="px-4 py-2 bg-forest-light text-forest border border-forest-border rounded-full text-sm font-bold shadow-xs">
+            🎟️ 광릉수목원 입장권
+          </span>
+          <span class="px-4 py-2 bg-forest-light text-forest border border-forest-border rounded-full text-sm font-bold shadow-xs">
+            ☕ 삼림욕 다도 차(Tea) 제공
+          </span>
+        </div>
+      </div>
+
+      <!-- 불포함 사항 -->
+      <div>
+        <h3 class="text-base font-black text-gray-900 mb-3">불포함 사항</h3>
+        <div class="flex flex-wrap gap-2.5">
+          <span class="px-4 py-2 bg-red-50 text-red-600 border border-red-100 rounded-full text-sm font-bold">
+            교통비
+          </span>
+          <span class="px-4 py-2 bg-red-50 text-red-600 border border-red-100 rounded-full text-sm font-bold">
+            주차비
+          </span>
+        </div>
+      </div>
+
+      <!-- 준비물 -->
+      <div>
+        <h3 class="text-base font-black text-gray-900 mb-3">준비물</h3>
+        <div class="flex flex-wrap gap-2.5">
+          <span class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-sm font-bold">
+            👟 편안한 운동화
+          </span>
+          <span class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-sm font-bold">
+            🧥 긴바지 권장
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== [수정 요청 반영] "상세정보 더보기 ∨" 접기/펼치기 섹션 ===== -->
+    <section class="py-8 relative">
+      <h2 class="text-xl font-black text-gray-900 mb-6">프로그램 소개</h2>
+
+      <div id="detail-fold-container" class="detail-fold-wrapper">
+        
+        <!-- 상세 이미지/텍스트 콘텐츠 -->
+        <div class="space-y-12">
+          
+          <div class="bg-black text-white p-12 rounded-3xl text-center space-y-4">
+            <h3 class="text-3xl font-black">광릉동굴 암흑 패키지</h3>
+            <p class="text-lg text-gray-300 max-w-xl mx-auto leading-relaxed">
+              지금까지 경험해보지 못한 동굴 깊은 암흑 속 청음의 순간.<br>
+              자연의 소리와 나의 오감에 집중해보세요.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div class="h-[380px] rounded-3xl overflow-hidden shadow-lg">
+              <img src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1200&q=80" class="w-full h-full object-cover">
+            </div>
+            <div class="space-y-4">
+              <span class="text-forest font-black text-sm tracking-widest uppercase">01. IMMERSIVE SOUND</span>
+              <h3 class="text-2xl font-black text-gray-900">완벽한 암흑 속 청음의 시간</h3>
+              <p class="text-gray-600 text-base leading-relaxed">
+                시각이 차단된 특별한 공간에서 산림치유 지도사가 들려주는 숲의 소리에 귀 기울입니다. 마음의 잡음을 비우는 오감 리트릿입니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div class="space-y-4 order-2 lg:order-1">
+              <span class="text-forest font-black text-sm tracking-widest uppercase">02. FOREST WALK</span>
+              <h3 class="text-2xl font-black text-gray-900">명상 후 즐기는 광릉숲 산책</h3>
+              <p class="text-gray-600 text-base leading-relaxed">
+                명상을 마친 후 자연스럽게 수목원 산책로로 연결되어 맑은 공기를 마시며 힐링의 시간을 마무리합니다.
+              </p>
+            </div>
+            <div class="h-[380px] rounded-3xl overflow-hidden shadow-lg order-1 lg:order-2">
+              <img src="https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=1200&q=80" class="w-full h-full object-cover">
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 하단 그라데이션 접기 오버레이 + "상세정보 더보기 ∨" 버튼 -->
+        <div id="detail-overlay" class="detail-fold-overlay">
+          <button onclick="toggleDetailView()" class="btn-more-toggle shadow-md">
+            상세정보 더보기 ∨
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Location -->
+    <section class="py-10 border-t border-gray-100">
+      <h2 class="text-xl font-black text-gray-900 mb-6">진행하는 장소</h2>
+      <div class="border border-gray-200 rounded-3xl p-6 bg-white shadow-sm space-y-4">
+        <div class="h-56 bg-emerald-50 rounded-2xl flex items-center justify-center text-forest font-bold relative">
+          📍 경기 광명시 가학동 27 (광릉숲 치유센터)
+        </div>
+        <div class="flex justify-between items-center pt-2">
+          <div>
+            <h3 class="font-bold text-gray-900 text-base">광릉숲 *프로그램별 안내장소 집결</h3>
+            <p class="text-xs text-gray-500 mt-1">주차 가능 (제1주차장 이용 가능 주차비 유료)</p>
+          </div>
+          <button onclick="alert('주소가 복사되었습니다')" class="px-4 py-2 border border-gray-300 rounded-xl text-xs font-bold hover:bg-gray-50">
+            주소 복사
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Bottom Sticky Action Bar -->
+  <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 px-6 py-4 shadow-[0_-4px_25px_rgba(0,0,0,0.08)]">
+    <div class="max-w-[1440px] mx-auto flex items-center justify-between gap-4">
+      <button class="p-3.5 border border-gray-300 rounded-2xl text-gray-700 hover:bg-gray-50 flex flex-col items-center justify-center w-16 shrink-0">
+        <span class="text-lg leading-none">♡</span>
+        <span class="text-[10px] font-bold text-gray-600 mt-1">94</span>
+      </button>
+
+      <button onclick="openBookingDrawer()" class="flex-1 py-4 bg-forest text-white font-extrabold text-lg rounded-2xl hover:bg-forest-dark transition-all shadow-lg text-center">
+        참여하기
+      </button>
+    </div>
+  </div>
+
+  <!-- Drawer Backdrop -->
+  <div id="drawer-backdrop" onclick="closeBookingDrawer()" class="fixed inset-0 bg-black/60 z-40 hidden transition-opacity"></div>
+
+  <!-- Slide-up Booking Drawer (Airbnb Range Calendar Integration) -->
+  <div id="booking-drawer" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 transform translate-y-full transition-transform duration-300 ease-out max-w-[1440px] mx-auto shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+    
+    <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+      <h3 class="font-black text-gray-900 text-lg" id="drawer-title">일정 및 옵션 선택</h3>
+      <button onclick="closeBookingDrawer()" class="text-gray-400 hover:text-gray-600 p-1 font-bold text-xl">✕</button>
+    </div>
+
+    <div class="p-6 overflow-y-auto space-y-6">
+
+      <!-- Step 1 View -->
+      <div id="drawer-step-1" class="space-y-6">
+        
+        <div class="p-5 bg-forest-light border border-forest-border rounded-2xl flex items-center justify-between">
+          <div>
+            <span class="text-xs font-extrabold text-forest uppercase tracking-wider block mb-1">선택된 일정</span>
+            <div id="selected-date-text" class="text-lg font-black text-gray-900">2026년 8월 21일 (금) 17:00 ~ 19:10</div>
+          </div>
+          <button onclick="showCalendarView()" class="px-4 py-2.5 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-black transition-colors shrink-0 shadow-sm">
+            날짜 변경
+          </button>
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-gray-800 mb-2">옵션 선택</label>
+          <select class="w-full p-4 border border-gray-300 rounded-2xl text-sm font-bold bg-white focus:ring-1 focus:ring-forest">
+            <option>[기본] 암흑 이머시브 명상 체험권 (20,000원)</option>
+            <option>[스페셜] 암흑 명상 + 수목원 패키지 (25,000원)</option>
+          </select>
+        </div>
+
+        <div class="flex justify-between items-center pt-3 border-t border-gray-100">
+          <div>
+            <div class="text-base font-bold text-gray-900">수량 선택</div>
+          </div>
+          <div class="flex items-center gap-4 border border-gray-300 rounded-xl p-1.5 bg-white">
+            <button onclick="adjustCount(-1)" class="w-8 h-8 flex items-center justify-center text-gray-600 font-bold hover:bg-gray-100 rounded-lg">-</button>
+            <span id="count-val" class="font-bold text-base w-4 text-center">1</span>
+            <button onclick="adjustCount(1)" class="w-8 h-8 flex items-center justify-center text-gray-600 font-bold hover:bg-gray-100 rounded-lg">+</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Step 2 View: Range Calendar -->
+      <div id="drawer-step-2" class="hidden space-y-4">
+        
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-bold text-gray-600">체험 날짜 선택</span>
+          <span class="text-xs font-bold text-forest bg-forest-light px-3 py-1 rounded-lg">
+            오늘 기준 이전 날짜 지움 처리
+          </span>
+        </div>
+
+        <div class="flex items-center justify-between border-b pb-3">
+          <span class="font-black text-xl text-gray-900">2026년 08월</span>
+          <span class="text-xs text-gray-400">※ 지난 날짜 자동 선택 불가</span>
+        </div>
+
+        <div>
+          <div class="grid grid-cols-7 text-center text-xs font-bold text-gray-400 mb-3">
+            <div class="text-red-400">일</div>
+            <div>월</div>
+            <div>화</div>
+            <div>수</div>
+            <div>목</div>
+            <div>금</div>
+            <div>토</div>
+          </div>
+
+          <div class="grid grid-cols-7 text-center text-sm font-bold gap-y-2">
+            <div class="py-2"></div><div class="py-2"></div><div class="py-2"></div><div class="py-2"></div><div class="py-2"></div><div class="py-2"></div>
+            <div class="py-2 text-gray-300 line-through">1</div>
+            <div class="py-2 text-gray-300 line-through">2</div>
+            <div class="py-2 text-gray-300 line-through">3</div>
+            <div class="py-2 text-gray-300 line-through">4</div>
+            <div class="py-2 text-gray-300 line-through">5</div>
+            <div class="py-2 text-gray-300 line-through">6</div>
+            <div class="py-2 text-gray-300 line-through">7</div>
+            <div class="py-2 text-gray-300 line-through">8</div>
+            <div class="py-2 text-gray-300 line-through">9</div>
+            <div class="py-2 text-gray-300 line-through">10</div>
+            <div class="py-2 text-gray-300 line-through">11</div>
+            <div class="py-2 text-gray-300 line-through">12</div>
+            <div class="py-2 text-gray-300 line-through">13</div>
+            <div class="py-2 text-gray-300 line-through">14</div>
+            <div class="py-2 text-gray-300 line-through">15</div>
+            <div class="py-2 text-gray-300 line-through">16</div>
+            <div class="py-2 text-gray-300 line-through">17</div>
+            <div class="py-2 text-gray-300 line-through">18</div>
+            <div class="py-2 text-gray-300 line-through">19</div>
+
+            <div class="py-2 text-gray-400">20 <span class="block text-[8px] text-forest font-bold">오늘</span></div>
+
+            <div class="relative py-2 cursor-pointer" onclick="selectDateRange('21')">
+              <div class="w-9 h-9 mx-auto bg-forest text-white rounded-full flex items-center justify-center font-bold text-xs shadow-md">
+                21
+              </div>
+            </div>
+
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full" onclick="selectDateRange('22')">22</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full" onclick="selectDateRange('23')">23</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full" onclick="selectDateRange('24')">24</div>
+            <div class="py-2 text-gray-300 line-through">25<span class="block text-[8px] text-red-400">매진</span></div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">26</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">27</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">28</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">29</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">30</div>
+            <div class="py-2 cursor-pointer hover:bg-gray-100 rounded-full">31</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Drawer Footer -->
+    <div class="p-4 border-t border-gray-100 bg-white">
+      <div id="drawer-footer-step1">
+        <button onclick="alert('결제 단계로 이동합니다')" class="w-full py-4 bg-forest text-white font-extrabold text-lg rounded-2xl hover:bg-forest-dark transition-all shadow-md">
+          20,000원 결제하기
+        </button>
+      </div>
+      <div id="drawer-footer-step2" class="hidden">
+        <button onclick="confirmCalendarSelection()" class="w-full py-4 bg-forest text-white font-extrabold text-lg rounded-2xl hover:bg-forest-dark transition-all shadow-md">
+          이 날짜로 선택 완료
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let itemCount = 1;
+
+    function toggleDetailView() {
+      const wrapper = document.getElementById('detail-fold-container');
+      wrapper.classList.add('expanded');
+    }
+
+    function openBookingDrawer() {
+      document.getElementById('booking-drawer').classList.remove('translate-y-full');
+      document.getElementById('drawer-backdrop').classList.remove('hidden');
+    }
+
+    function closeBookingDrawer() {
+      document.getElementById('booking-drawer').classList.add('translate-y-full');
+      document.getElementById('drawer-backdrop').classList.add('hidden');
+      setTimeout(() => { showStep(1); }, 300);
+    }
+
+    function showCalendarView() { showStep(2); }
+    function confirmCalendarSelection() { showStep(1); }
+
+    function showStep(step) {
+      const step1 = document.getElementById('drawer-step-1');
+      const step2 = document.getElementById('drawer-step-2');
+      const footer1 = document.getElementById('drawer-footer-step1');
+      const footer2 = document.getElementById('drawer-footer-step2');
+      const title = document.getElementById('drawer-title');
+
+      if (step === 1) {
+        step1.classList.remove('hidden');
+        step2.classList.add('hidden');
+        footer1.classList.remove('hidden');
+        footer2.classList.add('hidden');
+        title.innerText = "일정 및 옵션 선택";
+      } else {
+        step1.classList.add('hidden');
+        step2.classList.remove('hidden');
+        footer1.classList.add('hidden');
+        footer2.classList.remove('hidden');
+        title.innerText = "체험 날짜 선택";
+      }
+    }
+
+    function adjustCount(val) {
+      itemCount = Math.max(1, itemCount + val);
+      document.getElementById('count-val').innerText = itemCount;
+    }
+
+    function selectDateRange(day) {
+      document.getElementById('selected-date-text').innerText = `2026년 8월 ${day}일 17:00 ~ 19:10`;
+      confirmCalendarSelection();
+    }
+  </script>
+</body>
+</html>
