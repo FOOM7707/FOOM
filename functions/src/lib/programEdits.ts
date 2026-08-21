@@ -41,6 +41,9 @@ export const NON_REVIEW_FIELDS = new Set([
   "walkingDistanceM",
   "availableFrom",
   "availableUntil",
+  // 소개 배치 양식(v29). **보기 방식이고 내용이 아닙니다** — 사진도 글도 그대로인데
+  // 좌우 배치만 바뀌는 것을 재심사로 막으면, 전문가는 배치를 손대지 않게 됩니다.
+  "introLayout",
 ]);
 
 /** 두 값이 같은지 (location처럼 객체인 필드도 비교합니다) */

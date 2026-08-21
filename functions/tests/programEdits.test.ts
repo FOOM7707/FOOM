@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   approvePendingEdit,
   cancelPendingEdit,
+  changedReviewFields,
   getPendingEdit,
   listPendingEdits,
   rejectPendingEdit,
@@ -135,6 +136,18 @@ describe("게시 중인 프로그램 수정 — 게시본은 내려가지 않는
     expect(snap.get("barrierFree")).toBe(true);
     expect(snap.get("rainAlternative")).toBe("indoor");
     expect(await getPendingEdit(testDb, id)).toBeNull();
+  });
+
+  /**
+   * 배치 양식은 **보기 방식이고 내용이 아닙니다.** 사진도 글도 그대로인데 좌우
+   * 배치만 바뀌는 것을 재심사로 막으면 전문가는 배치를 손대지 않게 됩니다.
+   */
+  it("배치 양식만 다르면 재심사 대상이 아니다", () => {
+    const changed = changedReviewFields(
+      { ...(validInput() as unknown as Record<string, unknown>), introLayout: "다른양식" },
+      validInput()
+    );
+    expect(changed).not.toContain("introLayout");
   });
 
   it("걷는 거리를 고치면 난이도가 즉시 따라 바뀐다 (승인 대기 없이)", async () => {

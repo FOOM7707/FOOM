@@ -100,11 +100,22 @@ interface Deps {
   bucket?: ReturnType<typeof defaultBucket>;
 }
 
+interface IntroBlockRow {
+  heading: string;
+  body: string;
+  images: Array<{ path: string; url: string }>;
+}
+
 async function loadOwnedProgram(
   db: Firestore,
   programId: string,
   uid: string
-): Promise<{ imageUrls: string[]; imagePaths: string[]; status: string }> {
+): Promise<{
+  imageUrls: string[];
+  imagePaths: string[];
+  status: string;
+  introBlocks: IntroBlockRow[];
+}> {
   const snap = await db.doc(`programs/${programId}`).get();
   if (!snap.exists || snap.get("providerId") !== uid) {
     // 남의 프로그램은 존재 여부도 알리지 않습니다.
@@ -114,6 +125,7 @@ async function loadOwnedProgram(
     imageUrls: (snap.get("imageUrls") as string[] | undefined) ?? [],
     imagePaths: (snap.get("imagePaths") as string[] | undefined) ?? [],
     status: snap.get("status") as string,
+    introBlocks: (snap.get("introBlocks") as IntroBlockRow[] | undefined) ?? [],
   };
 }
 
@@ -188,7 +200,7 @@ export async function deleteProgramImage(
   uid: string,
   body: unknown,
   deps: Deps = {}
-): Promise<{ imageUrls: string[] }> {
+): Promise<{ imageUrls: string[]; detachedFrom: number }> {
   const program = await loadOwnedProgram(db, programId, uid);
   const path = typeof (body as Record<string, unknown>)?.path === "string"
     ? String((body as Record<string, unknown>).path).trim()
@@ -206,12 +218,30 @@ export async function deleteProgramImage(
   const imagePaths = program.imagePaths.filter((_, i) => i !== index);
   const imageUrls = program.imageUrls.filter((_, i) => i !== index);
 
+  // 소개 블록에서도 함께 뺍니다 (v29 — 연쇄 정리).
+  //
+  // **이걸 빼면 소개 글에 깨진 이미지가 남습니다.** v28까지는 사진 목록이 둘이고
+  // 서로 같은 파일을 쓸 수 없어서 이 문제가 없었는데, 목록을 하나로 합치면서
+  // 한 파일을 앨범과 소개 블록이 함께 가리키게 됐습니다(20-3).
+  //
+  // 사진이 빠져 글만 남은 블록은 **지우지 않습니다** — 공급자가 쓴 글을 사진을
+  // 지웠다는 이유로 없애면 복구할 방법이 없습니다. 글만 있는 블록은 화면이
+  // 가로 전체 문단으로 그립니다.
+  const introBlocks = program.introBlocks.map((block) => ({
+    ...block,
+    images: (block.images ?? []).filter((im) => im.path !== path),
+  }));
+  const detachedFrom = program.introBlocks.filter((block, i) =>
+    (block.images ?? []).length !== introBlocks[i].images.length
+  ).length;
+
   // 문서를 먼저 고칩니다. 파일 삭제가 실패해도 화면은 맞고, 남은 파일은
   // 아무도 참조하지 않는 상태라 나중에 정리할 수 있습니다. 순서를 뒤집으면
   // 파일은 사라졌는데 문서에 주소가 남아 깨진 이미지가 보입니다.
   await db.doc(`programs/${programId}`).update({
     imageUrls,
     imagePaths,
+    introBlocks,
     updatedAt: FieldValue.serverTimestamp(),
   });
 
@@ -221,7 +251,7 @@ export async function deleteProgramImage(
     .delete()
     .catch(() => undefined);
 
-  return { imageUrls };
+  return { imageUrls, detachedFrom };
 }
 
 /**

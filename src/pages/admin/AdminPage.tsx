@@ -118,6 +118,148 @@ function formatFieldValue(field: string, value: unknown): string {
   return String(value);
 }
 
+interface KeywordValue {
+  keys?: string[];
+  custom?: string[];
+}
+
+interface IntroBlockRow {
+  heading?: string;
+  body?: string;
+  images?: Array<{ path: string; url: string }>;
+}
+
+/**
+ * 사진 — **장수가 아니라 사진 자체를 봐야** 심사가 됩니다(v29).
+ *
+ * v28까지는 「3장」이라고 숫자만 보여줬습니다. 그러면 관리자는 제목·가격만 보고
+ * 승인 버튼을 누르게 되고, 「무엇을 보고 승인했는가」가 남지 않습니다.
+ * 누르면 원본이 새 창에서 열립니다 — 썸네일로는 초점·화질을 판단할 수 없습니다.
+ */
+function PhotoStrip({ urls }: { urls: string[] }) {
+  if (urls.length === 0) {
+    return (
+      <p className="text-[12.5px] text-muted-foreground">
+        사진이 없습니다 — 목록·검색 결과에서 빈 자리로 보입니다
+      </p>
+    );
+  }
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {urls.map((url, i) => (
+        <li key={url + i} className="relative">
+          <a href={url} target="_blank" rel="noreferrer" title="원본 보기">
+            <img
+              src={url}
+              alt=""
+              loading="lazy"
+              className="h-20 w-28 rounded-md border object-cover"
+            />
+          </a>
+          {/* 첫 장이 대표입니다(2-3) — 목록 카드·홈에 이 사진이 쓰입니다 */}
+          <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[10.5px] font-semibold text-white">
+            {i === 0 ? "대표" : i + 1}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** 포함·불포함·준비물. **직접 입력분이 심사의 핵심**이라 구별되게 표시합니다(20-4). */
+function KeywordChips({ value }: { value?: KeywordValue }) {
+  const keys = value?.keys ?? [];
+  const custom = value?.custom ?? [];
+  if (keys.length === 0 && custom.length === 0) {
+    return <span className="text-[12.5px] text-muted-foreground">(없음)</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {keys.map((k) => (
+        <span
+          key={k}
+          className="rounded-full bg-secondary px-2 py-0.5 text-[12px] text-secondary-foreground"
+        >
+          {KEYWORD_LABEL[k] ?? k}
+        </span>
+      ))}
+      {custom.map((c) => (
+        <span
+          key={c}
+          className="rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-[12px] font-semibold text-primary"
+        >
+          {c} <span className="font-normal opacity-70">직접 입력</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 프로그램 소개 — 손님이 보는 순서 그대로, 사진을 붙여서 보여줍니다.
+ *
+ * 블록당 사진은 한 장입니다(v29). 사진 없이 글만 있는 블록도 정상입니다 —
+ * 상세 화면에서 가로 전체 문단으로 그려집니다.
+ */
+function IntroBlocksReview({ blocks }: { blocks?: IntroBlockRow[] }) {
+  const rows = blocks ?? [];
+  if (rows.length === 0) {
+    return <span className="text-[12.5px] text-muted-foreground">(없음)</span>;
+  }
+  return (
+    <ol className="flex flex-col gap-2">
+      {rows.map((b, i) => (
+        <li key={i} className="flex gap-3 rounded-lg border border-border/70 px-3 py-2.5">
+          {b.images?.[0] ? (
+            <a
+              href={b.images[0].url}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0"
+              title="원본 보기"
+            >
+              <img
+                src={b.images[0].url}
+                alt=""
+                loading="lazy"
+                className="h-20 w-28 rounded-md border object-cover"
+              />
+            </a>
+          ) : (
+            <span className="flex h-20 w-28 shrink-0 items-center justify-center rounded-md border border-dashed text-[11.5px] text-muted-foreground">
+              사진 없음
+            </span>
+          )}
+          <div className="min-w-0">
+            <span className="text-[11.5px] font-extrabold tracking-widest text-primary">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <p className="font-semibold">{b.heading?.trim() || "(소제목 없음)"}</p>
+            <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-muted-foreground">
+              {b.body}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** 글로 요약하면 무엇이 바뀌었는지 알 수 없는 항목 — 그림으로 보여줍니다 */
+const VISUAL_FIELDS = new Set([
+  "imageUrls",
+  "introBlocks",
+  "includes",
+  "excludes",
+  "preparations",
+]);
+
+function VisualValue({ field, value }: { field: string; value: unknown }) {
+  if (field === "imageUrls") return <PhotoStrip urls={(value as string[]) ?? []} />;
+  if (field === "introBlocks") return <IntroBlocksReview blocks={value as IntroBlockRow[]} />;
+  return <KeywordChips value={value as KeywordValue} />;
+}
+
 interface ProviderRow {
   uid: string;
   displayName: string | null;
@@ -150,6 +292,11 @@ interface ProgramRow {
   description: string;
   imageUrls: string[];
   location?: { address?: string };
+  scheduleType?: string;
+  includes?: KeywordValue;
+  excludes?: KeywordValue;
+  preparations?: KeywordValue;
+  introBlocks?: IntroBlockRow[];
 }
 
 const DIFFICULTY_LABEL: Record<string, string> = {
@@ -525,15 +672,41 @@ function ProgramsTab() {
                     </dd>
                     <dt className="text-muted-foreground">우천 시</dt>
                     <dd>{RAIN_LABEL[p.rainAlternative] ?? p.rainAlternative}</dd>
-                    <dt className="text-muted-foreground">사진</dt>
+                    <dt className="text-muted-foreground">운영 방식</dt>
                     <dd>
-                      {p.imageUrls?.length > 0 ? (
-                        `${p.imageUrls.length}장`
-                      ) : (
-                        <span className="text-destructive">없음 — Storage 미설정</span>
-                      )}
+                      {SCHEDULE_TYPE_LABEL[p.scheduleType ?? ""] ?? p.scheduleType ?? "-"}
                     </dd>
                   </dl>
+
+                  {/* 심사에 필요한 것은 요약이 아니라 **손님이 볼 내용 그대로**입니다.
+                      v28까지 사진은 장수만 나오고 소개·키워드는 아예 없어서, 관리자가
+                      제목·가격만 보고 승인 버튼을 눌러야 했습니다(v29에서 보완). */}
+                  <div className="mt-4 flex flex-col gap-3.5 border-t pt-3.5">
+                    <section>
+                      <p className="mb-1.5 text-[12.5px] font-semibold">사진</p>
+                      <PhotoStrip urls={p.imageUrls ?? []} />
+                    </section>
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <section>
+                        <p className="mb-1.5 text-[12.5px] font-semibold">포함 사항</p>
+                        <KeywordChips value={p.includes} />
+                      </section>
+                      <section>
+                        <p className="mb-1.5 text-[12.5px] font-semibold">불포함 사항</p>
+                        <KeywordChips value={p.excludes} />
+                      </section>
+                      <section>
+                        <p className="mb-1.5 text-[12.5px] font-semibold">준비물</p>
+                        <KeywordChips value={p.preparations} />
+                      </section>
+                    </div>
+
+                    <section>
+                      <p className="mb-1.5 text-[12.5px] font-semibold">프로그램 소개</p>
+                      <IntroBlocksReview blocks={p.introBlocks} />
+                    </section>
+                  </div>
 
                   <DecisionBox
                     busy={busyId === p.id}
@@ -656,12 +829,33 @@ function ProgramEditsTab() {
                         <p className="mb-1.5 font-semibold">
                           {FIELD_LABEL[d.field] ?? d.field}
                         </p>
-                        <p className="whitespace-pre-line leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
-                          {formatFieldValue(d.field, d.before)}
-                        </p>
-                        <p className="whitespace-pre-line leading-relaxed font-medium text-primary">
-                          → {formatFieldValue(d.field, d.after)}
-                        </p>
+                        {/* 사진·소개·키워드를 글로 요약하면 무엇이 바뀌었는지 알 수
+                            없습니다 — 「사진 1장 → 사진 1장」으로 보입니다(v29). */}
+                        {VISUAL_FIELDS.has(d.field) ? (
+                          <div className="flex flex-col gap-2">
+                            <div>
+                              <p className="mb-1 text-[11.5px] font-semibold text-muted-foreground">
+                                전
+                              </p>
+                              <div className="opacity-55">
+                                <VisualValue field={d.field} value={d.before} />
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1 text-[11.5px] font-semibold text-primary">후</p>
+                              <VisualValue field={d.field} value={d.after} />
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="whitespace-pre-line leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
+                              {formatFieldValue(d.field, d.before)}
+                            </p>
+                            <p className="whitespace-pre-line leading-relaxed font-medium text-primary">
+                              → {formatFieldValue(d.field, d.after)}
+                            </p>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>

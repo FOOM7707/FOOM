@@ -58,7 +58,30 @@ const MAX_CUSTOM_LENGTH = 20;
 
 /** 소개 블록 상한 (20-2). */
 export const MAX_INTRO_BLOCKS = 5;
-export const MAX_BLOCK_IMAGES = 3;
+
+/**
+ * 블록 하나에 넣는 사진 장수 (20-2 — v29에서 3장 → 1장).
+ *
+ * **소개 블록은 「사진 한 장 + 글 한 덩어리」가 한 칸입니다.** 양식 1(지그재그)이
+ * 사진 한 장을 전제로 성립하고, 한 블록에 여러 장을 넣으면 사진 칸만 위아래로
+ * 늘어나 옆 글과 높이가 어긋납니다. 여러 장을 한 번에 보여주는 자리는 **맨 위
+ * 앨범**이고, 소개 블록은 그 앨범 목록에서 **골라 씁니다**(20-3).
+ */
+export const MAX_BLOCK_IMAGES = 1;
+
+/**
+ * 상세 페이지 소개 배치 양식 (20-2, v29 신규).
+ *
+ * **양식이 늘어날 것을 전제로 필드로 둡니다.** 지금은 `zigzag` 하나뿐이라 등록
+ * 화면에 고르는 칸이 없고 서버가 기본값을 넣습니다 — 나중에 양식 2를 더할 때
+ * 이미 등록된 프로그램의 값이 비어 있지 않게 하려는 것입니다(2-3 파생·신규 필드
+ * 4원칙 ③ "null인 문서는 어떻게 되는가").
+ *
+ * - `zigzag` (양식 1) — 사진 한 장과 글이 좌우로 번갈아 놓입니다
+ */
+export const INTRO_LAYOUTS = ["zigzag"] as const;
+export type IntroLayout = (typeof INTRO_LAYOUTS)[number];
+export const DEFAULT_INTRO_LAYOUT: IntroLayout = "zigzag";
 const MAX_HEADING = 30;
 const MAX_BODY = 300;
 
@@ -177,7 +200,7 @@ function parseIntroBlocks(value: unknown): IntroBlock[] {
     if (rawImages.length > MAX_BLOCK_IMAGES) {
       throw new AppError(
         "invalid-argument",
-        `${label}의 사진은 ${MAX_BLOCK_IMAGES}장까지 넣을 수 있습니다`
+        `${label}에는 사진을 ${MAX_BLOCK_IMAGES}장만 넣을 수 있습니다`
       );
     }
     const images = rawImages.map((img, j) => {

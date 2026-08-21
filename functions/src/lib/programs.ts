@@ -12,12 +12,13 @@ import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
 import { getPendingEdit, savePendingEdit } from "./programEdits";
 import {
+  DEFAULT_INTRO_LAYOUT,
+  INTRO_LAYOUTS,
   introBlockPaths,
   parseProgramContent,
+  type IntroLayout,
   type ProgramContentInput,
 } from "./programContent";
-import { assertPathBelongsToProgram, assertUrlPointsToPath } from "./programImages";
-import { bucket as defaultBucket } from "./firebase";
 import {
   assertSchedulableForReview,
   buildScheduleDocs,
@@ -81,6 +82,11 @@ export interface ProgramDraftInput {
    * 소개 문구가 바뀌면 수정 승인 대기로 갑니다(v23) — 상세 소개는 손님이 이걸
    * 믿고 결제하는 값이라 심사를 거쳐야 합니다.
    */
+  /**
+   * 상세 소개 배치 양식 (v29). 지금은 `zigzag` 하나뿐이라 화면에 고르는 칸이 없고
+   * 이 값이 항상 기본값으로 들어옵니다 — 양식 2가 생기면 그때 칸을 엽니다.
+   */
+  introLayout: IntroLayout;
   includes: ProgramContentInput["includes"];
   excludes: ProgramContentInput["excludes"];
   preparations: ProgramContentInput["preparations"];
@@ -167,6 +173,8 @@ export function parseProgramInput(body: unknown): ProgramDraftInput {
     targetAgeMax,
     walkingDistanceM: optionalNum(b.walkingDistanceM, "보행거리"),
     rainAlternative: oneOf(b.rainAlternative, RAIN_ALTERNATIVES, "우천 시 대체 방식"),
+    // 화면이 보내지 않아도 기본값으로 채웁니다. 목록 밖 값은 거부합니다.
+    introLayout: oneOf(b.introLayout ?? DEFAULT_INTRO_LAYOUT, INTRO_LAYOUTS, "소개 배치 양식"),
     ...parseProgramContent(b),
   };
 }
@@ -189,16 +197,25 @@ async function assertProvider(db: Firestore, uid: string): Promise<void> {
 }
 
 /**
- * 소개 블록에 들어 있는 사진이 정말 이 프로그램의 것인지 확인합니다.
+ * 소개 블록이 가리키는 사진을 **프로그램 사진 목록에서** 확인하고 주소를 맞춥니다.
  *
- * 대표 사진과 같은 검사입니다(18-4) — 경로가 이 프로그램 폴더 안인지, 주소가 그
- * 파일을 가리키는지, 버킷에 실제로 있는지. **검사하지 않으면 소개 블록에 자격증
- * 파일이나 외부 URL을 끼워 넣을 수 있습니다.**
+ * **v29에서 검사 방향을 뒤집었습니다.** 전에는 "대표 사진과 같은 파일이면 거부"
+ * 였습니다 — 두 목록이 같은 파일을 가리키는데 한쪽에서 지우면 파일이 사라져 다른
+ * 쪽이 깨진 이미지가 되기 때문이었습니다. 그래서 소개용 사진을 따로 올려야 했고,
+ * **같은 사진이 앨범과 소개 글에 각각 저장**됐습니다.
  *
- * 대표 사진과 **같은 파일을 쓰지 못하게** 막습니다 — 한쪽에서 지우면 파일이
- * 사라져 다른 쪽이 깨진 이미지가 됩니다.
+ * → 사진 목록을 **하나로 합쳤습니다.** 소개 블록은 올려둔 사진을 **골라 쓰기만**
+ * 합니다. 깨짐은 삭제 시 연쇄 정리로 막습니다(`programImages.deleteProgramImage`).
+ *
+ * 그래서 검사가 이렇게 바뀝니다.
+ *   ① 목록(`imagePaths`)에 없는 경로는 거부 — 남의 폴더·자격증 파일·외부 URL이
+ *      한 번에 막힙니다. 경로 형식·버킷 존재 여부는 **올릴 때 이미 확인**했습니다
+ *   ② 주소는 클라이언트가 보낸 값을 쓰지 않고 **목록에 있는 주소로 덮어씁니다** —
+ *      한 파일에 두 주소가 저장되는 일이 없어야 앨범과 소개 글이 같은 사진을
+ *      가리킵니다
+ *   ③ 한 사진은 한 블록에만 — 같은 사진이 소개 글에 두 번 나오는 것은 실수입니다
  */
-async function assertIntroImagesBelongToProgram(
+async function resolveIntroBlockImages(
   db: Firestore,
   programId: string,
   input: ProgramDraftInput
@@ -211,34 +228,22 @@ async function assertIntroImagesBelongToProgram(
   }
 
   const snap = await db.doc(`programs/${programId}`).get();
-  const coverPaths = (snap.get("imagePaths") as string[] | undefined) ?? [];
+  const poolPaths = (snap.get("imagePaths") as string[] | undefined) ?? [];
+  const poolUrls = (snap.get("imageUrls") as string[] | undefined) ?? [];
 
-  // 경로·주소 검사를 **먼저 전부** 끝냅니다. 버킷 접근보다 앞에 둬야 하는 이유:
-  // ① 잘못된 경로는 버킷에 물어볼 필요가 없고 ② 버킷 준비가 안 된 환경에서
-  // 검사 자체가 저장소 오류로 뒤덮여 원인이 드러나지 않습니다.
-  for (const block of input.introBlocks) {
-    for (const image of block.images) {
-      assertPathBelongsToProgram(image.path, programId);
-      assertUrlPointsToPath(image.url, image.path);
-      if (coverPaths.includes(image.path)) {
+  input.introBlocks = input.introBlocks.map((block) => ({
+    ...block,
+    images: block.images.map((image) => {
+      const index = poolPaths.indexOf(image.path);
+      if (index < 0) {
         throw new AppError(
           "invalid-argument",
-          "대표 사진으로 쓰고 있는 사진은 소개 블록에 넣을 수 없습니다. 따로 올려 주세요"
+          "프로그램 사진에 없는 사진입니다. 먼저 사진을 올린 뒤 골라 주세요"
         );
       }
-    }
-  }
-
-  const bucket = defaultBucket();
-  for (const path of paths) {
-    const [exists] = await bucket.file(path).exists();
-    if (!exists) {
-      throw new AppError(
-        "failed-precondition",
-        "업로드가 완료되지 않은 사진이 있습니다. 다시 시도해 주세요"
-      );
-    }
-  }
+      return { path: image.path, url: poolUrls[index] ?? image.url };
+    }),
+  }));
 }
 
 /**
@@ -276,7 +281,7 @@ export async function createDraftProgram(
   if (introBlockPaths(input.introBlocks).length > 0) {
     throw new AppError(
       "failed-precondition",
-      "소개 블록 사진은 프로그램을 저장한 뒤에 넣을 수 있습니다"
+      "소개 블록 사진은 프로그램을 저장한 뒤 올린 사진 중에서 골라 넣습니다"
     );
   }
 
@@ -588,7 +593,7 @@ export async function updateProgram(
     schedules.size
   );
 
-  await assertIntroImagesBelongToProgram(db, id, input);
+  await resolveIntroBlockImages(db, id, input);
 
   let derived;
   try {

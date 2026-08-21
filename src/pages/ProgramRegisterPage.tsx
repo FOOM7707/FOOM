@@ -30,7 +30,8 @@ import ScheduleFields, {
   type ScheduleRowInput,
 } from "@/components/ScheduleFields";
 import SavedSchedules, { type SavedSchedule } from "@/components/SavedSchedules";
-import ProgramImageUploader from "@/components/ProgramImageUploader";
+import ProgramImageUploader, { MAX_IMAGES } from "@/components/ProgramImageUploader";
+import PendingImagePicker from "@/components/PendingImagePicker";
 import KeywordPicker from "@/components/KeywordPicker";
 import IntroBlockEditor from "@/components/IntroBlockEditor";
 import {
@@ -44,6 +45,15 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
 import { ApiError, apiFetch } from "@/lib/api";
+import { ImageResizeError } from "@/lib/imageResize";
+import {
+  makePendingPhoto,
+  pendingPath,
+  releasePendingPhoto,
+  uploadPendingPhotos,
+  type PendingPhoto,
+} from "@/lib/pendingPhotos";
+import type { IntroBlockImage } from "@/lib/programContent";
 import type { Place } from "@/lib/places";
 
 // 「매주 반복」은 반복 회차를 만드는 서버 경로가 아직 없어 고를 수 없습니다.
@@ -166,6 +176,15 @@ export default function ProgramRegisterPage() {
   const [preparations, setPreparations] = useState<KeywordField>(emptyKeywordField());
   const [introBlocks, setIntroBlocks] = useState<IntroBlock[]>([]);
 
+  // 저장 전에 고른 사진 (등록 화면에서만 씁니다 — 수정 화면은 바로 올립니다).
+  // 사진이 저장될 자리 이름에 프로그램 번호가 들어가서 저장 전에는 올릴 곳이
+  // 없습니다(18-3). 그래서 브라우저가 들고 있다가 저장할 때 함께 올립니다.
+  const [pending, setPending] = useState<PendingPhoto[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  /** 저장할 때 함께 올라간 사진 장수 — 저장 완료 화면의 안내가 달라집니다 */
+  const [createdPhotoCount, setCreatedPhotoCount] = useState(0);
+  const [photoProgress, setPhotoProgress] = useState<string | null>(null);
+
   /** 수정 모드에서 기존 값을 불러와 폼을 채웁니다. */
   const loadProgram = useCallback(async () => {
     if (!editingId) return;
@@ -272,8 +291,112 @@ export default function ProgramRegisterPage() {
     );
   }
 
+  /**
+   * 소개 블록에서 고를 수 있는 사진.
+   *
+   * 수정 화면은 **이미 올라간 사진**, 등록 화면은 **저장 대기 중인 사진**입니다.
+   * 어느 쪽이든 위 「프로그램 사진」과 같은 목록입니다 — 목록이 하나여야 같은 사진을
+   * 두 번 올리지 않습니다(20-3).
+   */
+  const photoPool: IntroBlockImage[] =
+    isEdit && loaded
+      ? (loaded.imagePaths ?? []).map((path, i) => ({
+          path,
+          url: (loaded.imageUrls ?? [])[i] ?? "",
+        }))
+      : pending.map((p) => ({ path: pendingPath(p.id), url: p.previewUrl }));
+
+  const atPhotoLimit = photoPool.length >= MAX_IMAGES;
+
+  /**
+   * 사진 추가 — 「프로그램 사진」 칸과 소개 블록의 「새 사진」이 함께 씁니다.
+   *
+   * 수정 화면에서는 바로 올려 서버에 기록하고, 등록 화면에서는 대기 목록에만 넣습니다.
+   * **넣은 사진을 돌려줍니다** — 소개 블록에서 눌렀으면 그 블록에 바로 넣기 위해서입니다.
+   */
+  async function addPhotos(files: FileList | null): Promise<IntroBlockImage[]> {
+    if (!files || files.length === 0) return [];
+    setError(null);
+
+    const room = MAX_IMAGES - photoPool.length;
+    const picked = Array.from(files).slice(0, Math.max(room, 0));
+    if (picked.length === 0) {
+      setError(`사진은 ${MAX_IMAGES}장까지 넣을 수 있습니다. 먼저 빼고 추가해 주세요.`);
+      return [];
+    }
+
+    setPhotoBusy(true);
+    try {
+      // 크기 줄이기는 고를 때 바로 합니다 — 저장 버튼을 누른 뒤에 몰아서 하면
+      // 기다리는 시간이 한꺼번에 몰립니다(20-6).
+      const made: PendingPhoto[] = [];
+      for (let i = 0; i < picked.length; i += 1) {
+        setPhotoProgress(`${i + 1}/${picked.length} 사진을 줄이는 중…`);
+        made.push(await makePendingPhoto(picked[i]));
+      }
+
+      if (isEdit && editingId) {
+        const uploaded = await uploadPendingPhotos(editingId, made, (done, total) =>
+          setPhotoProgress(`${done}/${total} 올리는 중…`)
+        );
+        setPhotoProgress("저장하는 중…");
+        await apiFetch(`/programs/${editingId}/images`, {
+          method: "POST",
+          requireAuth: true,
+          body: { images: uploaded.map(({ path, url }) => ({ path, url })) },
+        });
+        // 미리보기는 더 필요 없습니다 — 서버가 준 주소를 씁니다
+        made.forEach(releasePendingPhoto);
+        await loadProgram();
+        return uploaded.map(({ path, url }) => ({ path, url }));
+      }
+
+      setPending((prev) => [...prev, ...made]);
+      return made.map((p) => ({ path: pendingPath(p.id), url: p.previewUrl }));
+    } catch (err) {
+      setError(
+        err instanceof ImageResizeError || err instanceof ApiError
+          ? err.message
+          : "사진을 올리지 못했습니다. 다시 시도해 주세요."
+      );
+      return [];
+    } finally {
+      setPhotoBusy(false);
+      setPhotoProgress(null);
+    }
+  }
+
+  /**
+   * 대기 중인 사진 빼기 — **소개 블록에서도 함께 뺍니다.**
+   *
+   * 서버의 사진 삭제와 같은 규칙입니다(연쇄 정리). 빼지 않으면 없는 사진을 가리키는
+   * 블록이 남고, 저장할 때 거부됩니다.
+   */
+  function removePending(id: string) {
+    const target = pending.find((p) => p.id === id);
+    if (target) releasePendingPhoto(target);
+    setPending((prev) => prev.filter((p) => p.id !== id));
+    setIntroBlocks((prev) =>
+      prev.map((b) => ({ ...b, images: b.images.filter((im) => im.path !== pendingPath(id)) }))
+    );
+  }
+
+  /** 순서 바꾸기 — 첫 장이 대표 사진입니다(2-3) */
+  function movePending(index: number, direction: -1 | 1) {
+    const next = index + direction;
+    if (next < 0 || next >= pending.length) return;
+    setPending((prev) => {
+      const copy = [...prev];
+      [copy[index], copy[next]] = [copy[next], copy[index]];
+      return copy;
+    });
+  }
+
   function resetForm() {
     setCreatedId(null);
+    setCreatedPhotoCount(0);
+    pending.forEach(releasePendingPhoto);
+    setPending([]);
     setPlace(null);
     setScheduleType(null);
     setCapacity("");
@@ -307,6 +430,20 @@ export default function ProgramRegisterPage() {
     const conflictCustom = includes.custom.filter((c) => excludes.custom.includes(c));
     if (conflictKeys.length > 0 || conflictCustom.length > 0) {
       setError("같은 항목이 포함과 불포함에 함께 있습니다. 한쪽에서 빼 주세요");
+      setBusy(false);
+      return;
+    }
+
+    // 사진만 있고 글이 없는 블록은 서버도 거부합니다(무슨 사진인지 알 수 없음).
+    // 여기서 먼저 막는 이유: 등록 경로는 사진을 나중에 연결하므로 서버 메시지가
+    // 「블록이 비어 있습니다」로 나와 사진을 넣었는데도 비었다고 읽힙니다.
+    const emptyBlock = introBlocks.findIndex(
+      (b) => b.heading.trim() === "" && b.body.trim() === ""
+    );
+    if (emptyBlock >= 0) {
+      setError(
+        `${emptyBlock + 1}번째 소개 블록에 소제목이나 설명을 넣어 주세요. 비워 둘 거라면 그 블록을 지워 주세요.`
+      );
       setBusy(false);
       return;
     }
@@ -387,20 +524,78 @@ export default function ProgramRegisterPage() {
       return;
     }
 
+    let newId: string;
     try {
       // 파생 필드(sido·difficulty·targetAgeTags·requiresChildInfo)는 보내지 않습니다.
       // 서버가 계산하며, 보안규칙 허용목록에도 없어 보내면 거부됩니다(2-3).
-      const { id } = await apiFetch<{ id: string }>("/programs", {
+      //
+      // 소개 블록의 사진은 **여기서 보내지 않습니다.** 사진이 저장될 자리 이름에
+      // 프로그램 번호가 필요해서(18-3) 아직 올리지 못한 상태이고, 서버도 등록
+      // 단계의 소개 블록 사진을 거부합니다. 저장 직후에 올려 연결합니다.
+      const res = await apiFetch<{ id: string }>("/programs", {
         method: "POST",
         requireAuth: true,
-        body: { ...body, schedules },
+        body: {
+          ...body,
+          introBlocks: introBlocks.map((b) => ({ ...b, images: [] })),
+          schedules,
+        },
       });
-      setCreatedId(id);
+      newId = res.id;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "등록에 실패했습니다");
-    } finally {
       setBusy(false);
+      return;
     }
+
+    // 사진은 프로그램이 만들어진 뒤에 올립니다.
+    //
+    // **여기서 실패해도 프로그램은 저장된 상태로 둡니다.** 되돌리면 방금 쓴 글이
+    // 전부 사라지고, 사진은 수정 화면에서 다시 올릴 수 있습니다.
+    if (pending.length > 0) {
+      try {
+        const uploaded = await uploadPendingPhotos(newId, pending, (done, total) =>
+          setPhotoProgress(`사진 ${done}/${total} 올리는 중…`)
+        );
+        await apiFetch(`/programs/${newId}/images`, {
+          method: "POST",
+          requireAuth: true,
+          body: { images: uploaded.map(({ path, url }) => ({ path, url })) },
+        });
+
+        // 소개 블록이 가리키던 임시 경로를 실제 경로로 바꿔 연결합니다.
+        const byPendingPath = new Map(uploaded.map((u) => [pendingPath(u.id), u]));
+        const linked = introBlocks.map((b) => ({
+          ...b,
+          images: b.images.flatMap((im) => {
+            const found = byPendingPath.get(im.path);
+            return found ? [{ path: found.path, url: found.url }] : [];
+          }),
+        }));
+        if (linked.some((b) => b.images.length > 0)) {
+          setPhotoProgress("소개 글에 사진을 넣는 중…");
+          await apiFetch(`/programs/${newId}`, {
+            method: "PATCH",
+            requireAuth: true,
+            body: { ...body, introBlocks: linked },
+          });
+        }
+
+        pending.forEach(releasePendingPhoto);
+        setCreatedPhotoCount(uploaded.length);
+        setPending([]);
+      } catch (err) {
+        setError(
+          (err instanceof ApiError ? `${err.message} — ` : "") +
+            "프로그램은 저장됐지만 사진을 올리지 못했습니다. 아래 「사진·내용 수정」에서 다시 올려 주세요."
+        );
+      } finally {
+        setPhotoProgress(null);
+      }
+    }
+
+    setCreatedId(newId);
+    setBusy(false);
   }
 
   async function handleSubmitForReview() {
@@ -487,8 +682,17 @@ export default function ProgramRegisterPage() {
               작성 중(draft)으로 저장했습니다
             </h1>
             <p className="mb-4 text-sm leading-relaxed">
-              아직 검색에 노출되지 않습니다. <strong>이제 사진을 올릴 수 있습니다</strong> —
-              사진이 없으면 목록과 검색 결과에서 빈 자리로 보입니다. 사진까지 넣은 뒤{" "}
+              아직 검색에 노출되지 않습니다.{" "}
+              {createdPhotoCount > 0 ? (
+                <>
+                  <strong>사진 {createdPhotoCount}장도 함께 올라갔습니다.</strong>{" "}
+                </>
+              ) : (
+                <>
+                  <strong>사진이 없습니다</strong> — 목록과 검색 결과에서 빈 자리로 보입니다.
+                  「사진·내용 수정」에서 넣을 수 있습니다.{" "}
+                </>
+              )}
               <strong>심사를 요청</strong>하면 관리자가 확인해 게시합니다.
             </p>
             {error && (
@@ -499,11 +703,13 @@ export default function ProgramRegisterPage() {
             <div className="flex flex-wrap gap-2">
               {/* 사진을 올릴 수 있게 된 것은 지금부터입니다(18-3).
                   심사 요청보다 먼저 안내해야 사진 없는 프로그램이 올라가지 않습니다. */}
-              <Button asChild>
-                <Link to={`/programs/${createdId}/edit`}>사진 추가하기</Link>
-              </Button>
-              <Button variant="outline" onClick={handleSubmitForReview} disabled={busy}>
+              {/* 사진은 저장할 때 함께 올라갑니다(v29) — 「사진 추가하기」가 더 이상
+                  첫 단계가 아니라서 심사 요청을 첫 버튼으로 올렸습니다. */}
+              <Button onClick={handleSubmitForReview} disabled={busy}>
                 심사 요청하기
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to={`/programs/${createdId}/edit`}>사진·내용 수정</Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link to="/my/programs">내 프로그램 보기</Link>
@@ -606,9 +812,11 @@ export default function ProgramRegisterPage() {
       )}
 
       <form className="flex flex-col gap-[18px]" onSubmit={handleSubmit}>
-        {/* 사진은 저장 경로에 programId가 필요해서 프로그램을 먼저 저장해야
-            올릴 수 있습니다(18-3). 등록 화면에서는 안내만 하고, 저장 후
-            수정 화면에서 올립니다. */}
+        {/* 사진 (v29 — 등록 화면에서도 고를 수 있습니다).
+
+            저장 자리 이름에 프로그램 번호가 필요한 것은 그대로입니다(18-3). 다만
+            **브라우저가 파일을 들고 있다가 저장할 때 함께 올립니다** — 「글 다 쓰고
+            저장하고 다시 들어와서 사진」은 작성하는 사람에게 두 번 일입니다. */}
         <fieldset className="flex flex-col gap-2.5 rounded-lg border px-4 py-3.5">
           <legend className="px-1 text-[13px] text-muted-foreground">프로그램 사진</legend>
           {isEdit && loaded ? (
@@ -619,11 +827,14 @@ export default function ProgramRegisterPage() {
               onChanged={loadProgram}
             />
           ) : (
-            <p className="rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
-              사진은 <strong className="font-semibold">아래 내용을 저장한 뒤</strong> 올릴 수
-              있습니다. 저장하면 바로 사진 추가 화면으로 이어집니다 — 사진을 저장할 자리가
-              프로그램이 만들어진 뒤에 정해지기 때문입니다.
-            </p>
+            <PendingImagePicker
+              photos={pending}
+              onPick={addPhotos}
+              onRemove={removePending}
+              onMove={movePending}
+              busy={photoBusy}
+              progress={photoProgress}
+            />
           )}
         </fieldset>
 
@@ -826,8 +1037,15 @@ export default function ProgramRegisterPage() {
             사진과 글만 넣으시면 <strong className="font-semibold">배치는 자동으로</strong>{" "}
             됩니다. 상세 페이지에서 사진 장수에 따라 좌우 번갈이 또는 가로 전체로 놓입니다.
           </p>
+          {/* 사진은 「프로그램 사진」과 같은 목록에서 고릅니다(v29) — 블록마다 따로
+              올리면 같은 사진이 앨범과 소개 글에 두 번 저장됩니다. 여기서 새로
+              추가해도 그 목록(=앨범)에 함께 들어갑니다. */}
           <IntroBlockEditor
-            programId={isEdit && loaded ? loaded.id : null}
+            photos={photoPool}
+            onAddPhoto={addPhotos}
+            atLimit={atPhotoLimit}
+            busy={photoBusy}
+            progress={photoProgress}
             blocks={introBlocks}
             onChange={setIntroBlocks}
           />
