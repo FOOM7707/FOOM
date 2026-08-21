@@ -263,6 +263,24 @@ export async function approvePendingEdit(
   delete payload.submittedBy;
   delete payload.submittedAt;
 
+  // 소개 블록 사진을 **현재 사진 목록과 대조**합니다 (등록·수정과 같은 검사).
+  // 수정본을 낸 뒤 사진이 지워졌으면 삭제 쪽 연쇄 정리가 수정본도 고치지만,
+  // 그 경로가 실패했거나 옛 데이터가 남아 있어도 깨진 이미지가 게시본에
+  // 들어가지 않도록 여기서 한 번 더 거릅니다. 사진만 빼고 글은 남깁니다.
+  if (Array.isArray(payload.introBlocks)) {
+    const poolPaths = (programSnap.get("imagePaths") as string[] | undefined) ?? [];
+    const poolUrls = (programSnap.get("imageUrls") as string[] | undefined) ?? [];
+    payload.introBlocks = (
+      payload.introBlocks as Array<{ images?: Array<{ path: string; url: string }> }>
+    ).map((block) => ({
+      ...block,
+      images: (block.images ?? [])
+        .filter((im) => poolPaths.includes(im.path))
+        // 주소는 목록 값으로 맞춥니다 — 한 파일에 두 주소가 남지 않게(20-3).
+        .map((im) => ({ path: im.path, url: poolUrls[poolPaths.indexOf(im.path)] ?? im.url })),
+    }));
+  }
+
   await programRef.update({
     ...payload,
     ...derived,

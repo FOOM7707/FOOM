@@ -508,6 +508,14 @@ export async function deleteSchedule(
     throw new AppError("not-found", "회차를 찾을 수 없습니다");
   }
 
+  // **지난 회차는 지우지 않습니다.** 이미 진행한 기록이고, 예약·정산이 붙으면
+  // 근거 자료가 됩니다. 화면(SavedSchedules)도 버튼을 숨기지만 화면은 보안이
+  // 아니므로 서버가 막아야 합니다 — API를 직접 부르면 화면 가드는 무의미합니다.
+  const startAt = snap.get("startAt") as Timestamp;
+  if (startAt.toDate().getTime() <= now.getTime()) {
+    throw new AppError("failed-precondition", "지난 회차는 삭제할 수 없습니다");
+  }
+
   const booked = await db
     .collection("bookings")
     .where("scheduleId", "==", scheduleId)

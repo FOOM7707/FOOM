@@ -136,6 +136,27 @@ describe("parseProgramInput — 허용목록 밖의 값은 버린다", () => {
     expect(() => parseProgramInput(validInput({ rainAlternative: "yes" }))).toThrow();
   });
 
+  it("범위 밖 좌표는 거부한다 — 틀린 좌표는 에러 없이 「엉뚱한 지도」로만 드러난다", () => {
+    expect(() =>
+      parseProgramInput(
+        validInput({ location: { address: "강원도 홍천군 서면", lat: 95, lng: 127 } })
+      )
+    ).toThrow();
+    expect(() =>
+      parseProgramInput(
+        validInput({ location: { address: "강원도 홍천군 서면", lat: 37, lng: 190 } })
+      )
+    ).toThrow();
+  });
+
+  it("좌표가 null이면 null 그대로 저장한다 — 0으로 채우지 않는다(v18 이전 등록분)", () => {
+    const parsed = parseProgramInput(
+      validInput({ location: { address: "강원도 홍천군 서면", lat: null, lng: null } })
+    );
+    expect(parsed.location.lat).toBeNull();
+    expect(parsed.location.lng).toBeNull();
+  });
+
   it("open이 아닌 타입의 availableFrom/Until은 null로 못박는다", () => {
     const parsed = parseProgramInput(
       validInput({ scheduleType: "single", availableFrom: "2026-09-01" })
@@ -276,6 +297,27 @@ describe("listPrograms", () => {
     const programs = await listPrograms(testDb, { mine: true, uid: providerUid });
     expect(programs.length).toBeGreaterThan(0);
     expect(programs.every((p) => p.providerId === providerUid)).toBe(true);
+  });
+
+  it("mine이 아니면 심사·수정 승인 사유가 응답에서 빠진다", async () => {
+    // 수정본이 반려되면 editReviewNote가 게시 중인 문서에 남습니다 —
+    // 이 경로는 로그인 없이 호출되므로 상세(getProgram)와 같은 기준으로 걸러야 합니다.
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(validInput()));
+    await testDb.doc(`programs/${id}`).update({
+      status: "published",
+      reviewNote: "심사 메모",
+      reviewedBy: "admin-1",
+      editReviewNote: "수정본 반려 사유",
+      editReviewedBy: "admin-1",
+    });
+
+    const programs = await listPrograms(testDb, {});
+    const row = programs.find((p) => p.id === id)!;
+    expect(row).toBeDefined();
+    expect("reviewNote" in row).toBe(false);
+    expect("reviewedBy" in row).toBe(false);
+    expect("editReviewNote" in row).toBe(false);
+    expect("editReviewedBy" in row).toBe(false);
   });
 });
 

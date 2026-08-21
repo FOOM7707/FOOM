@@ -332,6 +332,41 @@ describe("deleteProgramImage — 소개 블록 연쇄 정리", () => {
     expect(snap.get("introBlocks")[0].body).toBe("설명입니다");
   });
 
+  it("승인 대기 중인 수정본의 소개 블록에서도 함께 빠진다", async () => {
+    const { a, b, fake } = await withAlbumAndIntro();
+    // 수정본이 지워질 사진(a)을 가리키는 상태를 만듭니다 — 게시본만 정리하면
+    // 이 수정본을 승인하는 순간 깨진 이미지가 게시본에 들어갑니다.
+    await testDb.doc(`programs/${programId}/pendingEdit/current`).set({
+      introBlocks: [
+        { heading: "수정 첫째", body: "고친 설명", images: [{ path: a, url: downloadUrl(a) }] },
+        { heading: "수정 둘째", body: "고친 설명", images: [{ path: b, url: downloadUrl(b) }] },
+      ],
+      changedFields: ["introBlocks"],
+      submittedBy: providerUid,
+    });
+
+    await deleteProgramImage(testDb, programId, providerUid, { path: a }, { bucket: fake.bucket });
+
+    const edit = await testDb.doc(`programs/${programId}/pendingEdit/current`).get();
+    const blocks = edit.get("introBlocks");
+    expect(blocks[0].images).toEqual([]);
+    // 글은 남고, 다른 사진을 쓰는 블록은 건드리지 않습니다
+    expect(blocks[0].heading).toBe("수정 첫째");
+    expect(blocks[1].images).toEqual([{ path: b, url: downloadUrl(b) }]);
+  });
+
+  it("수정본이 없으면 삭제가 그대로 성공한다", async () => {
+    const { a, fake } = await withAlbumAndIntro();
+    const result = await deleteProgramImage(
+      testDb,
+      programId,
+      providerUid,
+      { path: a },
+      { bucket: fake.bucket }
+    );
+    expect(result.detachedFrom).toBe(1);
+  });
+
   it("소개 블록에 쓰지 않는 사진을 지우면 블록은 그대로다", async () => {
     const { b, fake } = await withAlbumAndIntro();
     await testDb.doc(`programs/${programId}`).update({

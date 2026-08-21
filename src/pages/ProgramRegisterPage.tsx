@@ -54,7 +54,7 @@ import {
   type PendingPhoto,
 } from "@/lib/pendingPhotos";
 import type { IntroBlockImage } from "@/lib/programContent";
-import type { Place } from "@/lib/places";
+import type { PickedPlace } from "@/lib/places";
 
 // 「매주 반복」은 반복 회차를 만드는 서버 경로가 아직 없어 고를 수 없습니다.
 // 고를 수 있게 두면 날짜를 넣을 방법이 없는 채로 등록되어, 영구히 예약 불가인
@@ -163,7 +163,7 @@ export default function ProgramRegisterPage() {
   const [loadingProgram, setLoadingProgram] = useState(isEdit);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   // 주소는 검색해서 고른 값만 씁니다 — 좌표를 함께 받아야 날씨가 붙습니다(16-4).
-  const [place, setPlace] = useState<Place | null>(null);
+  const [place, setPlace] = useState<PickedPlace | null>(null);
   // 운영 방식·최대 인원·회차는 서로 영향을 주므로 폼 값으로 두지 않고 상태로 관리합니다
   // (방식에 따라 날짜 칸이 바뀌고, 최대 인원이 회차 정원의 기본값이 됩니다).
   const [scheduleType, setScheduleType] = useState<ScheduleType | null>(null);
@@ -200,12 +200,16 @@ export default function ProgramRegisterPage() {
       // 저장된 주소를 그대로 다시 씁니다. 좌표가 비어 있는 옛 프로그램(v18 이전)은
       // 주소를 다시 검색해 고르지 않으면 좌표가 계속 빈 채로 남습니다 — 그러면
       // 상세 화면에 날씨가 붙지 않습니다(19-6).
+      //
+      // **없는 좌표는 null 그대로 둡니다.** 0으로 채우면 저장할 때 「좌표 없음」이
+      // 「위도 0·경도 0」이라는 틀린 좌표로 바뀌어, 상세 화면의 지도가 아프리카
+      // 앞바다를 그리게 됩니다 — 에러가 없어 아무도 알아차리지 못합니다.
       setPlace({
         address: res.program.location.address,
         roadAddress: null,
         placeName: null,
-        lat: res.program.location.lat ?? 0,
-        lng: res.program.location.lng ?? 0,
+        lat: res.program.location.lat ?? null,
+        lng: res.program.location.lng ?? null,
         sido: null,
       });
       setIncludes(res.program.includes ?? emptyKeywordField());

@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import { searchPlaces, type Place } from "@/lib/places";
+import { searchPlaces, type Place, type PickedPlace } from "@/lib/places";
 
 /**
  * 주소를 **검색해서 고르게** 하는 입력칸 (스키마 16-4).
@@ -18,7 +18,8 @@ import { searchPlaces, type Place } from "@/lib/places";
  * 그래서 주소 문자열과 좌표를 **한 쌍으로** 고르게 만듭니다.
  */
 interface Props {
-  value: Place | null;
+  /** 수정 화면이 불러온 값은 좌표가 없을 수 있어 `PickedPlace`로 받습니다 */
+  value: PickedPlace | null;
   onChange: (place: Place | null) => void;
 }
 
