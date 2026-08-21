@@ -23,6 +23,19 @@ export interface Place {
   sido: string | null;
 }
 
+/**
+ * 등록·수정 화면이 들고 있는 「선택된 주소」.
+ *
+ * 검색으로 고른 주소(`Place`)는 좌표가 항상 있지만, **수정 화면이 불러온 옛
+ * 프로그램(v18 이전 등록분)은 좌표가 비어 있습니다.** 그때 0으로 채우면
+ * 「좌표 없음(안내 문구로 대체)」이 「엉뚱한 좌표(지도가 아프리카 앞바다)」로
+ * 바뀌므로, 없는 좌표는 null 그대로 들고 있다가 null 그대로 저장합니다.
+ */
+export type PickedPlace = Omit<Place, "lat" | "lng"> & {
+  lat: number | null;
+  lng: number | null;
+};
+
 export interface PlaceSearchResult {
   places: Place[];
   source: "address" | "keyword" | "none";

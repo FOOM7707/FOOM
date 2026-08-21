@@ -20,6 +20,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { bucket as defaultBucket } from "./firebase";
+import { pendingEditPath } from "./programEdits";
 
 /** 대표 사진 상한 (20-3). 화면과 같은 값이어야 합니다. */
 export const MAX_PROGRAM_IMAGES = 5;
@@ -244,6 +245,26 @@ export async function deleteProgramImage(
     introBlocks,
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  // **승인 대기 중인 수정본에서도 함께 뺍니다.** 게시본만 정리하면 수정본이
+  // 지워진 파일을 계속 가리키고, 관리자가 그 수정본을 승인하는 순간 깨진
+  // 이미지가 게시본에 들어갑니다 — 파일은 아래에서 실제로 지워지기 때문입니다.
+  // 게시본과 같은 규칙입니다: 사진만 빼고 글은 남깁니다.
+  const editRef = db.doc(pendingEditPath(programId));
+  const editSnap = await editRef.get();
+  if (editSnap.exists) {
+    const editBlocks = (editSnap.get("introBlocks") as IntroBlockRow[] | undefined) ?? [];
+    const cleaned = editBlocks.map((block) => ({
+      ...block,
+      images: (block.images ?? []).filter((im) => im.path !== path),
+    }));
+    const changed = editBlocks.some(
+      (block, i) => (block.images ?? []).length !== cleaned[i].images.length
+    );
+    if (changed) {
+      await editRef.update({ introBlocks: cleaned });
+    }
+  }
 
   const bucket = deps.bucket ?? defaultBucket();
   await bucket

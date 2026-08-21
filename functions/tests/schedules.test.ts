@@ -404,6 +404,17 @@ describe("회차 추가·삭제", () => {
     ).rejects.toMatchObject({ code: "not-found" });
   });
 
+  it("지난 회차는 지우지 못한다 — 진행 기록이고 정산 근거가 된다", async () => {
+    const id = await makeProgram([20]);
+    const [only] = await listSchedules(testDb, id);
+    // 화면(SavedSchedules)은 버튼을 숨기지만 화면은 보안이 아닙니다 —
+    // 시간을 회차 뒤로 옮겨 서버가 직접 거부하는지 확인합니다.
+    const afterTheFact = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await expect(
+      deleteSchedule(testDb, id, only.id, providerUid, afterTheFact)
+    ).rejects.toMatchObject({ code: "failed-precondition" });
+  });
+
   it("없는 회차를 지우려 하면 not-found", async () => {
     const id = await makeProgram([20]);
     await expect(

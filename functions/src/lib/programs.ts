@@ -104,7 +104,11 @@ function str(value: unknown, field: string, { max = 5000 } = {}): string {
   return trimmed;
 }
 
-function num(value: unknown, field: string, { min = 0 } = {}): number {
+function num(
+  value: unknown,
+  field: string,
+  { min = 0, max }: { min?: number; max?: number } = {}
+): number {
   const parsed = typeof value === "string" ? Number(value) : value;
   if (typeof parsed !== "number" || !Number.isFinite(parsed)) {
     throw new AppError("invalid-argument", `${field}은(는) 숫자여야 합니다`);
@@ -112,12 +116,19 @@ function num(value: unknown, field: string, { min = 0 } = {}): number {
   if (parsed < min) {
     throw new AppError("invalid-argument", `${field}은(는) ${min} 이상이어야 합니다`);
   }
+  if (max != null && parsed > max) {
+    throw new AppError("invalid-argument", `${field}은(는) ${max} 이하여야 합니다`);
+  }
   return parsed;
 }
 
-function optionalNum(value: unknown, field: string, { min = 0 } = {}): number | null {
+function optionalNum(
+  value: unknown,
+  field: string,
+  { min = 0, max }: { min?: number; max?: number } = {}
+): number | null {
   if (value == null || value === "") return null;
-  return num(value, field, { min });
+  return num(value, field, { min, max });
 }
 
 function oneOf<T extends readonly string[]>(
@@ -157,9 +168,10 @@ export function parseProgramInput(body: unknown): ProgramDraftInput {
     qualificationType: oneOf(b.qualificationType, QUALIFICATION_TYPES, "자격 유형"),
     location: {
       address: str(location.address, "주소", { max: 200 }),
-      // 지오코딩(카카오맵) 연동 전이라 좌표는 선택값입니다.
-      lat: optionalNum(location.lat, "위도", { min: -90 }),
-      lng: optionalNum(location.lng, "경도", { min: -180 }),
+      // 좌표는 선택값입니다(v18 이전 등록분은 비어 있음). 상·하한을 함께 검사합니다 —
+      // 범위 밖 좌표는 에러 없이 「엉뚱한 위치의 지도」로만 드러나기 때문입니다.
+      lat: optionalNum(location.lat, "위도", { min: -90, max: 90 }),
+      lng: optionalNum(location.lng, "경도", { min: -180, max: 180 }),
     },
     price: num(b.price, "가격"),
     capacity,
@@ -465,8 +477,13 @@ export async function listPrograms(
   return snap.docs.map((d) => {
     const data = d.data() as Record<string, unknown>;
     if (!options.mine) {
+      // 상세(getProgram)와 같은 기준입니다 — 심사·수정 승인 사유와 처리한
+      // 관리자 uid는 소유자·관리자 전용입니다. 수정본이 반려되면
+      // editReviewNote가 게시 중인 문서에 남으므로 여기서도 걸러야 합니다.
       delete data.reviewNote;
       delete data.reviewedBy;
+      delete data.editReviewNote;
+      delete data.editReviewedBy;
     }
     return { id: d.id, ...data };
   });

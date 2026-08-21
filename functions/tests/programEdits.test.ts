@@ -271,6 +271,34 @@ describe("수정본 승인", () => {
       code: "failed-precondition",
     });
   });
+
+  it("사진 목록에 없는 사진을 가리키는 수정본을 승인하면 그 사진만 빠진다", async () => {
+    const id = await makePublished();
+    // 프로그램 사진 목록에는 b만 있는데 수정본이 a·b를 가리키는 상태 —
+    // 수정본 제출 뒤 a가 지워졌는데 연쇄 정리가 닿지 못한 경우와 같습니다.
+    const a = `programs/${id}/a.jpg`;
+    const b = `programs/${id}/b.jpg`;
+    const url = (p: string) =>
+      `https://firebasestorage.googleapis.com/v0/b/demo-foom.appspot.com/o/${encodeURIComponent(p)}?alt=media&token=abc`;
+    await testDb.doc(`programs/${id}`).update({ imagePaths: [b], imageUrls: [url(b)] });
+    await testDb.doc(`programs/${id}/pendingEdit/current`).set({
+      ...(validInput({ title: "새 제목" }) as unknown as Record<string, unknown>),
+      introBlocks: [
+        { heading: "첫째", body: "설명", images: [{ path: a, url: url(a) }] },
+        { heading: "둘째", body: "설명", images: [{ path: b, url: url(b) }] },
+      ],
+      changedFields: ["title", "introBlocks"],
+      submittedBy: providerUid,
+    });
+
+    await approvePendingEdit(testDb, id, ADMIN_UID);
+
+    const blocks = (await testDb.doc(`programs/${id}`).get()).get("introBlocks");
+    // 없는 사진(a)은 빠지고 글은 남습니다. 있는 사진(b)은 그대로입니다.
+    expect(blocks[0].images).toEqual([]);
+    expect(blocks[0].heading).toBe("첫째");
+    expect(blocks[1].images).toEqual([{ path: b, url: url(b) }]);
+  });
 });
 
 describe("수정본 반려", () => {
