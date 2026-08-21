@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { regionOfAddress } from "@/lib/geo";
+import { localityOfAddress } from "@/lib/geo";
 import type { Program } from "@/types/firestore";
 import { ApiError, apiFetch } from "@/lib/api";
 import {
@@ -84,6 +84,8 @@ interface DetailProgram {
   excludes?: KeywordField;
   preparations?: KeywordField;
   introBlocks?: IntroBlock[];
+  /** 소개 배치 양식 (v29). 값이 없는 옛 문서는 양식 1로 그립니다 */
+  introLayout?: string;
   schedules: DetailSchedule[];
   provider: DetailProvider | null;
 }
@@ -214,7 +216,8 @@ export default function ProgramDetailPage() {
     );
   }
 
-  const regionLabel = regionOfAddress(program.location.address);
+  // 「경기」가 아니라 「수원시 팔달구 화서동」으로 보여줍니다(v29).
+  const regionLabel = localityOfAddress(program.location.address);
   const hasCoords = program.location.lat != null && program.location.lng != null;
   const upcoming = program.schedules.filter((s) => new Date(s.startAt).getTime() > Date.now());
   const firstSchedule = upcoming[0];
@@ -380,7 +383,7 @@ export default function ProgramDetailPage() {
                 introExpanded ? "" : "max-h-[520px] overflow-hidden"
               }
             >
-              <IntroBlockView blocks={introBlocks} />
+              <IntroBlockView blocks={introBlocks} layout={program.introLayout} />
             </div>
 
             {/* 접기는 블록이 여러 개일 때만 의미가 있습니다. 한 블록뿐인데

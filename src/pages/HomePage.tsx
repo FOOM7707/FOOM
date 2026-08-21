@@ -1,10 +1,5 @@
-import { useEffect, useState } from "react";
+
 import { Link } from "react-router-dom";
-import { apiFetch } from "@/lib/api";
-import type { SearchRow } from "@/lib/programFilter";
-import WeatherWidget from "../components/WeatherWidget";
-import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { DEFAULT_CENTER } from "@/lib/geo";
 import type { Category } from "@/types/firestore";
 
 /**
@@ -16,68 +11,65 @@ import type { Category } from "@/types/firestore";
 const WIDE_CONTAINER = "mx-auto w-full max-w-[1360px] px-6";
 
 // 3. 카테고리 사진 카드 5종 — 자격유형 공식명칭 (스키마 9-7 ⑥)
-// TODO(정식 오픈 전): fallbackImage의 Unsplash 외부 이미지는 시안 확인용 임시입니다.
-// 자체 촬영·구매 이미지로 교체하고 Firebase Storage에서 서빙합니다 — 외부 핫링크
-// 상태로 오픈하지 않습니다 (스키마 9-7 ⑧).
+//
+// **이 사진은 우리가 넣는 고정 사진입니다(v29 팀 확정).** 등록된 프로그램의 사진을
+// 끌어오지 않습니다 — 이 자리는 브랜드 첫인상이라 누가 무엇을 올리느냐에 따라 바뀌면
+// 안 됩니다. 프로그램 사진이 쓰이는 곳은 목록 카드와 상세 페이지입니다.
+//
+// 파일을 넣는 방법: `public/home/`에 아래 `image` 이름으로 jpg를 넣으면 끝입니다.
+// TODO(정식 오픈 전): `interimImage`의 Unsplash 외부 이미지는 시안 확인용 임시입니다.
+// 자체 촬영·구매 이미지로 교체합니다 — 외부 핫링크 상태로 오픈하지 않습니다(9-7 ⑧).
 const PHOTO_CARDS: {
   category: Category;
   tag: string;
   desc: [string, string];
-  fallbackImage: string;
+  /** 우리가 넣는 고정 사진. `public/home/`에 이 이름으로 파일을 넣으면 바로 바뀝니다 */
+  image: string;
+  /** 파일을 넣기 전까지 임시로 보여줄 사진 — 오픈 전 반드시 교체 */
+  interimImage: string;
 }[] = [
   {
     category: "숲해설",
     tag: "🌳 숲해설",
     desc: ["숲해설가와 걷는", "자연 생태 체험"],
-    fallbackImage:
+    image: "/home/forest-guide.jpg",
+    interimImage:
       "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80",
   },
   {
     category: "유아숲체험",
     tag: "🧒 유아숲",
     desc: ["아이와 함께하는", "창의 숲 놀이·교육"],
-    fallbackImage:
+    image: "/home/kids-forest.jpg",
+    interimImage:
       "https://images.unsplash.com/photo-1476514525535-ce74f45814d0?auto=format&fit=crop&w=800&q=80",
   },
   {
     category: "산림치유",
     tag: "🧘 치유",
     desc: ["몸과 마음을 쉬어가는", "숲 힐링 프로그램"],
-    fallbackImage:
+    image: "/home/healing.jpg",
+    interimImage:
       "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=800&q=80",
   },
   {
     category: "숲길등산",
     tag: "🥾 등산",
     desc: ["전문가와 안전하게", "걷는 트레킹 안내"],
-    fallbackImage:
+    image: "/home/trail.jpg",
+    interimImage:
       "https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=800&q=80",
   },
   {
     category: "단체·기업",
     tag: "🏢 단체",
     desc: ["기관 및 단체를 위한", "맞춤형 숲 프로그램"],
-    fallbackImage:
+    image: "/home/group.jpg",
+    interimImage:
       "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80",
   },
 ];
 
-/**
- * 카테고리 대표 이미지 — 그 카테고리의 **게시 중 프로그램**에서 `imageUrls[0]`을
- * 씁니다(대표 썸네일 규칙, 스키마 2-3).
- *
- * **게시된 프로그램이 없거나 사진이 없으면 준비된 사진으로 대체합니다.** 카드가
- * 비어 보이면 「고장」으로 읽히고, 홈은 첫 화면이라 그 인상이 가장 큽니다.
- * 자동 슬라이드는 채택하지 않았습니다 — 사진 1장 고정(9-7 ①).
- */
-function representativeImage(
-  rows: SearchRow[],
-  category: Category,
-  fallback: string
-): string {
-  const found = rows.find((p) => p.category === category && p.imageUrls?.[0]);
-  return found?.imageUrls[0] ?? fallback;
-}
 
 // 5. 후기 섹션 예시 데이터 (초안 그대로 — 화면 구성 확인용)
 const REVIEWS = [
@@ -102,20 +94,8 @@ const REVIEWS = [
 ];
 
 export default function HomePage() {
-  const { position, status, request } = useCurrentLocation();
-
-  // 카테고리 카드의 사진을 채우기 위해 게시된 프로그램을 한 번 읽습니다.
-  // **화면 렌더링을 막지 않습니다** — 사진이 늦게 와도 준비된 사진으로 먼저
-  // 그려지고 값이 오면 바뀝니다(날씨 위젯과 같은 방식, 16-3).
-  const [rows, setRows] = useState<SearchRow[]>([]);
-  useEffect(() => {
-    void apiFetch<{ programs: SearchRow[] }>("/programs/search?limit=100")
-      .then((res) => setRows(res.programs))
-      .catch(() => setRows([]));
-  }, []);
-  const weatherPoint = position ?? DEFAULT_CENTER;
-  const weatherRegion = position ? "현재위치 주변" : "서울 중구";
-
+  // 카테고리 카드 사진은 우리가 고정으로 넣습니다(v29) — 프로그램을 읽지 않습니다.
+  // 날씨도 여기서 빼냈습니다(v29 팀 확정) — 아래 프로모 카드 주석 참고.
   return (
     <div>
       {/* 2. 히어로 — 배지 + 제목 + 부제 + 버튼 2개 */}
@@ -149,7 +129,7 @@ export default function HomePage() {
       {/* 3. 사진 카드 5종 — 히어로 위로 겹쳐 올라오는 레이아웃 */}
       <section className={`${WIDE_CONTAINER} relative z-10 -mt-14 mb-20`}>
         <div className="grid grid-cols-1 gap-5 min-[481px]:grid-cols-2 min-[769px]:grid-cols-3 min-[1201px]:grid-cols-5">
-          {PHOTO_CARDS.map(({ category, tag, desc, fallbackImage }) => (
+          {PHOTO_CARDS.map(({ category, tag, desc, image, interimImage }) => (
             <Link
               key={category}
               to={`/search?category=${encodeURIComponent(category)}`}
@@ -159,9 +139,24 @@ export default function HomePage() {
                 <span className="absolute left-3.5 top-3.5 z-[2] rounded-full bg-white/95 px-3 py-[5px] text-[12px] font-extrabold text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-sm">
                   {tag}
                 </span>
-                {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①) */}
+                {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①).
+
+                    **등록된 프로그램의 사진을 쓰지 않습니다(v29 팀 확정).** 이 자리는
+                    우리가 고르는 고정 사진이어야 합니다 — 프로그램 사진을 끌어오면
+                    누가 무엇을 올리느냐에 따라 홈 첫 화면이 바뀌고, 통제할 수 없는
+                    사진이 브랜드 첫인상이 됩니다.
+
+                    `public/home/{파일명}.jpg`를 넣으면 그 파일이 쓰이고, 없으면 임시
+                    사진으로 대체됩니다 — 파일만 넣으면 되도록 코드 수정이 필요 없게
+                    해뒀습니다. */}
                 <img
-                  src={representativeImage(rows, category, fallbackImage)}
+                  src={image}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    if (el.dataset.interim === "on") return;
+                    el.dataset.interim = "on";
+                    el.src = interimImage;
+                  }}
                   alt={`${category} 프로그램`}
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
@@ -190,39 +185,24 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. 프로모 2단 카드 — 왼쪽 큰 카드에 날씨 편입 (스키마 9-7 ②) */}
-      <section className={`${WIDE_CONTAINER} mb-[90px] grid grid-cols-1 gap-6 min-[1201px]:grid-cols-[1.8fr_1fr]`}>
-        <div className="flex min-h-[220px] flex-col justify-between gap-7 rounded-[20px] bg-gradient-to-br from-[#1F5C43] to-[#163F2E] p-7 text-white min-[769px]:p-11">
-          <div>
-            <b className="mb-2 block text-[20px] font-extrabold leading-[1.35] min-[769px]:text-[24px]">
-              우리 동네 숲에서 만나는
-              <br />
-              특별한 맞춤형 산림복지 서비스
-            </b>
-            <p className="text-[15px] text-[#C3DFC2]">
-              검증된 산림복지전문가가 직접 기획하고 운영합니다.
-            </p>
-          </div>
+      {/* 4. 프로모 2단 카드.
 
-          <div>
-            <div className="mb-2 flex items-baseline justify-between gap-4">
-              <span className="text-[13px] font-bold text-white/90">오늘의 숲 날씨</span>
-              {!position && (
-                <button
-                  className="shrink-0 text-[12.5px] text-[#C3DFC2] underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
-                  onClick={request}
-                  disabled={status === "loading"}
-                >
-                  {status === "loading" ? "위치 확인 중…" : "내 위치로 보기"}
-                </button>
-              )}
-            </div>
-            <WeatherWidget point={weatherPoint} regionLabel={weatherRegion} variant="promo" />
-            <p className="mt-2 text-[12px] leading-relaxed text-white/60">
-              날씨는 예약 판단을 돕는 참고 정보입니다. 우천 시 진행 여부는 프로그램
-              운영자가 결정합니다.
-            </p>
-          </div>
+          **날씨를 여기서 빼냈습니다(v29 팀 확정).** 첫 화면의 날씨는 「어디 날씨인지」가
+          정해지지 않습니다 — 위치를 물어보면 방문 즉시 권한 창이 뜨고, 안 물어보면
+          서울 기준값이라 대부분의 방문자에게 틀립니다. **날씨가 필요한 자리는 프로그램
+          상세**입니다. 거기서는 그 프로그램이 열리는 장소와 날짜가 정해져 있어 예약
+          판단에 실제로 쓰입니다(16번). */}
+      <section className={`${WIDE_CONTAINER} mb-[90px] grid grid-cols-1 gap-6 min-[1201px]:grid-cols-[1.8fr_1fr]`}>
+        <div className="flex min-h-[220px] flex-col justify-center gap-3 rounded-[20px] bg-gradient-to-br from-[#1F5C43] to-[#163F2E] p-7 text-white min-[769px]:p-11">
+          <b className="block text-[20px] font-extrabold leading-[1.35] min-[769px]:text-[24px]">
+            우리 동네 숲에서 만나는
+            <br />
+            특별한 맞춤형 산림복지 서비스
+          </b>
+          <p className="text-[15px] leading-relaxed text-[#C3DFC2]">
+            검증된 산림복지전문가가 직접 기획하고 운영합니다. 프로그램마다 진행 장소의
+            날씨 예보를 함께 보여드립니다.
+          </p>
         </div>
 
         <div className="flex flex-col items-start justify-between gap-6 rounded-[20px] border border-[#EFE4D6] bg-[#FAF6F0] px-7 py-9">

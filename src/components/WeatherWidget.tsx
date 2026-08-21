@@ -15,9 +15,12 @@ interface Props {
   date?: Date;
   /**
    * card = 흰 배경 카드 / inline = 상세 화면 회차 옆 한 줄
-   * promo = 홈 프로모 카드(다크 그린 그라디언트) 안에 얹는 형태 — 스키마 9-7 ②
+   *
+   * `promo`(홈 프로모 카드 안에 얹는 형태)는 **v29에서 지웠습니다** — 홈에서 날씨를
+   * 빼면서 쓰는 곳이 없어졌습니다. 쓰지 않는 분기를 남겨두면 나중에 고칠 때 어느
+   * 화면에 영향이 가는지 확인하느라 시간을 씁니다.
    */
-  variant?: "card" | "inline" | "promo";
+  variant?: "card" | "inline";
   className?: string;
 }
 
@@ -87,50 +90,6 @@ export default function WeatherWidget({
           <span>{message}</span>
         )}
       </span>
-    );
-  }
-
-  // ── promo — 홈 프로모 카드 안 ──────────────────────────────────────────
-  if (variant === "promo") {
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-4 rounded-2xl bg-white/10 px-5 py-4",
-          className
-        )}
-      >
-        <span className="text-4xl leading-none" aria-hidden>
-          {w ? weatherIcon(w.condition) : "🌤"}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-semibold text-[#C3DFC2]">
-              {regionLabel} 오늘의 날씨
-            </span>
-            {w?.advisory && (
-              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11.5px] font-semibold text-[#FFD9C2]">
-                {w.advisory}
-              </span>
-            )}
-          </div>
-          {w ? (
-            <>
-              <p className="text-[17px] font-bold text-white">
-                {w.condition} {w.tempC}℃
-                <span className="ml-2 text-[13px] font-medium text-[#C3DFC2]">
-                  강수확률 {w.precipProbability}%
-                </span>
-              </p>
-              <p className="mt-0.5 truncate text-[13px] text-[#C3DFC2]">{w.comment}</p>
-            </>
-          ) : (
-            <p className="text-[15px] font-semibold text-white/80">{message}</p>
-          )}
-        </div>
-        <span className="hidden shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white sm:inline">
-          참고용
-        </span>
-      </div>
     );
   }
 
