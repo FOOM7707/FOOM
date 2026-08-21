@@ -271,6 +271,89 @@ describe("addProgramImages — 올라온 파일이 이 프로그램의 것인지
   });
 });
 
+/**
+ * 사진 삭제의 연쇄 정리 (v29).
+ *
+ * 사진 목록을 하나로 합치면서 한 파일을 앨범과 소개 블록이 함께 가리키게 됐습니다.
+ * 지울 때 소개 블록에서 빼주지 않으면 **소개 글에 깨진 이미지가 남습니다.**
+ */
+describe("deleteProgramImage — 소개 블록 연쇄 정리", () => {
+  async function withAlbumAndIntro() {
+    const a = `programs/${programId}/a.jpg`;
+    const b = `programs/${programId}/b.jpg`;
+    const fake = fakeBucket(new Set([a, b]));
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      {
+        images: [
+          { path: a, url: downloadUrl(a) },
+          { path: b, url: downloadUrl(b) },
+        ],
+      },
+      { bucket: fake.bucket }
+    );
+    await testDb.doc(`programs/${programId}`).update({
+      introBlocks: [
+        { heading: "첫째", body: "설명입니다", images: [{ path: a, url: downloadUrl(a) }] },
+        { heading: "둘째", body: "설명입니다", images: [{ path: b, url: downloadUrl(b) }] },
+      ],
+    });
+    return { a, b, fake };
+  }
+
+  it("지운 사진을 쓰던 블록에서 함께 빠진다", async () => {
+    const { a, b, fake } = await withAlbumAndIntro();
+
+    const result = await deleteProgramImage(
+      testDb,
+      programId,
+      providerUid,
+      { path: a },
+      { bucket: fake.bucket }
+    );
+
+    expect(result.detachedFrom).toBe(1);
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    const blocks = snap.get("introBlocks");
+    expect(blocks[0].images).toEqual([]);
+    // 다른 블록은 건드리지 않습니다
+    expect(blocks[1].images).toEqual([{ path: b, url: downloadUrl(b) }]);
+  });
+
+  it("사진이 빠져도 그 블록의 글은 남는다", async () => {
+    const { a, fake } = await withAlbumAndIntro();
+    await deleteProgramImage(testDb, programId, providerUid, { path: a }, { bucket: fake.bucket });
+
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    // 공급자가 쓴 글을 사진을 지웠다는 이유로 없애면 복구할 방법이 없습니다.
+    expect(snap.get("introBlocks")[0].heading).toBe("첫째");
+    expect(snap.get("introBlocks")[0].body).toBe("설명입니다");
+  });
+
+  it("소개 블록에 쓰지 않는 사진을 지우면 블록은 그대로다", async () => {
+    const { b, fake } = await withAlbumAndIntro();
+    await testDb.doc(`programs/${programId}`).update({
+      introBlocks: [{ heading: "글만", body: "사진 없는 블록", images: [] }],
+    });
+
+    const result = await deleteProgramImage(
+      testDb,
+      programId,
+      providerUid,
+      { path: b },
+      { bucket: fake.bucket }
+    );
+
+    expect(result.detachedFrom).toBe(0);
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("introBlocks")).toEqual([
+      { heading: "글만", body: "사진 없는 블록", images: [] },
+    ]);
+  });
+});
+
 describe("deleteProgramImage", () => {
   it("문서에서 빼고 파일도 지운다", async () => {
     const path = `programs/${programId}/a1.jpg`;

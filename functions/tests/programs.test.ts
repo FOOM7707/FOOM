@@ -79,6 +79,25 @@ beforeAll(async () => {
   consumerUid = await makeUser("consumer");
 });
 
+/**
+ * 소개 배치 양식 (v29).
+ *
+ * 양식이 하나뿐인 지금도 필드로 두는 이유는 나중에 양식 2를 더할 때
+ * **이미 등록된 프로그램의 값이 비어 있지 않게** 하려는 것입니다(2-3 ③).
+ */
+describe("parseProgramInput — 소개 배치 양식", () => {
+  it("보내지 않으면 양식 1(zigzag)이 들어간다", () => {
+    const parsed = parseProgramInput(validInput() as unknown) as Record<string, unknown>;
+    expect(parsed.introLayout).toBe("zigzag");
+  });
+
+  it("목록에 없는 양식은 거부한다", () => {
+    expect(() =>
+      parseProgramInput(validInput({ introLayout: "무지개형" }) as unknown)
+    ).toThrow(/소개 배치 양식/);
+  });
+});
+
 describe("parseProgramInput — 허용목록 밖의 값은 버린다", () => {
   it("클라이언트가 보낸 파생 필드·status는 통과하지 못한다", () => {
     const parsed = parseProgramInput(

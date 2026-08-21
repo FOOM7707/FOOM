@@ -201,14 +201,15 @@ describe("소개 블록", () => {
     ).toThrow(/소제목이나 설명/);
   });
 
-  it("블록당 사진은 3장까지만", () => {
-    const images = Array.from({ length: 4 }, (_, i) => ({
+  // v29 — 「사진 한 장 + 글」이 한 칸입니다. 여러 장을 보여주는 자리는 맨 위 앨범입니다.
+  it("블록당 사진은 1장까지만", () => {
+    const images = Array.from({ length: 2 }, (_, i) => ({
       path: `programs/p1/${i}.jpg`,
       url: `https://x/${i}`,
     }));
     expect(() =>
       parseProgramContent({ introBlocks: [{ heading: "제목", body: "설명", images }] })
-    ).toThrow(/3장까지/);
+    ).toThrow(/1장만/);
   });
 });
 
@@ -303,6 +304,108 @@ describe("저장 — 등록·수정", () => {
         )
       )
     ).rejects.toMatchObject({ code: "invalid-argument" });
+  });
+
+  /**
+   * v29 — 사진 목록을 하나로 합쳤습니다.
+   *
+   * v28까지는 「대표 사진과 같은 파일이면 거부」였습니다. 지금은 반대로 **올려둔
+   * 목록에 없으면 거부**합니다 — 소개 블록은 앨범에서 골라 쓰기만 합니다.
+   */
+  it("대표 사진으로 쓰는 사진을 소개 블록에도 쓸 수 있다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(baseBody()));
+    const path = `programs/${id}/album1.jpg`;
+    const url = `https://firebasestorage.googleapis.com/v0/b/demo-foom.appspot.com/o/${encodeURIComponent(path)}?alt=media`;
+    await testDb.doc(`programs/${id}`).update({ imagePaths: [path], imageUrls: [url] });
+
+    await updateProgram(
+      testDb,
+      id,
+      providerUid,
+      parseProgramInput(
+        baseBody({
+          introBlocks: [{ heading: "제목", body: "설명", images: [{ path, url }] }],
+        })
+      )
+    );
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("introBlocks")[0].images).toEqual([{ path, url }]);
+    // 앨범은 그대로입니다 — 같은 파일을 둘이 함께 가리킵니다
+    expect(snap.get("imagePaths")).toEqual([path]);
+  });
+
+  it("올려둔 사진 목록에 없는 사진은 소개 블록에 쓸 수 없다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(baseBody()));
+    await expect(
+      updateProgram(
+        testDb,
+        id,
+        providerUid,
+        parseProgramInput(
+          baseBody({
+            introBlocks: [
+              {
+                heading: "제목",
+                body: "설명",
+                // 경로 형식은 맞지만 아직 올리지 않은 파일입니다
+                images: [{ path: `programs/${id}/안올린것.jpg`, url: "https://x/a" }],
+              },
+            ],
+          })
+        )
+      )
+    ).rejects.toThrow(/프로그램 사진에 없는/);
+  });
+
+  /**
+   * 주소를 클라이언트 값으로 저장하면 한 파일에 두 주소가 남습니다. 그러면 앨범과
+   * 소개 글이 같은 사진을 가리키는지 알 수 없어집니다.
+   */
+  it("주소는 목록에 있는 값으로 덮어써 저장한다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(baseBody()));
+    const path = `programs/${id}/album1.jpg`;
+    const real = `https://firebasestorage.googleapis.com/v0/b/demo-foom.appspot.com/o/${encodeURIComponent(path)}?alt=media&token=real`;
+    await testDb.doc(`programs/${id}`).update({ imagePaths: [path], imageUrls: [real] });
+
+    await updateProgram(
+      testDb,
+      id,
+      providerUid,
+      parseProgramInput(
+        baseBody({
+          introBlocks: [
+            { heading: "제목", body: "설명", images: [{ path, url: "https://evil.example.com/a" }] },
+          ],
+        })
+      )
+    );
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("introBlocks")[0].images[0].url).toBe(real);
+  });
+
+  it("같은 사진을 두 블록에 나눠 쓸 수는 없다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(baseBody()));
+    const path = `programs/${id}/album1.jpg`;
+    const url = `https://firebasestorage.googleapis.com/v0/b/demo-foom.appspot.com/o/${encodeURIComponent(path)}?alt=media`;
+    await testDb.doc(`programs/${id}`).update({ imagePaths: [path], imageUrls: [url] });
+
+    await expect(
+      updateProgram(
+        testDb,
+        id,
+        providerUid,
+        parseProgramInput(
+          baseBody({
+            introBlocks: [
+              { heading: "첫째", body: "설명", images: [{ path, url }] },
+              { heading: "둘째", body: "설명", images: [{ path, url }] },
+            ],
+          })
+        )
+      )
+    ).rejects.toThrow(/여러 번/);
   });
 
   it("자격증 폴더 사진은 소개 블록에 넣을 수 없다", async () => {

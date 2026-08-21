@@ -50,9 +50,15 @@ export const PREPARATION_OPTIONS: KeywordOption[] = [
 /** 서버 상한과 같은 값이어야 합니다. */
 export const MAX_CUSTOM_ITEMS = 3;
 export const MAX_INTRO_BLOCKS = 5;
-export const MAX_BLOCK_IMAGES = 3;
+/** 블록마다 사진 1장 — 「사진 한 장 + 글」이 한 칸입니다(v29에서 3장 → 1장) */
+export const MAX_BLOCK_IMAGES = 1;
 export const MAX_HEADING_LENGTH = 30;
 export const MAX_BODY_LENGTH = 300;
+
+/** 상세 소개 배치 양식. 서버 목록과 같아야 합니다(v29) */
+export const INTRO_LAYOUTS = ["zigzag"] as const;
+export type IntroLayout = (typeof INTRO_LAYOUTS)[number];
+export const DEFAULT_INTRO_LAYOUT: IntroLayout = "zigzag";
 
 export interface KeywordField {
   keys: string[];
