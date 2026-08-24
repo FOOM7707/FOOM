@@ -18,6 +18,7 @@ import ProgramMap from "../components/ProgramMap";
 import WeatherWidget from "../components/WeatherWidget";
 import ProgramGallery from "../components/ProgramGallery";
 import IntroBlockView from "../components/IntroBlockView";
+import BookingDrawer from "../components/BookingDrawer";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -174,6 +175,10 @@ export default function ProgramDetailPage() {
   const [loading, setLoading] = useState(true);
   const [introExpanded, setIntroExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  // 날짜 선택 서랍 (20-5). 하단 「참여하기」나 회차 목록의 「날짜 선택」이 엽니다 —
+  // 후자는 그 회차가 선택된 채 열립니다.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [preselectId, setPreselectId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -230,8 +235,13 @@ export default function ProgramDetailPage() {
     (program.preparations?.keys.length ?? 0) +
     (program.preparations?.custom.length ?? 0);
 
+  // 하단 고정 바의 「참여하기」 — 상시모집은 협의 안내로, 회차가 있으면 날짜 선택으로
+  // 이어집니다. 고를 날짜가 없으면 비활성으로 이유를 적습니다(15-9 — 눌리는 척 금지).
+  const canParticipate = program.scheduleType === "open" || upcoming.length > 0;
+
   return (
-    <div className="container mx-auto max-w-[1440px] px-5 pb-20 pt-6 sm:px-10">
+    // pb-32: 하단 고정 바가 마지막 내용(문의하기 버튼)을 가리지 않을 만큼 띄웁니다.
+    <div className="container mx-auto max-w-[1440px] px-5 pb-32 pt-6 sm:px-10">
       {/* 미게시 프로그램을 소유자·관리자가 열었을 때 — 손님에게 보이는 화면과
           같아 보이면 "이미 공개됐다"고 오해합니다. */}
       {STATUS_NOTICE[program.status] && (
@@ -441,11 +451,22 @@ export default function ProgramDetailPage() {
                       {soldOut ? "마감되었습니다" : `남은 자리 ${s.remainingSlots}/${total}`}
                     </p>
                   </div>
-                  {/* 예약·결제가 아직 없습니다. 「누를 데 없는 버튼을 두지 않는다」
-                      (15-9)에 따라 눌리는 버튼 대신 상태만 적습니다. */}
-                  <span className="text-[13px] font-semibold text-muted-foreground">
-                    {soldOut ? "마감" : "예약 준비 중"}
-                  </span>
+                  {/* 날짜 선택 서랍이 생겨(20-5) 이제 누를 데가 있습니다 — 누르면
+                      이 회차가 선택된 채 서랍이 열립니다. 마감은 상태만 적습니다. */}
+                  {soldOut ? (
+                    <span className="text-[13px] font-semibold text-muted-foreground">마감</span>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPreselectId(s.id);
+                        setDrawerOpen(true);
+                      }}
+                    >
+                      날짜 선택
+                    </Button>
+                  )}
                 </li>
               );
             })}
@@ -563,6 +584,49 @@ export default function ProgramDetailPage() {
           </DialogContent>
         </Dialog>
       </section>
+
+      {/* ── 하단 고정 「참여하기」 (20-5) ─────────────────────────────────
+          시안의 하단 고정 CTA입니다. 날짜 선택까지 실제로 동작하고, 결제 자리에만
+          「준비 중」이 들어갑니다 — 예약이 붙는 날 그대로 씁니다. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
+        <div className="container mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-3.5 sm:px-10">
+          <div>
+            <p className="text-lg font-extrabold leading-tight">
+              {program.price.toLocaleString()}원
+              <span className="ml-1 text-sm font-normal text-muted-foreground">/ 1인</span>
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {program.scheduleType === "open"
+                ? "날짜를 협의해서 정하는 프로그램입니다"
+                : firstSchedule
+                  ? `가장 이른 날짜 ${formatSchedule(firstSchedule.startAt, firstSchedule.endAt)}`
+                  : "예약할 수 있는 날짜가 없습니다"}
+            </p>
+          </div>
+          <Button
+            size="lg"
+            className="min-w-[160px]"
+            disabled={!canParticipate}
+            onClick={() => {
+              setPreselectId(null);
+              setDrawerOpen(true);
+            }}
+          >
+            {canParticipate ? "참여하기" : "예약 가능한 날짜 없음"}
+          </Button>
+        </div>
+      </div>
+
+      <BookingDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        price={program.price}
+        scheduleType={program.scheduleType}
+        availableFrom={program.availableFrom}
+        availableUntil={program.availableUntil}
+        schedules={upcoming}
+        initialSelectedId={preselectId}
+      />
     </div>
   );
 }
