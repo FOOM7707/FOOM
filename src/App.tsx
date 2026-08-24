@@ -9,6 +9,7 @@ import ProviderApplyPage from "./pages/ProviderApplyPage";
 import AuthNaverCallbackPage from "./pages/AuthNaverCallbackPage";
 import AuthKakaoCallbackPage from "./pages/AuthKakaoCallbackPage";
 import MyProgramsPage from "./pages/MyProgramsPage";
+import MyPage from "./pages/MyPage";
 import { AuthProvider } from "./hooks/useAuth";
 
 // 관리자 화면은 지연 로딩해 일반 사용자 번들에서 분리합니다(12-3).
@@ -29,7 +30,10 @@ export default function App() {
             {/* 등록과 같은 화면을 씁니다 — 받는 값과 검증이 같아서 둘로 나누면
                 한쪽만 고치는 일이 생깁니다. :id 가 있으면 수정 모드입니다. */}
             <Route path="/programs/:id/edit" element={<ProgramRegisterPage />} />
+            {/* `/my/programs`가 먼저 와야 합니다 — 순서를 바꾸면 `/my`가
+                먼저 잡혀 「내 프로그램」이 열리지 않습니다. */}
             <Route path="/my/programs" element={<MyProgramsPage />} />
+            <Route path="/my" element={<MyPage />} />
             <Route path="/programs/:id" element={<ProgramDetailPage />} />
             <Route
               path="/admin"

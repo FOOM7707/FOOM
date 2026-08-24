@@ -6,7 +6,11 @@ import { CATEGORIES } from "@/types/firestore";
 
 /**
  * 공통 레이아웃 — 디자인 초안(docs/디자인-웹페이지-초안.html) 헤더·푸터 기준.
- * 예약내역·마이페이지는 화면이 아직 없어 disabled + "준비중" 툴팁으로 둡니다.
+ *
+ * **마이페이지는 로그인한 사람에게만 보입니다** — 비로그인 상태에서 눌러도
+ * 「로그인이 필요합니다」만 나오므로, 메뉴에 두면 헛걸음이 됩니다.
+ * **예약내역은 아직 「준비중」입니다** — 예약·결제가 없어 볼 목록이 없습니다.
+ * 내역은 마이페이지 안에 자리를 만들어 두었습니다.
  */
 
 const NAV_ITEMS: { to: string; label: string; match?: (path: string, search: string) => boolean }[] = [
@@ -22,7 +26,7 @@ const NAV_ITEMS: { to: string; label: string; match?: (path: string, search: str
   },
 ];
 
-const DISABLED_NAV = ["예약내역", "마이페이지"];
+const DISABLED_NAV = ["예약내역"];
 
 function DisabledLink({ label, className }: { label: string; className?: string }) {
   return (
@@ -40,7 +44,7 @@ export default function Layout() {
   const location = useLocation();
   // 관리자에게만 메뉴를 보여줍니다(12-3). **메뉴를 숨기는 것은 보안이 아닙니다** —
   // 누구나 주소창에 /admin 을 칠 수 있고, 실제 차단은 함수 진입부와 보안규칙이 합니다.
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -77,6 +81,19 @@ export default function Layout() {
                   />
                 </li>
               ))}
+              {user && (
+                <li>
+                  <Link
+                    to="/my"
+                    className={cn(
+                      "text-[15px] font-semibold text-foreground transition-colors hover:text-primary",
+                      location.pathname === "/my" && "text-primary"
+                    )}
+                  >
+                    마이페이지
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
 
