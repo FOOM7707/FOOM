@@ -12,6 +12,12 @@
  * 곳"으로만 읽힙니다. 큰 사진과 지그재그 구성으로 무엇을 얻는지 먼저 보여주고,
  * 절차·수수료·현재 상태는 그 아래에 그대로 둡니다.
  *
+ * **심사 진행 단계(접수 → 심사 대기 → 심사 중 → 승인)는 마이페이지로 옮겼습니다.**
+ * 「내가 지금 어디쯤인지」는 이미 등록한 사람만 쓰는 정보인데, 이 화면은 아직
+ * 전문가가 아닌 사람을 설득하는 자리입니다 — 랜딩 맨 아래를 그 정보가 차지하고
+ * 있었습니다. **신청 방법 안내는 여기 남깁니다**(온라인 폼이 없어 문의가 유일한
+ * 시작점이고, 빼면 이 화면에 다음 행동이 사라집니다).
+ *
  * 참고한 시안의 보라색 강조는 쓰지 않았습니다 — 브랜드 컬러는 `#1F5C43`(포레스트
  * 그린)이고 shadcn `--primary`에 매핑돼 있습니다(9-5).
  *
@@ -33,7 +39,6 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
-import ReviewProgress from "@/components/ReviewProgress";
 import { cn } from "@/lib/utils";
 
 /**
@@ -160,7 +165,15 @@ function Notice({ tone = "info", children }: { tone?: "info" | "warn"; children:
   );
 }
 
-/** 로그인·심사 상태에 따라 이 화면에서 할 수 있는 일이 달라집니다. */
+/**
+ * 로그인·심사 상태에 따라 이 화면에서 할 수 있는 일이 달라집니다.
+ *
+ * **심사 진행 단계(4칸)는 마이페이지로 옮겼습니다.** 「내가 지금 어디쯤인지」는
+ * 내 계정 화면에서 볼 일이고, 이 화면은 아직 전문가가 아닌 사람을 설득하는
+ * 자리입니다 — 여기 남겨두면 이미 등록한 사람만 쓰는 정보가 랜딩 맨 아래를
+ * 차지합니다. 대신 **신청하는 방법 안내는 여기 남깁니다.** 온라인 폼이 없어
+ * 문의가 유일한 시작점이고, 그걸 빼면 이 화면에 다음 행동이 사라집니다.
+ */
 function StatusPanel() {
   const { user, loading: authLoading } = useAuth();
   const { me, loading, error } = useMe();
@@ -185,9 +198,6 @@ function StatusPanel() {
   if (me.role !== "provider") {
     return (
       <div className="space-y-3">
-        {/* 아직 접수 전이어도 단계는 보여줍니다 — 앞으로 무엇이 남았는지 알 수
-            있어야 문의할 마음이 생깁니다. */}
-        <ReviewProgress isProvider={false} approvalStatus={null} />
         <Notice>
           <b>현재 온라인 신청은 준비 중입니다.</b>
           <br />
@@ -205,46 +215,15 @@ function StatusPanel() {
     );
   }
 
-  // 여기부터는 공급자 계정입니다.
+  // 여기부터는 공급자 계정입니다. 이 사람은 이 화면을 설득용으로 볼 필요가
+  // 없으므로, 바로 할 수 있는 일과 심사 상태를 볼 곳만 알려줍니다.
   return (
     <div className="space-y-3">
-      <ReviewProgress
-        isProvider
-        approvalStatus={me.provider?.approvalStatus ?? null}
-        note={me.provider?.approvalNote ?? null}
-      />
-
-      {me.provider?.approvalStatus === "rejected" && !me.provider.approvalNote && (
-        <Notice tone="warn">
-          <b>심사가 반려되었습니다.</b>
-          <br />
-          사유가 기록되지 않았습니다. 운영자에게 문의해 주세요.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "reviewing" && (
-        <Notice>
-          <b>담당자가 자격 서류를 확인하고 있습니다.</b>
-          <br />
-          결과가 나오면 이 화면에서 확인하실 수 있습니다. 그동안에도 프로그램 등록과 심사
-          요청은 할 수 있습니다.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "pending" && (
-        <Notice>
-          <b>자격 심사 대기 중입니다.</b>
-          <br />
-          프로그램 등록과 심사 요청은 지금도 할 수 있습니다. 다만 자격 심사를 통과하기 전에는
-          프로필에 「인증」 표시가 붙지 않습니다.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "approved" && (
-        <Notice>
-          <b>심사를 통과한 전문가 계정입니다.</b>
-        </Notice>
-      )}
+      <Notice>
+        <b>이미 전문가 계정입니다.</b>
+        <br />
+        자격 심사가 어디까지 진행됐는지는 마이페이지에서 확인하실 수 있습니다.
+      </Notice>
 
       <div className="flex flex-wrap gap-2">
         <Button asChild>
@@ -252,6 +231,9 @@ function StatusPanel() {
         </Button>
         <Button asChild variant="outline">
           <Link to="/my/programs">내 프로그램</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/my">심사 상태 보기</Link>
         </Button>
       </div>
     </div>
