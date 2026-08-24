@@ -22,6 +22,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { PROGRAM_CATEGORIES } from "./programs";
 import { REGION_TO_SIDO, type Sido } from "./sido";
+import { CALENDAR_WINDOW_DAYS, kstDateString, kstToInstant } from "./schedules";
 
 /** 가격 상한. 이 값이면 「이상」이라 위쪽을 막지 않습니다(17-3). */
 export const PRICE_MAX = 300_000;
@@ -29,6 +30,12 @@ export const PRICE_MAX = 300_000;
 /** 한 번에 돌려주는 최대 건수 */
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 100;
+
+/** 기간 필터에서 한 번에 고를 수 있는 연속 일수(17-2) */
+export const PERIOD_MAX_DAYS = 31;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
 
 export type SortKey = "popular" | "price_asc" | "recent" | "rating";
 
@@ -48,6 +55,10 @@ export interface SearchFilters {
   barrierFree: boolean;
   /** 우천 시 대체 방식이 있는 프로그램만 */
   rainAlternative: boolean;
+  /** 기간 시작(KST `YYYY-MM-DD`). null = 기간 필터 없음 */
+  from: string | null;
+  /** 기간 끝. `from`이 있으면 항상 함께 있고, `from <= to`가 보장됩니다 */
+  to: string | null;
   sort: SortKey;
   limit: number;
 }
@@ -65,7 +76,47 @@ function list(value: unknown): string[] {
   return raw.map((v) => String(v).trim()).filter((v) => v !== "");
 }
 
-export function parseSearchQuery(query: Record<string, unknown>): SearchFilters {
+/** 날짜 문자열에 일수를 더합니다. KST 자정 기준이라 서머타임·시차 걱정이 없습니다. */
+function addDays(date: string, days: number): string {
+  return kstDateString(new Date(kstToInstant(date, "00:00").getTime() + days * DAY_MS));
+}
+
+/**
+ * 기간 파라미터 정리 (17-2 · 17-6).
+ *
+ * **서버에서도 오늘~+90일, 최대 31일로 잘라냅니다** — 화면의 달력 제한만으로는
+ * API 직접 호출을 막지 못합니다(17-6). 90일은 회차 요약(`scheduleDates`)이 담는
+ * 범위와 같은 값이라, 그보다 먼 날짜를 받아줘도 어차피 판정할 데이터가 없습니다.
+ */
+function parsePeriod(
+  query: Record<string, unknown>,
+  now: Date
+): { from: string | null; to: string | null } {
+  const fromRaw = typeof query.from === "string" && query.from !== "" ? query.from : null;
+  const toRaw = typeof query.to === "string" && query.to !== "" ? query.to : null;
+  if (fromRaw == null && toRaw == null) return { from: null, to: null };
+
+  const today = kstDateString(now);
+  let from = fromRaw ?? today;
+  let to = toRaw ?? from;
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+    throw new AppError("invalid-argument", "날짜 형식이 올바르지 않습니다");
+  }
+  if (to < from) [from, to] = [to, from];
+
+  const windowEnd = kstDateString(new Date(now.getTime() + CALENDAR_WINDOW_DAYS * DAY_MS));
+  if (from < today) from = today;
+  if (to > windowEnd) to = windowEnd;
+  // 전부 지난 기간이었으면 위 당김으로 from > to가 됩니다 — 오늘 하루로 접습니다.
+  if (to < from) to = from;
+
+  const cap = addDays(from, PERIOD_MAX_DAYS - 1);
+  if (to > cap) to = cap;
+
+  return { from, to };
+}
+
+export function parseSearchQuery(query: Record<string, unknown>, now = new Date()): SearchFilters {
   const categories = list(query.categories).filter((c) =>
     (PROGRAM_CATEGORIES as readonly string[]).includes(c)
   );
@@ -100,6 +151,7 @@ export function parseSearchQuery(query: Record<string, unknown>): SearchFilters 
       query.difficulty == null || query.difficulty === "" ? null : String(query.difficulty),
     barrierFree: query.barrierFree === "1" || query.barrierFree === "true",
     rainAlternative: query.rainAlternative === "1" || query.rainAlternative === "true",
+    ...parsePeriod(query, now),
     sort,
     limit: Math.min(MAX_LIMIT, Math.max(1, num(query.limit, DEFAULT_LIMIT))),
   };
@@ -171,7 +223,30 @@ export function matchesFilters(program: Candidate, f: SearchFilters): boolean {
   if (f.rainAlternative && ((program.rainAlternative as string) ?? "none") === "none") {
     return false;
   }
+  if (f.from != null && f.to != null && !matchesPeriod(program, f.from, f.to)) return false;
   return true;
+}
+
+/**
+ * 기간 — **회차 날짜 요약(`scheduleDates`)과의 교집합**으로 판정합니다(17-2 방법 C).
+ * `nextScheduleAt <= 끝 && lastScheduleAt >= 시작` 같은 겹침 판정은 8/1과 9/30에만
+ * 회차가 있는 프로그램이 8/20~8/25 검색에 잡혀서 쓰지 않습니다.
+ *
+ * **상시모집(`open`)은 예외로 포함합니다** — 회차가 없어 교집합으로는 전부 탈락하는데,
+ * 실제로는 「그 기간에 협의가 가능한」 프로그램입니다. 문의 가능 기간이 선택 기간과
+ * 겹치면 통과시키고, 화면이 「날짜 협의」임을 안내합니다(17-2).
+ */
+function matchesPeriod(program: Candidate, from: string, to: string): boolean {
+  if (program.scheduleType === "open") {
+    const af = program.availableFrom;
+    const au = program.availableUntil;
+    // 한쪽이 비어 있으면 그쪽은 제한이 없는 것으로 봅니다.
+    if (typeof af === "string" && af > to) return false;
+    if (typeof au === "string" && au < from) return false;
+    return true;
+  }
+  const dates = (program.scheduleDates as string[] | undefined) ?? [];
+  return dates.some((d) => d >= from && d <= to);
 }
 
 function toMillis(value: unknown): number {
@@ -260,6 +335,17 @@ export interface SearchResult {
   total: number;
   /** 상한에 걸려 잘렸는지 — 조용히 자르면 「이게 전부」로 읽힙니다 */
   truncated: boolean;
+  /**
+   * 회차가 있는 날짜의 합집합 — 달력의 「회차 있는 날」 점(17-4 ④)에 씁니다.
+   *
+   * 설계상 출처는 `aggregates/scheduleCalendar`(17-5)인데 그 배치가 아직 없고,
+   * 이 함수가 어차피 게시 프로그램 전체를 읽으므로 여기서 함께 만듭니다 —
+   * 집계 문서를 도입하는 날 이 계산이 그쪽으로 옮겨갑니다.
+   *
+   * **필터와 무관한 전체 프로그램 기준**입니다(17-5의 알려진 한계) — 필터를 좁힌
+   * 상태에서는 「점이 있는데 결과 0건」이 생길 수 있고, 그때는 안내 문구로 대응합니다.
+   */
+  calendarDates: string[];
 }
 
 export async function searchPrograms(
@@ -284,9 +370,20 @@ export async function searchPrograms(
   const matched = candidates.filter((p) => matchesFilters(p, filters));
   const sorted = sortCandidates(matched, filters.sort);
 
+  // 지난 날짜는 점에서 뺍니다 — 요약을 정리하는 배치(rebuildSearchIndex)가 아직 없어
+  // 과거 날짜가 scheduleDates에 남아 있을 수 있습니다(17-2의 「날짜가 그냥 지남」).
+  const today = kstDateString(new Date());
+  const dateSet = new Set<string>();
+  for (const p of candidates) {
+    for (const d of (p.scheduleDates as string[] | undefined) ?? []) {
+      if (typeof d === "string" && d >= today) dateSet.add(d);
+    }
+  }
+
   return {
     programs: sorted.slice(0, filters.limit).map(toRow),
     total: matched.length,
     truncated: matched.length > filters.limit,
+    calendarDates: [...dateSet].sort(),
   };
 }

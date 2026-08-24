@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { Difficulty, TargetAgeTag } from "@/types/firestore";
+import DateRangeCalendar from "@/components/DateRangeCalendar";
 import { REGION_KEYS, type RegionKey } from "@/lib/sido";
 import {
   AGE_TAG_LABELS,
@@ -34,6 +35,12 @@ interface Props {
    * 아직 세는 중이면 null입니다.
    */
   count: number | null;
+  /**
+   * 회차가 있는 날짜 목록 — 달력의 「회차 있는 날」 점(17-4 ④)에 씁니다.
+   * 검색 응답이 함께 내려줍니다. **필터와 무관한 전체 프로그램 기준**이라
+   * 점이 있어도 지금 조건으로는 0건일 수 있습니다(17-5의 알려진 한계).
+   */
+  calendarDates?: string[];
   /** 모달 안에서 값을 만질 때마다 알려줍니다 — 개수를 다시 세기 위함입니다 */
   onDraftChange?: (draft: ProgramFilters) => void;
   onApply: (next: ProgramFilters) => void;
@@ -75,10 +82,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** 「8월 25일 ~ 9월 2일」 — 선택 기간 요약 */
+function periodLabel(from: string, to: string | null): string {
+  const fmt = (date: string) => {
+    const [, m, d] = date.split("-").map(Number);
+    return `${m}월 ${d}일`;
+  };
+  if (!to || to === from) return `${fmt(from)} 하루`;
+  return `${fmt(from)} ~ ${fmt(to)}`;
+}
+
 export default function FilterModal({
   open,
   value,
   count,
+  calendarDates,
   onDraftChange,
   onApply,
   onClose,
@@ -162,6 +180,40 @@ export default function FilterModal({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* 기간이 맨 위입니다 — 「언제 갈 수 있는가」가 보통 가장 먼저 정해지는
+              조건입니다(17-3의 항목 순서도 카테고리 다음이 기간입니다). */}
+          <Section title="기간">
+            <DateRangeCalendar
+              from={draft.from}
+              to={draft.to}
+              markedDates={calendarDates}
+              onChange={(from, to) => patch({ from, to })}
+            />
+            {draft.from && (
+              <div className="mt-3 flex items-center justify-between rounded-lg bg-secondary px-3.5 py-2.5">
+                <p className="text-[13px] font-semibold text-secondary-foreground">
+                  {periodLabel(draft.from, draft.to)}
+                  {!draft.to && (
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      — 종료일을 누르면 기간이 됩니다
+                    </span>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => patch({ from: null, to: null })}
+                  className="text-xs font-semibold underline underline-offset-2"
+                >
+                  날짜 지우기
+                </button>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              숫자 아래 점은 진행 날짜가 있는 날입니다. 날짜를 협의하는 상시모집
+              프로그램은 기간과 무관하게 함께 보입니다.
+            </p>
+          </Section>
+
           <Section title="지역">
             <div className="flex flex-wrap gap-2">
               {REGION_KEYS.map((r) => (
@@ -302,15 +354,6 @@ export default function FilterModal({
                 </span>
               </span>
             </label>
-          </Section>
-
-          {/* 기간은 회차(날짜)가 있어야 만들 수 있습니다 — 17-2.
-              칸만 먼저 만들어두면 눌러도 아무 일이 없어 고장으로 읽힙니다. */}
-          <Section title="기간">
-            <p className="rounded-lg bg-secondary px-3.5 py-2.5 text-xs leading-relaxed text-secondary-foreground">
-              날짜로 찾는 기능은 아직 준비 중입니다. 프로그램의 회차(진행 날짜)를 등록하는
-              기능이 만들어지면 달력이 여기에 들어갑니다.
-            </p>
           </Section>
         </div>
 

@@ -28,6 +28,10 @@ export interface ProgramFilters {
   barrierFree: boolean;
   /** 우천 시 대체 방식이 있는 프로그램만 (`rainAlternative != 'none'`) */
   rainAlternative: boolean;
+  /** 기간 시작 `YYYY-MM-DD`. null = 기간 필터 없음 (17-2) */
+  from: string | null;
+  /** 기간 끝. 시작만 고른 상태면 null이고, 서버에는 시작 하루로 보냅니다 */
+  to: string | null;
 }
 
 export const DEFAULT_FILTERS: ProgramFilters = {
@@ -40,6 +44,8 @@ export const DEFAULT_FILTERS: ProgramFilters = {
   difficulty: null,
   barrierFree: false,
   rainAlternative: false,
+  from: null,
+  to: null,
 };
 
 export const AGE_TAG_LABELS: { value: TargetAgeTag; label: string }[] = [
@@ -84,6 +90,7 @@ export function countActiveFilters(f: ProgramFilters): number {
   if (f.difficulty) n += 1;
   if (f.barrierFree) n += 1;
   if (f.rainAlternative) n += 1;
+  if (f.from) n += 1;
   return n;
 }
 
@@ -121,6 +128,11 @@ export function toSearchQuery(
   if (filters.difficulty) q.set("difficulty", filters.difficulty);
   if (filters.barrierFree) q.set("barrierFree", "1");
   if (filters.rainAlternative) q.set("rainAlternative", "1");
+  if (filters.from) {
+    q.set("from", filters.from);
+    // 시작만 고른 상태로 적용하면 그 하루로 봅니다 — 서버 판정과 같은 규칙입니다.
+    q.set("to", filters.to ?? filters.from);
+  }
   q.set("sort", SORT_TO_SERVER[sort]);
   return q.toString();
 }

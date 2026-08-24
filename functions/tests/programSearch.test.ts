@@ -11,6 +11,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  PERIOD_MAX_DAYS,
   PRICE_MAX,
   matchesFilters,
   parseSearchQuery,
@@ -108,6 +109,68 @@ describe("parseSearchQuery", () => {
   });
 });
 
+// 시각을 고정합니다 — 실제 시각을 쓰면 달이 바뀔 때마다 테스트가 흔들립니다.
+// UTC 03:00 = KST 정오라 날짜 경계 문제가 없습니다.
+const PERIOD_NOW = new Date("2026-08-24T03:00:00Z");
+
+function periodDefaults(overrides: Record<string, unknown> = {}) {
+  return parseSearchQuery(overrides, PERIOD_NOW);
+}
+
+describe("parseSearchQuery — 기간 (서버에서도 잘라낸다, 17-6)", () => {
+  it("기간을 안 주면 null — 기간 필터 없음", () => {
+    const f = periodDefaults();
+    expect(f.from).toBeNull();
+    expect(f.to).toBeNull();
+  });
+
+  it("정상 범위는 그대로 통과한다", () => {
+    const f = periodDefaults({ from: "2026-09-01", to: "2026-09-05" });
+    expect(f.from).toBe("2026-09-01");
+    expect(f.to).toBe("2026-09-05");
+  });
+
+  it("형식이 틀리면 거부한다", () => {
+    expect(() => periodDefaults({ from: "9월1일", to: "2026-09-05" })).toThrow();
+  });
+
+  it("지난 날짜는 오늘로 당긴다 — UI 제한만으로는 직접 호출을 못 막는다", () => {
+    const f = periodDefaults({ from: "2026-08-01", to: "2026-08-26" });
+    expect(f.from).toBe("2026-08-24");
+    expect(f.to).toBe("2026-08-26");
+  });
+
+  it("전부 지난 기간이면 오늘 하루로 접힌다", () => {
+    const f = periodDefaults({ from: "2026-08-01", to: "2026-08-10" });
+    expect(f.from).toBe("2026-08-24");
+    expect(f.to).toBe("2026-08-24");
+  });
+
+  it("+90일을 넘는 끝은 잘라낸다 — 회차 요약이 담는 범위와 같은 값", () => {
+    const f = periodDefaults({ from: "2026-11-10", to: "2027-03-01" });
+    expect(f.from).toBe("2026-11-10");
+    expect(f.to).toBe("2026-11-22"); // 2026-08-24 + 90일
+  });
+
+  it(`${PERIOD_MAX_DAYS}일을 넘으면 종료일을 당긴다`, () => {
+    const f = periodDefaults({ from: "2026-08-25", to: "2026-10-20" });
+    expect(f.from).toBe("2026-08-25");
+    expect(f.to).toBe("2026-09-24"); // 8/25부터 31일째 되는 날
+  });
+
+  it("순서가 뒤집혀 있으면 바로잡는다", () => {
+    const f = periodDefaults({ from: "2026-09-10", to: "2026-09-01" });
+    expect(f.from).toBe("2026-09-01");
+    expect(f.to).toBe("2026-09-10");
+  });
+
+  it("시작만 주면 그 하루로 본다", () => {
+    const f = periodDefaults({ from: "2026-09-03" });
+    expect(f.from).toBe("2026-09-03");
+    expect(f.to).toBe("2026-09-03");
+  });
+});
+
 describe("matchesFilters", () => {
   const program = {
     id: "p1",
@@ -171,6 +234,67 @@ describe("matchesFilters", () => {
   });
 });
 
+describe("matchesFilters — 기간 (scheduleDates 교집합, 17-2)", () => {
+  const program = {
+    id: "p-period",
+    title: "기간시험",
+    category: "숲길등산",
+    scheduleType: "series",
+    scheduleDates: ["2026-09-05", "2026-09-19"],
+  };
+
+  it("기간 안에 회차가 하루라도 있으면 통과한다", () => {
+    expect(
+      matchesFilters(program, periodDefaults({ from: "2026-09-01", to: "2026-09-06" }))
+    ).toBe(true);
+  });
+
+  it("겹침이 아니라 교집합이다 — 회차 사이의 빈 기간은 걸러진다", () => {
+    // nextScheduleAt~lastScheduleAt 겹침으로 판정하면 9/5와 9/19 사이(9/7~9/10)도
+    // 통과해버립니다 — 그래서 방법 B를 버렸습니다(17-2).
+    expect(
+      matchesFilters(program, periodDefaults({ from: "2026-09-07", to: "2026-09-10" }))
+    ).toBe(false);
+  });
+
+  it("회차 요약이 아예 없으면 걸러진다", () => {
+    const noDates = { ...program, scheduleDates: [] };
+    expect(
+      matchesFilters(noDates, periodDefaults({ from: "2026-09-01", to: "2026-09-06" }))
+    ).toBe(false);
+  });
+
+  it("상시모집은 문의 가능 기간이 겹치면 포함한다 — 기간 필터의 예외(17-2)", () => {
+    const open = {
+      ...program,
+      scheduleType: "open",
+      scheduleDates: [],
+      availableFrom: "2026-09-01",
+      availableUntil: "2026-09-30",
+    };
+    expect(matchesFilters(open, periodDefaults({ from: "2026-09-10", to: "2026-09-12" }))).toBe(
+      true
+    );
+    // 문의 가능 기간이 시작되기 전의 검색에는 안 나옵니다.
+    expect(matchesFilters(open, periodDefaults({ from: "2026-08-25", to: "2026-08-28" }))).toBe(
+      false
+    );
+  });
+
+  it("상시모집의 기간이 비어 있으면 제한 없음으로 본다", () => {
+    const open = {
+      ...program,
+      scheduleType: "open",
+      scheduleDates: [],
+      availableFrom: null,
+      availableUntil: null,
+    };
+    expect(matchesFilters(open, periodDefaults({ from: "2026-09-10", to: "2026-09-12" }))).toBe(
+      true
+    );
+  });
+});
+
 describe("searchPrograms — 게시된 것만", () => {
   it("게시되지 않은 프로그램은 결과에 없다", async () => {
     // 이 경로는 로그인 없이 호출되고 Admin SDK라 규칙을 우회합니다 —
@@ -219,6 +343,20 @@ describe("searchPrograms — 게시된 것만", () => {
     const result = await searchPrograms(testDb, defaults({ keyword: "사진 여러 장" }));
     const row = result.programs.find((p) => p.id === id)!;
     expect(row.imageUrls).toEqual(["https://x/a"]);
+  });
+
+  it("달력 점의 재료(calendarDates)를 함께 내려준다 — 지난 날짜는 뺀다", async () => {
+    // 미래 날짜는 테스트가 언제 돌아도 미래이도록 만들어 씁니다.
+    const future = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10);
+    await makePublished(
+      { title: "달력점 확인" },
+      { scheduleDates: [future, "2000-01-01"] }
+    );
+
+    const result = await searchPrograms(testDb, defaults());
+    expect(result.calendarDates).toContain(future);
+    // 요약 정리 배치가 아직 없어 과거 날짜가 남아 있을 수 있습니다 — 점에서는 뺍니다.
+    expect(result.calendarDates).not.toContain("2000-01-01");
   });
 
   it("잘렸으면 알려준다 — 조용히 자르면 「이게 전부」로 읽힌다", async () => {
