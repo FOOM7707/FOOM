@@ -324,84 +324,91 @@ export default function MyPage() {
             </CardContent>
           </Card>
 
-          {/* ── 전문가 영역 ────────────────────────────────────────── */}
-          <Card className="mb-5">
-            <CardContent className="pt-6">
-              <h2 className="mb-3 text-base font-extrabold">전문가 활동</h2>
+          {/* ── 전문가 영역 ──────────────────────────────────────────
+              **전문가 계정에만 보입니다.** 일반 회원에게는 이 칸이 아예 없습니다 —
+              「내 계정 화면」은 내가 실제로 쓰는 것만 있어야 하고, 해당 없는 칸이
+              늘어나면 정작 쓰는 것을 찾기 어려워집니다.
 
-              {me.role === "provider" ? (
-                <>
-                  <dl className="mb-6">
-                    <Row label="활동명">
-                      {me.provider?.displayName ?? "-"}
-                      {me.provider?.verified && (
-                        <span className="ml-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                          인증
-                        </span>
-                      )}
-                    </Row>
-                  </dl>
+              **전문가가 되는 길을 잃지 않습니다.** 헤더의 「전문가로 활동하기」와
+              푸터의 「전문가 가입 안내」가 항상 떠 있어, 안내 화면으로 가는 길은
+              로그인 여부와 무관하게 두 곳에 남아 있습니다.
 
-                  {/* 자격 심사 진행 단계 — `/provider/apply`에 있던 것을 여기로
-                      옮겼습니다. 「내 상태」는 내 계정 화면에서 보는 것이 맞고,
-                      그 화면은 전문가를 설득하는 자리입니다.
-                      **반려 사유는 이 컴포넌트가 함께 보여줍니다**(2-2 — 사유가
-                      안 보이면 무엇을 고쳐야 할지 몰라 재신청이 불가능합니다). */}
-                  <ReviewProgress
-                    isProvider
-                    approvalStatus={me.provider?.approvalStatus ?? null}
-                    note={me.provider?.approvalNote ?? null}
-                  />
+              **기준은 `role === 'provider'`이지 「승인 완료」가 아닙니다.**
+              승인된 뒤에만 보여주면 진행 단계 4칸이 무용지물이 됩니다 — 본인은
+              「심사 대기」·「심사 중」 칸을 영원히 못 보게 되고, 그 칸을 만든
+              이유(심사가 방치된 것처럼 보이지 않게, v23)가 사라집니다.
+              반려된 경우에도 보여야 합니다 — 사유를 봐야 다시 요청할 수 있습니다. */}
+          {me.role === "provider" && (
+            <Card className="mb-5">
+              <CardContent className="pt-6">
+                <h2 className="mb-3 text-base font-extrabold">전문가 활동</h2>
 
-                  {(() => {
-                    const notice = APPROVAL_NOTICE[me.provider?.approvalStatus ?? ""];
-                    if (!notice) return null;
-                    return (
-                      <div className="mt-4 rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
-                        <b>{notice.title}</b>
-                        {notice.body && (
-                          <>
-                            <br />
-                            {notice.body}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* 반려인데 사유가 비어 있으면 재신청할 방법이 없습니다 —
-                      그 사실을 알려야 문의라도 할 수 있습니다. */}
-                  {me.provider?.approvalStatus === "rejected" &&
-                    !me.provider.approvalNote && (
-                      <div className="mt-4 rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
-                        <b>심사가 반려되었습니다.</b>
-                        <br />
-                        사유가 기록되지 않았습니다. 운영자에게 문의해 주세요.
-                      </div>
+                <dl className="mb-6">
+                  <Row label="활동명">
+                    {me.provider?.displayName ?? "-"}
+                    {me.provider?.verified && (
+                      <span className="ml-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                        인증
+                      </span>
                     )}
+                  </Row>
+                </dl>
 
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/my/programs">내 프로그램</Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/programs/new">프로그램 등록</Link>
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    산림복지전문가 자격이 있으시면 프로그램을 열어 참가자를 모집할 수
-                    있습니다.
-                  </p>
-                  <Button asChild size="sm" variant="outline" className="mt-3">
-                    <Link to="/provider/apply">전문가 등록 안내 보기</Link>
+                {/* 자격 심사 진행 단계 — `/provider/apply`에 있던 것을 여기로
+                    옮겼습니다. 「내 상태」는 내 계정 화면에서 보는 것이 맞고,
+                    그 화면은 전문가를 설득하는 자리입니다.
+                    **반려 사유는 이 컴포넌트가 함께 보여줍니다**(2-2 — 사유가
+                    안 보이면 무엇을 고쳐야 할지 몰라 재신청이 불가능합니다). */}
+                <ReviewProgress
+                  isProvider
+                  approvalStatus={me.provider?.approvalStatus ?? null}
+                  note={me.provider?.approvalNote ?? null}
+                />
+
+                {(() => {
+                  const notice = APPROVAL_NOTICE[me.provider?.approvalStatus ?? ""];
+                  if (!notice) return null;
+                  return (
+                    <div className="mt-4 rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
+                      <b>{notice.title}</b>
+                      {notice.body && (
+                        <>
+                          <br />
+                          {notice.body}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* 반려인데 사유가 비어 있으면 재신청할 방법이 없습니다 —
+                    그 사실을 알려야 문의라도 할 수 있습니다. */}
+                {me.provider?.approvalStatus === "rejected" &&
+                  !me.provider.approvalNote && (
+                    <div className="mt-4 rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
+                      <b>심사가 반려되었습니다.</b>
+                      <br />
+                      사유가 기록되지 않았습니다. 운영자에게 문의해 주세요.
+                    </div>
+                  )}
+
+                {/* ⚠️ 이 버튼은 **승인 전에도 보여줍니다.** 서버가 승인 전 등록을
+                    허용하고(`assertProvider`는 `role`만 봅니다), 자격 심사와
+                    프로그램 게시 심사가 별개이기 때문입니다 — 자격 심사를
+                    기다리는 동안 프로그램을 써두면 승인과 동시에 게시 심사를
+                    요청할 수 있습니다. 감추면 첫 게시까지의 시간이 두 배가 되고
+                    「승인 났는데 뭘 해야 하는지 모르는」 상태가 됩니다. */}
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/my/programs">내 프로그램</Link>
                   </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/programs/new">프로그램 등록</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 관리자 메뉴는 헤더에도 있지만, 여기 두면 「내 계정으로 할 수 있는
               일」이 한자리에 모입니다. 판단 기준은 토큰 클레임입니다(12-3) —
