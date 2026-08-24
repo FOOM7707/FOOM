@@ -232,8 +232,10 @@ function StatusPanel() {
         <Button asChild variant="outline">
           <Link to="/my/programs">내 프로그램</Link>
         </Button>
+        {/* 마이페이지의 「전문가 활동」 탭을 바로 엽니다 — 탭이 주소에 남아
+            있어서 가능합니다(MyPage 상단 주석). */}
         <Button asChild variant="outline">
-          <Link to="/my">심사 상태 보기</Link>
+          <Link to="/my?tab=provider">심사 상태 보기</Link>
         </Button>
       </div>
     </div>
