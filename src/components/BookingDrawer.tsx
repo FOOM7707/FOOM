@@ -136,6 +136,13 @@ export default function BookingDrawer({
                 const active = s.id === selectedId;
                 return (
                   <li key={s.id}>
+                    {/* 고른 날짜는 **브랜드 색을 꽉 채우고 글자를 흰색으로** 바꿉니다
+                        (헤더의 「전문가로 활동하기」와 같은 조합). 전에는 배경을 5%만
+                        입혔는데, 목록이 여러 줄이면 어느 줄을 골랐는지 한눈에
+                        들어오지 않았습니다.
+                        **칸 안의 글자 전부**를 함께 바꿔야 합니다 — 회차 번호와
+                        남은 자리는 원래 브랜드 색·회색이라, 배경만 채우면 글자가
+                        배경에 묻혀 읽히지 않습니다. */}
                     <button
                       type="button"
                       role="radio"
@@ -144,26 +151,39 @@ export default function BookingDrawer({
                       onClick={() => setSelectedId(active ? null : s.id)}
                       className={cn(
                         "flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-4 text-left transition-colors",
-                        active && "border-primary bg-primary/5",
-                        soldOut && "opacity-50",
-                        !soldOut && !active && "hover:bg-secondary"
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "hover:bg-secondary",
+                        soldOut && "opacity-50 hover:bg-transparent"
                       )}
                     >
                       <div>
                         <p className="text-[15px] font-bold">
                           {s.seriesIndex != null && (
-                            <span className="mr-2 text-primary">{s.seriesIndex}회차</span>
+                            <span
+                              className={cn(
+                                "mr-2",
+                                active ? "text-primary-foreground/85" : "text-primary"
+                              )}
+                            >
+                              {s.seriesIndex}회차
+                            </span>
                           )}
                           {formatSchedule(s.startAt, s.endAt)}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p
+                          className={cn(
+                            "mt-1 text-xs",
+                            active ? "text-primary-foreground/75" : "text-muted-foreground"
+                          )}
+                        >
                           {soldOut ? "마감되었습니다" : `남은 자리 ${s.remainingSlots}/${total}`}
                         </p>
                       </div>
                       <span
                         className={cn(
                           "text-[13px] font-semibold",
-                          active ? "text-primary" : "text-muted-foreground"
+                          active ? "text-primary-foreground" : "text-muted-foreground"
                         )}
                       >
                         {soldOut ? "마감" : active ? "선택됨 ✓" : "선택"}
