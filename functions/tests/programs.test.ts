@@ -311,7 +311,9 @@ describe("listPrograms", () => {
       editReviewedBy: "admin-1",
     });
 
-    const programs = await listPrograms(testDb, {});
+    // 상한(50건)까지 조회합니다 — 테스트 전체가 한 DB를 쓰므로 다른 파일이 만든
+    // 게시 프로그램이 많아지면 기본 20건 창에서 이 문서가 밀려납니다.
+    const programs = await listPrograms(testDb, { limit: 50 });
     const row = programs.find((p) => p.id === id)!;
     expect(row).toBeDefined();
     expect("reviewNote" in row).toBe(false);
