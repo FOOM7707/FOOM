@@ -94,21 +94,21 @@ const FEATURES = [
   {
     label: "01. 자유",
     title: "원하는 일정대로\n자유롭게 여세요",
-    body: "주말 반나절 숲해설부터 정기 산림치유 프로그램까지. 날짜·정원·가격을 직접 정하고, 최소 인원도 스스로 설정합니다.",
+    body: "주말 반나절 숲해설부터 정기 산림치유 프로그램까지.\n날짜·정원·가격을 직접 정하고, 최소 인원도 스스로 설정합니다.",
     photo: PHOTOS.freedom,
     alt: "숲길을 걷는 사람들",
   },
   {
     label: "02. 운영",
     title: "모집과 정산은\n맡겨주세요",
-    body: "참가자 모집, 결제, 환불, 당일 안내까지 시스템이 처리합니다. 복잡한 행정을 덜고 숲에서 안내하는 일에만 집중하시면 됩니다.",
+    body: "참가자 모집, 결제, 환불, 당일 안내까지 시스템이 처리합니다.\n복잡한 행정을 덜고 숲에서 안내하는 일에만 집중하시면 됩니다.",
     photo: PHOTOS.automation,
     alt: "휴대폰으로 예약을 확인하는 모습",
   },
   {
     label: "03. 신뢰",
     title: "자격을 확인해\n믿고 맡기게 합니다",
-    body: "품은 자격증을 운영자가 직접 확인한 전문가만 등록합니다. 아무나 열 수 없는 대신, 참가자는 안심하고 신청합니다.",
+    body: "품은 자격증을 운영자가 직접 확인한 전문가만 등록합니다.\n아무나 열 수 없는 대신, 참가자는 안심하고 신청합니다.",
     photo: PHOTOS.trust,
     alt: "숲의 나무들",
   },
@@ -269,17 +269,17 @@ function FeatureRow({
           src={feature.photo}
           alt={feature.alt}
           loading="lazy"
-          className="h-[340px] w-full object-cover transition-transform duration-500 hover:scale-[1.015] md:h-[440px] lg:h-[560px]"
+          className="h-[280px] w-full object-cover transition-transform duration-500 hover:scale-[1.015] md:h-[360px] lg:h-[440px]"
         />
       </div>
 
       <div className={cn(flipped && "lg:order-1")}>
-        <p className="mb-5 text-[15px] font-black tracking-[2px] text-primary md:text-[17px]">
+        <p className="mb-4 text-[21px] font-black tracking-[-0.3px] text-primary md:text-[27px]">
           {feature.label}
         </p>
         <h3
           className={cn(
-            "whitespace-pre-line break-keep text-[32px] font-black leading-[1.2] tracking-[-1px] md:text-[51px] md:tracking-[-2px]",
+            "whitespace-pre-line break-keep text-[27px] font-black leading-[1.25] tracking-[-0.8px] md:text-[40px] md:tracking-[-1.4px]",
             // 나타나는 효과 — 위 useReveal이 켜줍니다.
             "transition-all duration-700 ease-out",
             shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[0.94] opacity-0"
@@ -287,7 +287,7 @@ function FeatureRow({
         >
           {feature.title}
         </h3>
-        <p className="mt-7 break-keep text-[17px] leading-[1.6] text-muted-foreground md:text-[20px]">
+        <p className="mt-6 whitespace-pre-line break-keep text-[15px] leading-[1.75] text-muted-foreground md:text-[17px]">
           {feature.body}
         </p>
       </div>

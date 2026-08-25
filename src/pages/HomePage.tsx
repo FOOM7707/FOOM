@@ -96,7 +96,7 @@ export default function HomePage() {
   return (
     <div>
       {/* 2. 히어로 — 배지 + 제목 + 부제 + 버튼 2개 */}
-      <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E7EFE9] to-[#F4F1E8] px-5 pb-[90px] pt-8 text-center">
+      <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E8F0EC] to-[#F4F7F5] px-5 pb-[90px] pt-8 text-center">
         {/* 알약 배경과 이모지를 뺐습니다 — 제목 위에 붙는 알약 라벨은 어느 사이트에나
             있는 형태라, 배경을 빼고 글자만 남기는 편이 눈에 덜 걸립니다. */}
         <p className="mb-3 text-[13px] font-bold text-primary">
@@ -240,7 +240,7 @@ export default function HomePage() {
             {REVIEWS.map((review) => (
               <div
                 key={review.name}
-                className="flex flex-col justify-between rounded-xl border border-border bg-card px-6 py-7"
+                className="flex flex-col justify-between rounded-xl border border-border bg-secondary/50 px-6 py-7"
               >
                 <div>
                   <div className="mb-3.5 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">
