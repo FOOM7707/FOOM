@@ -8,7 +8,9 @@ import type { Category } from "@/types/firestore";
  * Pretendard 단독(③), 지도는 홈에 배치하지 않고 "내 주변에서 찾기"로 진입(⑤).
  */
 
-const WIDE_CONTAINER = "mx-auto w-full max-w-[1360px] px-6";
+/** 홈의 모든 블록이 같은 좌우 기준선을 씁니다 — 후기 섹션·푸터가 1200이라
+ *  카드 그리드만 1360이면 스크롤할 때 좌우가 어긋나 보입니다. */
+const WIDE_CONTAINER = "mx-auto w-full max-w-[1200px] px-6";
 
 // 3. 카테고리 사진 카드 5종 — 자격유형 공식명칭 (스키마 9-7 ⑥)
 //
@@ -214,11 +216,13 @@ export default function HomePage() {
               내 프로그램을 올리고 지역 주민들을 직접 만나보세요.
             </p>
           </div>
+          {/* 헤더의 같은 버튼과 목적지를 맞춥니다 — 공급자가 아닌 사용자를 등록 폼으로
+              바로 보내면 폼을 다 채운 뒤에야 권한 거부를 만납니다(15-1). */}
           <Link
-            to="/programs/new"
+            to="/provider/apply"
             className="inline-block rounded-full bg-cta px-7 py-[13px] text-[14px] font-extrabold text-white transition-colors hover:bg-cta-hover"
           >
-            전문가 가입하기
+            전문가 가입 안내 보기
           </Link>
         </div>
       </section>
@@ -229,18 +233,11 @@ export default function HomePage() {
           실제 데이터 연동 또는 섹션 숨김 처리가 반드시 필요합니다 (스키마 9-7 ④). */}
       <section className="w-full border-t border-border bg-white px-6 pb-[100px] pt-20 text-center">
         <div className="mx-auto max-w-[1200px]">
-          <div
-            className="mx-auto mb-4 flex h-[72px] w-[72px] items-center justify-center rounded-full border border-[#1A2421] text-center text-[9px] font-bold leading-[1.15] tracking-[0.08em] text-[#1A2421]"
-            aria-hidden
-          >
-            FEEL THE
-            <br />
-            DIFFERENCE
-          </div>
-          <span className="mb-2 block text-[12px] font-bold uppercase tracking-[0.12em] text-[#00852E]">
-            Real Experiences
-          </span>
-          <h2 className="mb-12 text-[24px] font-extrabold tracking-[-0.6px] text-foreground min-[769px]:text-[30px]">
+          {/* 뜻 없는 영문 장식(FEEL THE DIFFERENCE 배지 · Real Experiences)을 걷어냈습니다.
+              한국어 서비스라 읽히지 않고, 배지의 9px 글자는 어떤 화면에서도 읽을 수
+              없었습니다. #00852E는 브랜드 그린(#1F5C43)과 계열이 다른 세 번째
+              초록이기도 했습니다. */}
+          <h2 className="mb-12 text-balance text-[24px] font-extrabold tracking-[-0.6px] text-foreground min-[769px]:text-[30px]">
             숲이 준 일상의 변화, 직접 경험한 이야기
           </h2>
 
@@ -248,26 +245,26 @@ export default function HomePage() {
             {REVIEWS.map((review) => (
               <div
                 key={review.name}
-                className="flex flex-col justify-between rounded-xl border border-[#E1E8ED] bg-[#F0F5FA] px-6 py-7"
+                className="flex flex-col justify-between rounded-xl border border-border bg-secondary/50 px-6 py-7"
               >
                 <div>
-                  <div className="mb-3.5 text-[13px] tracking-[2px] text-[#FFB800]" aria-label="별점 5점 만점에 5점">
+                  <div className="mb-3.5 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">
                     ★★★★★
                   </div>
-                  <p className="mb-7 text-[14px] leading-[1.6] text-[#2A363B]">
+                  <p className="mb-7 text-pretty text-[14px] leading-[1.6] text-foreground">
                     "{review.text}"
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[#A0C3E8] text-[13px] font-bold text-[#1E385B]"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-[13px] font-bold text-primary"
                     aria-hidden
                   >
                     {review.initial}
                   </div>
                   <div>
-                    <b className="block text-[14px] font-bold text-[#1E282A]">{review.name}</b>
-                    <span className="text-[12px] text-[#68787E]">{review.program}</span>
+                    <b className="block text-[14px] font-bold text-foreground">{review.name}</b>
+                    <span className="text-[12px] text-muted-foreground">{review.program}</span>
                   </div>
                 </div>
               </div>

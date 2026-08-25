@@ -36,6 +36,8 @@
   --color-cta-hover: hsl(var(--cta-hover));
   --color-footer: hsl(var(--footer));
   --color-footer-muted: hsl(var(--footer-muted));
+  --color-footer-heading: hsl(var(--footer-heading));
+  --color-footer-link: hsl(var(--footer-link));
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -77,6 +79,12 @@
   /* 푸터 — 초안의 다크 네이비(#05131D) 대신 다크 포레스트 (스키마 9-7 ⑦) */
   --footer: 158 40% 9%; /* #0E211A 계열 */
   --footer-muted: 155 12% 62%;
+  /* 푸터 소제목·링크 — 채도를 낮춘 세이지.
+     초안에서 넘어온 #4CAF6E(형광 초록)를 대체합니다. 우리 업종(자연·건강) 팔레트에서
+     형광 초록은 "저렴해 보이는" 색으로 분류되고, 브랜드 그린(#1F5C43)과도 계열이
+     달라 푸터에서만 세 번째 초록이 되고 있었습니다. */
+  --footer-heading: 144 15% 67%; /* #9FB8A9 — 다크 포레스트 위 대비 약 7.5:1 */
+  --footer-link: 145 14% 81%; /* #C7D5CC */
 
   --radius: 0.625rem;
 }

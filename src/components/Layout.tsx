@@ -77,7 +77,7 @@ export default function Layout() {
                 <li key={label}>
                   <DisabledLink
                     label={label}
-                    className="text-[15px] font-semibold text-muted-foreground/60"
+                    className="text-[15px] font-semibold text-muted-foreground"
                   />
                 </li>
               ))}
@@ -128,15 +128,17 @@ export default function Layout() {
         <div className="mx-auto mb-12 grid w-full max-w-[1200px] grid-cols-1 gap-8 min-[901px]:grid-cols-[2fr_1fr_1fr_1fr] min-[901px]:gap-10">
           <div>
             <b className="mb-3 block text-[22px] font-extrabold tracking-tight">품 FOOM</b>
+            {/* 「No.1」은 쓰지 않습니다 — 실증할 수 없는 순위 표현은 표시광고법상
+                부당광고가 될 수 있습니다. 지금 사실인 것만 적습니다. */}
             <p className="text-[13px] leading-relaxed text-footer-muted">
-              산림복지전문가와 이용자를 잇는 No.1 숲 프로그램 플랫폼.
+              산림복지전문가와 이용자를 잇는 숲 프로그램 예약 플랫폼.
               <br />
               체질숲협동조합이 함께 만들어갑니다.
             </p>
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-[#4CAF6E]">
+            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
               Programs
             </h4>
             <ul className="space-y-2.5">
@@ -144,7 +146,7 @@ export default function Layout() {
                 <li key={c}>
                   <Link
                     to={`/search?category=${encodeURIComponent(c)}`}
-                    className="text-[13px] text-[#C7D5CC] transition-colors hover:text-white"
+                    className="text-[13px] text-footer-link transition-colors hover:text-white"
                   >
                     {c}
                   </Link>
@@ -154,7 +156,7 @@ export default function Layout() {
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-[#4CAF6E]">
+            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
               About FOOM
             </h4>
             <ul className="space-y-2.5">
@@ -164,7 +166,7 @@ export default function Layout() {
               <li>
                 <Link
                   to="/provider/apply"
-                  className="text-[13px] text-[#C7D5CC] transition-colors hover:text-white"
+                  className="text-[13px] text-footer-link transition-colors hover:text-white"
                 >
                   전문가 가입 안내
                 </Link>
@@ -176,7 +178,7 @@ export default function Layout() {
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-[#4CAF6E]">
+            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
               Contact
             </h4>
             <ul className="space-y-2.5">
