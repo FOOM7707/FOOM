@@ -35,6 +35,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { TreePine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -259,7 +260,7 @@ function FeatureRow({
     >
       <div
         className={cn(
-          "overflow-hidden rounded-[36px] shadow-[0_24px_48px_rgba(0,0,0,.08)]",
+          "overflow-hidden rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,.08)]",
           // 사진과 글의 좌우를 번갈아 놓습니다. 모바일에서는 사진이 항상 위입니다.
           flipped && "lg:order-2"
         )}
@@ -319,7 +320,7 @@ export default function ProviderApplyPage() {
             className="mt-[30px] flex size-[120px] animate-spin items-center justify-center rounded-full border text-[32px] [animation-duration:24s] motion-reduce:animate-none"
             aria-hidden
           >
-            🌲
+            <TreePine className="h-7 w-7" strokeWidth={1.5} aria-hidden />
           </div>
         </div>
 
@@ -353,7 +354,7 @@ export default function ProviderApplyPage() {
 
           **시안의 `cursor: pointer`는 가져오지 않았습니다** — 누를 데가 없는데
           손가락 커서가 뜨면 눌러보고 아무 일이 없어 고장으로 읽힙니다. */}
-      <section className="rounded-[32px] border bg-card p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
+      <section className="rounded-2xl border bg-card p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
         <span className="mb-3 block text-[13.5px] font-extrabold uppercase tracking-[1.5px] text-primary">
           Verification Process
         </span>
@@ -369,7 +370,7 @@ export default function ProviderApplyPage() {
           {STEPS.map((step, i) => (
             <li
               key={step.title}
-              className="group rounded-[20px] border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-card hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
+              className="group rounded-2xl border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-card hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
             >
               <div className="mb-6 flex items-center justify-between">
                 <span className="rounded-full border bg-card px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
@@ -412,7 +413,7 @@ export default function ProviderApplyPage() {
           시안에는 「호스트 등록 시작하기」 버튼이 있었지만 **신청 폼을 열지
           않았습니다**(15-9). 누르면 아무 일도 없는 버튼은 고장으로 읽히므로,
           그 자리에 현재 상태와 문의 안내를 둡니다. */}
-      <section className="mt-[100px] rounded-[36px] bg-secondary px-6 py-[60px] md:px-12">
+      <section className="mt-[100px] rounded-2xl bg-secondary px-6 py-[60px] md:px-12">
         <h2 className="break-keep text-center text-[30px] font-black tracking-[-1px] md:text-[40px] md:tracking-[-2px]">
           시작해 보시겠어요?
         </h2>

@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { MapPin } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import ProgramMap from "../components/ProgramMap";
 import WeatherWidget from "../components/WeatherWidget";
@@ -529,7 +530,7 @@ export default function ProgramDetailPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[15px] font-bold">📍 {program.location.address}</p>
+              <p className="flex items-center gap-1.5 text-[15px] font-bold"><MapPin className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />{program.location.address}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 정확한 집결 장소는 예약 확정 후 안내됩니다.
               </p>

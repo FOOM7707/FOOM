@@ -1,5 +1,6 @@
 
 import { Link } from "react-router-dom";
+import { MapPin } from "lucide-react";
 import type { Category } from "@/types/firestore";
 
 /**
@@ -23,7 +24,6 @@ const WIDE_CONTAINER = "mx-auto w-full max-w-[1200px] px-6";
 // 자체 촬영·구매 이미지로 교체합니다 — 외부 핫링크 상태로 오픈하지 않습니다(9-7 ⑧).
 const PHOTO_CARDS: {
   category: Category;
-  tag: string;
   desc: [string, string];
   /** 우리가 넣는 고정 사진. `public/home/`에 이 이름으로 파일을 넣으면 바로 바뀝니다 */
   image: string;
@@ -32,7 +32,6 @@ const PHOTO_CARDS: {
 }[] = [
   {
     category: "숲해설",
-    tag: "🌳 숲해설",
     desc: ["숲해설가와 걷는", "자연 생태 체험"],
     image: "/home/forest-guide.jpg",
     interimImage:
@@ -40,7 +39,6 @@ const PHOTO_CARDS: {
   },
   {
     category: "유아숲체험",
-    tag: "🧒 유아숲",
     desc: ["아이와 함께하는", "창의 숲 놀이·교육"],
     image: "/home/kids-forest.jpg",
     interimImage:
@@ -48,7 +46,6 @@ const PHOTO_CARDS: {
   },
   {
     category: "산림치유",
-    tag: "🧘 치유",
     desc: ["몸과 마음을 쉬어가는", "숲 힐링 프로그램"],
     image: "/home/healing.jpg",
     interimImage:
@@ -56,7 +53,6 @@ const PHOTO_CARDS: {
   },
   {
     category: "숲길등산",
-    tag: "🥾 등산",
     desc: ["전문가와 안전하게", "걷는 트레킹 안내"],
     image: "/home/trail.jpg",
     interimImage:
@@ -64,7 +60,6 @@ const PHOTO_CARDS: {
   },
   {
     category: "단체·기업",
-    tag: "🏢 단체",
     desc: ["기관 및 단체를 위한", "맞춤형 숲 프로그램"],
     image: "/home/group.jpg",
     interimImage:
@@ -102,9 +97,11 @@ export default function HomePage() {
     <div>
       {/* 2. 히어로 — 배지 + 제목 + 부제 + 버튼 2개 */}
       <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E7EFE9] to-[#F4F1E8] px-5 pb-[90px] pt-8 text-center">
-        <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-primary/[0.12] px-3.5 py-[5px] text-[13px] font-bold text-primary">
-          <span aria-hidden>🌲</span> 산림복지전문가 직연결 플랫폼
-        </div>
+        {/* 알약 배경과 이모지를 뺐습니다 — 제목 위에 붙는 알약 라벨은 어느 사이트에나
+            있는 형태라, 배경을 빼고 글자만 남기는 편이 눈에 덜 걸립니다. */}
+        <p className="mb-3 text-[13px] font-bold text-primary">
+          산림복지전문가 직연결 플랫폼
+        </p>
         <h1 className="mb-2 text-[24px] font-extrabold leading-[1.25] tracking-[-0.8px] text-foreground min-[769px]:text-[34px] min-[1201px]:whitespace-nowrap">
           우리 동네 숲에서, 오늘 뭐 하지?
         </h1>
@@ -123,7 +120,8 @@ export default function HomePage() {
             to="/search?view=map&sort=near"
             className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-card px-[26px] py-[11px] text-[14px] font-bold text-primary transition-colors hover:bg-secondary"
           >
-            📍 내 주변에서 찾기
+            <MapPin className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+            내 주변에서 찾기
           </Link>
         </div>
       </section>
@@ -131,16 +129,13 @@ export default function HomePage() {
       {/* 3. 사진 카드 5종 — 히어로 위로 겹쳐 올라오는 레이아웃 */}
       <section className={`${WIDE_CONTAINER} relative z-10 -mt-14 mb-20`}>
         <div className="grid grid-cols-1 gap-5 min-[481px]:grid-cols-2 min-[769px]:grid-cols-3 min-[1201px]:grid-cols-5">
-          {PHOTO_CARDS.map(({ category, tag, desc, image, interimImage }) => (
+          {PHOTO_CARDS.map(({ category, desc, image, interimImage }) => (
             <Link
               key={category}
               to={`/search?category=${encodeURIComponent(category)}`}
-              className="group flex flex-col overflow-hidden rounded-[20px] border border-border bg-card shadow-[0_6px_20px_rgba(31,92,67,0.08)] transition-all duration-300 hover:-translate-y-2.5 hover:border-primary hover:shadow-[0_16px_36px_rgba(31,92,67,0.12)]"
+              className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-[0_4px_16px_rgba(31,92,67,0.10)] transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_14px_32px_rgba(31,92,67,0.16)]"
             >
               <div className="relative max-h-[380px] w-full overflow-hidden bg-[#E2E7E3]" style={{ aspectRatio: "3 / 4" }}>
-                <span className="absolute left-3.5 top-3.5 z-[2] rounded-full bg-card/95 px-3 py-[5px] text-[12px] font-extrabold text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-sm">
-                  {tag}
-                </span>
                 {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①).
 
                     **등록된 프로그램의 사진을 쓰지 않습니다(v29 팀 확정).** 이 자리는
@@ -195,7 +190,7 @@ export default function HomePage() {
           상세**입니다. 거기서는 그 프로그램이 열리는 장소와 날짜가 정해져 있어 예약
           판단에 실제로 쓰입니다(16번). */}
       <section className={`${WIDE_CONTAINER} mb-[90px] grid grid-cols-1 gap-6 min-[1201px]:grid-cols-[1.8fr_1fr]`}>
-        <div className="flex min-h-[220px] flex-col justify-center gap-3 rounded-[20px] bg-gradient-to-br from-[#1F5C43] to-[#163F2E] p-7 text-white min-[769px]:p-11">
+        <div className="flex min-h-[220px] flex-col justify-center gap-3 rounded-2xl bg-gradient-to-br from-[#1F5C43] to-[#163F2E] p-7 text-white min-[769px]:p-11">
           <b className="block text-[20px] font-extrabold leading-[1.35] min-[769px]:text-[24px]">
             우리 동네 숲에서 만나는
             <br />
@@ -207,7 +202,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="flex flex-col items-start justify-between gap-6 rounded-[20px] border border-[#EFE4D6] bg-[#FAF6F0] px-7 py-9">
+        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-[#EFE4D6] bg-[#FAF6F0] px-7 py-9">
           <div>
             <b className="mb-1.5 block text-[19px] font-extrabold leading-[1.3] text-[#5A3E2B]">
               산림복지전문가이신가요?

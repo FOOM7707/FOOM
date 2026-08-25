@@ -1,4 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { TreePine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LoginDialog from "./LoginDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -55,7 +56,8 @@ export default function Layout() {
             to="/"
             className="flex shrink-0 items-center gap-1.5 text-[20px] font-extrabold text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
-            <span aria-hidden>🌲</span> 품 FOOM
+            <TreePine className="h-[19px] w-[19px]" strokeWidth={1.75} aria-hidden />
+            품 FOOM
           </Link>
 
           <nav className="hidden min-[769px]:block">
@@ -138,8 +140,8 @@ export default function Layout() {
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
-              Programs
+            <h4 className="mb-5 text-[13px] font-bold text-footer-heading">
+              프로그램
             </h4>
             <ul className="space-y-2.5">
               {CATEGORIES.filter((c) => c !== "전체").map((c) => (
@@ -156,8 +158,8 @@ export default function Layout() {
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
-              About FOOM
+            <h4 className="mb-5 text-[13px] font-bold text-footer-heading">
+              품 소개
             </h4>
             <ul className="space-y-2.5">
               <li>
@@ -178,8 +180,8 @@ export default function Layout() {
           </div>
 
           <div>
-            <h4 className="mb-5 text-[12px] font-bold uppercase tracking-[0.1em] text-footer-heading">
-              Contact
+            <h4 className="mb-5 text-[13px] font-bold text-footer-heading">
+              문의
             </h4>
             <ul className="space-y-2.5">
               {["고객센터", "1:1 문의하기", "제휴 문의"].map((label) => (
