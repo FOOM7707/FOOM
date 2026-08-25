@@ -12,6 +12,12 @@
  * 곳"으로만 읽힙니다. 큰 사진과 지그재그 구성으로 무엇을 얻는지 먼저 보여주고,
  * 절차·수수료·현재 상태는 그 아래에 그대로 둡니다.
  *
+ * **심사 진행 단계(접수 → 심사 대기 → 심사 중 → 승인)는 마이페이지로 옮겼습니다.**
+ * 「내가 지금 어디쯤인지」는 이미 등록한 사람만 쓰는 정보인데, 이 화면은 아직
+ * 전문가가 아닌 사람을 설득하는 자리입니다 — 랜딩 맨 아래를 그 정보가 차지하고
+ * 있었습니다. **신청 방법 안내는 여기 남깁니다**(온라인 폼이 없어 문의가 유일한
+ * 시작점이고, 빼면 이 화면에 다음 행동이 사라집니다).
+ *
  * 참고한 시안의 보라색 강조는 쓰지 않았습니다 — 브랜드 컬러는 `#1F5C43`(포레스트
  * 그린)이고 shadcn `--primary`에 매핑돼 있습니다(9-5).
  *
@@ -29,11 +35,11 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { TreePine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useMe } from "@/hooks/useMe";
-import ReviewProgress from "@/components/ReviewProgress";
 import { cn } from "@/lib/utils";
 
 /**
@@ -88,21 +94,21 @@ const FEATURES = [
   {
     label: "01. 자유",
     title: "원하는 일정대로\n자유롭게 여세요",
-    body: "주말 반나절 숲해설부터 정기 산림치유 프로그램까지. 날짜·정원·가격을 직접 정하고, 최소 인원도 스스로 설정합니다.",
+    body: "주말 반나절 숲해설부터 정기 산림치유 프로그램까지.\n날짜·정원·가격을 직접 정하고, 최소 인원도 스스로 설정합니다.",
     photo: PHOTOS.freedom,
     alt: "숲길을 걷는 사람들",
   },
   {
     label: "02. 운영",
     title: "모집과 정산은\n맡겨주세요",
-    body: "참가자 모집, 결제, 환불, 당일 안내까지 시스템이 처리합니다. 복잡한 행정을 덜고 숲에서 안내하는 일에만 집중하시면 됩니다.",
+    body: "참가자 모집, 결제, 환불, 당일 안내까지 시스템이 처리합니다.\n복잡한 행정을 덜고 숲에서 안내하는 일에만 집중하시면 됩니다.",
     photo: PHOTOS.automation,
     alt: "휴대폰으로 예약을 확인하는 모습",
   },
   {
     label: "03. 신뢰",
     title: "자격을 확인해\n믿고 맡기게 합니다",
-    body: "품은 자격증을 운영자가 직접 확인한 전문가만 등록합니다. 아무나 열 수 없는 대신, 참가자는 안심하고 신청합니다.",
+    body: "품은 자격증을 운영자가 직접 확인한 전문가만 등록합니다.\n아무나 열 수 없는 대신, 참가자는 안심하고 신청합니다.",
     photo: PHOTOS.trust,
     alt: "숲의 나무들",
   },
@@ -160,7 +166,15 @@ function Notice({ tone = "info", children }: { tone?: "info" | "warn"; children:
   );
 }
 
-/** 로그인·심사 상태에 따라 이 화면에서 할 수 있는 일이 달라집니다. */
+/**
+ * 로그인·심사 상태에 따라 이 화면에서 할 수 있는 일이 달라집니다.
+ *
+ * **심사 진행 단계(4칸)는 마이페이지로 옮겼습니다.** 「내가 지금 어디쯤인지」는
+ * 내 계정 화면에서 볼 일이고, 이 화면은 아직 전문가가 아닌 사람을 설득하는
+ * 자리입니다 — 여기 남겨두면 이미 등록한 사람만 쓰는 정보가 랜딩 맨 아래를
+ * 차지합니다. 대신 **신청하는 방법 안내는 여기 남깁니다.** 온라인 폼이 없어
+ * 문의가 유일한 시작점이고, 그걸 빼면 이 화면에 다음 행동이 사라집니다.
+ */
 function StatusPanel() {
   const { user, loading: authLoading } = useAuth();
   const { me, loading, error } = useMe();
@@ -185,9 +199,6 @@ function StatusPanel() {
   if (me.role !== "provider") {
     return (
       <div className="space-y-3">
-        {/* 아직 접수 전이어도 단계는 보여줍니다 — 앞으로 무엇이 남았는지 알 수
-            있어야 문의할 마음이 생깁니다. */}
-        <ReviewProgress isProvider={false} approvalStatus={null} />
         <Notice>
           <b>현재 온라인 신청은 준비 중입니다.</b>
           <br />
@@ -205,46 +216,15 @@ function StatusPanel() {
     );
   }
 
-  // 여기부터는 공급자 계정입니다.
+  // 여기부터는 공급자 계정입니다. 이 사람은 이 화면을 설득용으로 볼 필요가
+  // 없으므로, 바로 할 수 있는 일과 심사 상태를 볼 곳만 알려줍니다.
   return (
     <div className="space-y-3">
-      <ReviewProgress
-        isProvider
-        approvalStatus={me.provider?.approvalStatus ?? null}
-        note={me.provider?.approvalNote ?? null}
-      />
-
-      {me.provider?.approvalStatus === "rejected" && !me.provider.approvalNote && (
-        <Notice tone="warn">
-          <b>심사가 반려되었습니다.</b>
-          <br />
-          사유가 기록되지 않았습니다. 운영자에게 문의해 주세요.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "reviewing" && (
-        <Notice>
-          <b>담당자가 자격 서류를 확인하고 있습니다.</b>
-          <br />
-          결과가 나오면 이 화면에서 확인하실 수 있습니다. 그동안에도 프로그램 등록과 심사
-          요청은 할 수 있습니다.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "pending" && (
-        <Notice>
-          <b>자격 심사 대기 중입니다.</b>
-          <br />
-          프로그램 등록과 심사 요청은 지금도 할 수 있습니다. 다만 자격 심사를 통과하기 전에는
-          프로필에 「인증」 표시가 붙지 않습니다.
-        </Notice>
-      )}
-
-      {me.provider?.approvalStatus === "approved" && (
-        <Notice>
-          <b>심사를 통과한 전문가 계정입니다.</b>
-        </Notice>
-      )}
+      <Notice>
+        <b>이미 전문가 계정입니다.</b>
+        <br />
+        자격 심사가 어디까지 진행됐는지는 마이페이지에서 확인하실 수 있습니다.
+      </Notice>
 
       <div className="flex flex-wrap gap-2">
         <Button asChild>
@@ -252,6 +232,11 @@ function StatusPanel() {
         </Button>
         <Button asChild variant="outline">
           <Link to="/my/programs">내 프로그램</Link>
+        </Button>
+        {/* 마이페이지의 「전문가 활동」 탭을 바로 엽니다 — 탭이 주소에 남아
+            있어서 가능합니다(MyPage 상단 주석). */}
+        <Button asChild variant="outline">
+          <Link to="/my?tab=provider">심사 상태 보기</Link>
         </Button>
       </div>
     </div>
@@ -275,7 +260,7 @@ function FeatureRow({
     >
       <div
         className={cn(
-          "overflow-hidden rounded-[36px] shadow-[0_24px_48px_rgba(0,0,0,.08)]",
+          "overflow-hidden rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,.08)]",
           // 사진과 글의 좌우를 번갈아 놓습니다. 모바일에서는 사진이 항상 위입니다.
           flipped && "lg:order-2"
         )}
@@ -284,17 +269,17 @@ function FeatureRow({
           src={feature.photo}
           alt={feature.alt}
           loading="lazy"
-          className="h-[340px] w-full object-cover transition-transform duration-500 hover:scale-[1.015] md:h-[440px] lg:h-[560px]"
+          className="h-[280px] w-full object-cover transition-transform duration-500 hover:scale-[1.015] md:h-[360px] lg:h-[440px]"
         />
       </div>
 
       <div className={cn(flipped && "lg:order-1")}>
-        <p className="mb-5 text-[15px] font-black tracking-[2px] text-primary md:text-[17px]">
+        <p className="mb-4 text-[21px] font-black tracking-[-0.3px] text-primary md:text-[27px]">
           {feature.label}
         </p>
         <h3
           className={cn(
-            "whitespace-pre-line break-keep text-[32px] font-black leading-[1.2] tracking-[-1px] md:text-[51px] md:tracking-[-2px]",
+            "whitespace-pre-line break-keep text-[27px] font-black leading-[1.25] tracking-[-0.8px] md:text-[40px] md:tracking-[-1.4px]",
             // 나타나는 효과 — 위 useReveal이 켜줍니다.
             "transition-all duration-700 ease-out",
             shown ? "translate-y-0 scale-100 opacity-100" : "translate-y-4 scale-[0.94] opacity-0"
@@ -302,7 +287,7 @@ function FeatureRow({
         >
           {feature.title}
         </h3>
-        <p className="mt-7 break-keep text-[17px] leading-[1.6] text-muted-foreground md:text-[20px]">
+        <p className="mt-6 whitespace-pre-line break-keep text-[15px] leading-[1.75] text-muted-foreground md:text-[17px]">
           {feature.body}
         </p>
       </div>
@@ -335,7 +320,7 @@ export default function ProviderApplyPage() {
             className="mt-[30px] flex size-[120px] animate-spin items-center justify-center rounded-full border text-[32px] [animation-duration:24s] motion-reduce:animate-none"
             aria-hidden
           >
-            🌲
+            <TreePine className="h-7 w-7" strokeWidth={1.5} aria-hidden />
           </div>
         </div>
 
@@ -369,7 +354,7 @@ export default function ProviderApplyPage() {
 
           **시안의 `cursor: pointer`는 가져오지 않았습니다** — 누를 데가 없는데
           손가락 커서가 뜨면 눌러보고 아무 일이 없어 고장으로 읽힙니다. */}
-      <section className="rounded-[32px] border bg-background p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
+      <section className="rounded-2xl border bg-card p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
         <span className="mb-3 block text-[13.5px] font-extrabold uppercase tracking-[1.5px] text-primary">
           Verification Process
         </span>
@@ -385,10 +370,10 @@ export default function ProviderApplyPage() {
           {STEPS.map((step, i) => (
             <li
               key={step.title}
-              className="group rounded-[20px] border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-background hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
+              className="group rounded-2xl border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-card hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
             >
               <div className="mb-6 flex items-center justify-between">
-                <span className="rounded-full border bg-background px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                <span className="rounded-full border bg-card px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
                   STEP {String(i + 1).padStart(2, "0")}
                 </span>
                 <span
@@ -428,7 +413,7 @@ export default function ProviderApplyPage() {
           시안에는 「호스트 등록 시작하기」 버튼이 있었지만 **신청 폼을 열지
           않았습니다**(15-9). 누르면 아무 일도 없는 버튼은 고장으로 읽히므로,
           그 자리에 현재 상태와 문의 안내를 둡니다. */}
-      <section className="mt-[100px] rounded-[36px] bg-secondary px-6 py-[60px] md:px-12">
+      <section className="mt-[100px] rounded-2xl bg-secondary px-6 py-[60px] md:px-12">
         <h2 className="break-keep text-center text-[30px] font-black tracking-[-1px] md:text-[40px] md:tracking-[-2px]">
           시작해 보시겠어요?
         </h2>

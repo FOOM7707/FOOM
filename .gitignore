@@ -100,6 +100,5 @@ firebase-export-*/
 
 # 개발용 에뮬레이터 데이터 (`npm run emu`가 끌 때 저장하고 켤 때 불러옵니다).
 # 계정·프로그램·사진이 들어 있어 리포에 올리지 않습니다.
-.emulator-data/
-.emulator-data.bak/
-.emulator-data.tmp/
+# 별표(*)인 이유: 수동 백업(.emulator-data.bak-0824 등)까지 전부 덮기 위해서입니다.
+.emulator-data*/

@@ -7,6 +7,7 @@ import {
 } from "@/lib/weather";
 import type { LatLng } from "@/lib/geo";
 import { cn } from "@/lib/utils";
+import { CloudSun } from "lucide-react";
 
 interface Props {
   point: LatLng;
@@ -76,7 +77,10 @@ export default function WeatherWidget({
       >
         {w ? (
           <>
-            <span aria-hidden>{weatherIcon(w.condition)}</span>
+            {(() => {
+              const Icon = weatherIcon(w.condition);
+              return <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />;
+            })()}
             <span>
               {w.condition} {w.tempC}℃ · 강수 {w.precipProbability}%
             </span>
@@ -97,13 +101,20 @@ export default function WeatherWidget({
   return (
     <div
       className={cn(
-        "flex items-center gap-4 rounded-2xl border bg-white px-5 py-4",
+        "flex items-center gap-4 rounded-2xl border bg-card px-5 py-4",
         className
       )}
     >
-      <span className="text-4xl leading-none" aria-hidden>
-        {w ? weatherIcon(w.condition) : "🌤"}
-      </span>
+      {(() => {
+        const Icon = w ? weatherIcon(w.condition) : CloudSun;
+        return (
+          <Icon
+            className={cn("h-9 w-9 shrink-0", w ? "text-primary" : "text-muted-foreground")}
+            strokeWidth={1.5}
+            aria-hidden
+          />
+        );
+      })()}
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex flex-wrap items-center gap-2">
           <span className="text-[13px] font-semibold text-muted-foreground">

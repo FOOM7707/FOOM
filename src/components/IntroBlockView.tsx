@@ -100,7 +100,7 @@ function ZigzagLayout({ blocks }: LayoutProps) {
                 src={image.url}
                 alt=""
                 loading="lazy"
-                className={`w-full rounded-[32px] object-cover shadow-[0_20px_40px_rgba(0,0,0,0.06)] ${
+                className={`w-full rounded-2xl object-cover shadow-[0_20px_40px_rgba(0,0,0,0.06)] ${
                   imageFirst ? "aspect-[4/3]" : "aspect-[4/5]"
                 }`}
               />

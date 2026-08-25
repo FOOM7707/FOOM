@@ -37,7 +37,11 @@ interface SearchResponse {
   programs: SearchRow[];
   total: number;
   truncated: boolean;
+  /** 회차가 있는 날짜 합집합 — 필터 모달 달력의 점(17-4 ④) 재료입니다 */
+  calendarDates: string[];
 }
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -47,9 +51,19 @@ export default function SearchPage() {
   // 않습니다 — 「전체」를 값으로 만들면 "전체이면서 숲해설"인 상태가 생깁니다.
   // 홈에서 카테고리 카드를 눌러 들어오면 `?category=`로 한 개가 들어옵니다.
   const initialCategory = params.get("category");
-  const [filters, setFilters] = useState<ProgramFilters>({
-    ...DEFAULT_FILTERS,
-    categories: initialCategory ? [initialCategory] : [],
+  // 기간은 URL로도 들어옵니다(17-4 ⑤ — 뒤로가기·링크 공유). 형식이 어긋난 값은
+  // 조용히 무시합니다 — 어차피 서버가 거부하는 값입니다.
+  const initialFrom = params.get("from");
+  const initialTo = params.get("to");
+  const [filters, setFilters] = useState<ProgramFilters>(() => {
+    const from = initialFrom && DATE_RE.test(initialFrom) ? initialFrom : null;
+    const to = from && initialTo && DATE_RE.test(initialTo) ? initialTo : null;
+    return {
+      ...DEFAULT_FILTERS,
+      categories: initialCategory ? [initialCategory] : [],
+      from,
+      to,
+    };
   });
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -77,6 +91,8 @@ export default function SearchPage() {
 
   const [rows, setRows] = useState<SearchRow[]>([]);
   const [total, setTotal] = useState(0);
+  /** 회차가 있는 날짜 — 달력 점의 재료. 검색 응답이 함께 내려줍니다 */
+  const [calendarDates, setCalendarDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** 모달의 「N개 결과 보기」 — 서버가 돌려준 값입니다. 세는 중이면 null */
@@ -100,6 +116,7 @@ export default function SearchPage() {
             if (cancelled) return;
             setRows(res.programs);
             setTotal(res.total);
+            setCalendarDates(res.calendarDates ?? []);
             setError(null);
           })
           .catch((err) => {
@@ -154,13 +171,29 @@ export default function SearchPage() {
 
   const activeFilterCount = countActiveFilters(filters);
 
+  /** 기간이 걸렸을 때 함께 표시되는 상시모집 수 — 안내 문구에 씁니다(17-2) */
+  const openCount = filters.from
+    ? rows.filter((r) => r.scheduleType === "open").length
+    : 0;
+
+  /** URL에 남기는 것: 카테고리 1개 + 기간(17-4 ⑤ — 뒤로가기·링크 공유) */
+  function writeParams(categories: string[], from: string | null, to: string | null) {
+    const p: Record<string, string> = {};
+    if (categories.length === 1) p.category = categories[0];
+    if (from) {
+      p.from = from;
+      p.to = to ?? from;
+    }
+    setParams(p);
+  }
+
   /** 「전체」는 배타적입니다 — 개별을 고르면 전체가 풀리고, 다 풀면 전체로 돌아옵니다 */
   function toggleCategory(c: string) {
     setFilters((f) => {
       const next = f.categories.includes(c)
         ? f.categories.filter((x) => x !== c)
         : [...f.categories, c];
-      setParams(next.length === 1 ? { category: next[0] } : {});
+      writeParams(next, f.from, f.to);
       return { ...f, categories: next };
     });
   }
@@ -225,13 +258,13 @@ export default function SearchPage() {
                 type="button"
                 aria-pressed={active}
                 className={cn(
-                  "rounded-full border bg-white px-3.5 py-1.5 text-[13px] text-muted-foreground",
+                  "rounded-full border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground",
                   active && "border-primary bg-primary text-primary-foreground"
                 )}
                 onClick={() => {
                   if (c === "전체") {
                     setFilters((f) => ({ ...f, categories: [] }));
-                    setParams({});
+                    writeParams([], filters.from, filters.to);
                     return;
                   }
                   toggleCategory(c);
@@ -252,7 +285,7 @@ export default function SearchPage() {
 
         <div className="flex items-center gap-2">
           <select
-            className="h-9 rounded-md border border-input bg-white px-2.5 text-[13px]"
+            className="h-9 rounded-md border border-input bg-card px-2.5 text-[13px]"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="정렬 기준"
@@ -264,7 +297,7 @@ export default function SearchPage() {
             ))}
           </select>
 
-          <div className="flex overflow-hidden rounded-full border bg-white text-[13px] font-semibold">
+          <div className="flex overflow-hidden rounded-full border bg-card text-[13px] font-semibold">
             <button
               className={cn(
                 "px-3.5 py-1.5",
@@ -290,6 +323,15 @@ export default function SearchPage() {
       {error && (
         <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2.5 text-[13px] text-destructive">
           {error}
+        </p>
+      )}
+
+      {/* 상시모집은 기간 필터의 예외로 포함됩니다(17-2). 알리지 않으면 「8월로
+          검색했는데 날짜가 없는 카드가 섞여 있다」로 읽힙니다. */}
+      {!loading && openCount > 0 && (
+        <p className="mb-4 rounded-lg bg-secondary px-3 py-2.5 text-[13px] text-secondary-foreground">
+          상시모집 {openCount}개는 날짜를 협의하는 방식이라 기간과 무관하게 함께
+          표시됩니다.
         </p>
       )}
 
@@ -328,9 +370,11 @@ export default function SearchPage() {
         open={filterOpen}
         value={filters}
         count={draftCount}
+        calendarDates={calendarDates}
         onDraftChange={countDraft}
         onApply={(next) => {
           setFilters(next);
+          writeParams(next.categories, next.from, next.to);
           setFilterOpen(false);
         }}
         onClose={() => setFilterOpen(false)}

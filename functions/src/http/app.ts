@@ -14,6 +14,7 @@ import express, { type Express, type Router } from "express";
 import { errorHandler, notFoundHandler } from "./middleware";
 import { buildAdminRouter, type AdminRouteDeps } from "./routes/admin";
 import { buildAuthRouter, type AuthRouteDeps } from "./routes/auth";
+import { buildBookingsRouter, type BookingRouteDeps } from "./routes/bookings";
 import { buildExternalRouter, type ExternalRouteDeps } from "./routes/external";
 import { buildProgramsRouter, type ProgramRouteDeps } from "./routes/programs";
 import { buildUsersRouter, type UserRouteDeps } from "./routes/users";
@@ -23,6 +24,7 @@ export interface AppDeps extends AuthRouteDeps {
   userDeps?: UserRouteDeps;
   adminDeps?: AdminRouteDeps;
   externalDeps?: ExternalRouteDeps;
+  bookingDeps?: BookingRouteDeps;
 }
 
 function buildRouter(authDeps: AppDeps): Router {
@@ -45,6 +47,10 @@ function buildRouter(authDeps: AppDeps): Router {
 
   // 프로그램 — 조회는 비로그인 허용, 생성·심사요청은 로그인 필수(라우터 내부에서 분기)
   router.use("/programs", buildProgramsRouter(authDeps.programDeps));
+
+  // 예약 — 전부 로그인 필수(라우터 내부에서 붙임). 돈이 걸린 컬렉션이라
+  // 클라이언트 직접 쓰기가 막혀 있고 이 경로가 유일한 쓰기 통로입니다.
+  router.use("/bookings", buildBookingsRouter(authDeps.bookingDeps));
 
   // 외부 연동 — 날씨는 비로그인도 호출합니다(홈·상세가 공개 화면).
   router.use("/external", buildExternalRouter(authDeps.externalDeps));

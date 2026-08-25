@@ -35,15 +35,15 @@ const TONE_CLASS: Record<Props["tone"], { on: string; off: string }> = {
   // 띄어야 하고, 손님이 놓치면 현장에서 분쟁이 됩니다.
   include: {
     on: "bg-primary text-primary-foreground border-primary",
-    off: "bg-background text-foreground border-input hover:border-primary/50",
+    off: "bg-card text-foreground border-input hover:border-primary/50",
   },
   exclude: {
     on: "bg-destructive/10 text-destructive border-destructive/40",
-    off: "bg-background text-foreground border-input hover:border-destructive/40",
+    off: "bg-card text-foreground border-input hover:border-destructive/40",
   },
   prepare: {
     on: "bg-secondary text-secondary-foreground border-secondary-foreground/30",
-    off: "bg-background text-foreground border-input hover:border-secondary-foreground/40",
+    off: "bg-card text-foreground border-input hover:border-secondary-foreground/40",
   },
 };
 

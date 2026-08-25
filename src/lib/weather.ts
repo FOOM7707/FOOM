@@ -1,3 +1,4 @@
+import { Cloud, CloudRain, CloudSnow, CloudSun, Sun, type LucideIcon } from "lucide-react";
 /**
  * 날씨 정보 (스키마 16번).
  *
@@ -35,15 +36,20 @@ export interface WeatherResult {
   cached: boolean;
 }
 
-const ICONS: Record<SkyCondition, string> = {
-  맑음: "☀️",
-  구름많음: "⛅",
-  흐림: "☁️",
-  비: "🌧",
-  눈: "🌨",
+/**
+ * 하늘 상태 아이콘 — 이모지 대신 선 아이콘 한 세트(lucide)로 통일했습니다.
+ * 이모지는 기기·브라우저마다 모양과 크기가 달라 같은 줄의 글자와 높이가 안 맞고,
+ * 화면 곳곳의 다른 아이콘과 섞이면 정리가 안 된 인상을 줍니다.
+ */
+const ICONS: Record<SkyCondition, LucideIcon> = {
+  맑음: Sun,
+  구름많음: CloudSun,
+  흐림: Cloud,
+  비: CloudRain,
+  눈: CloudSnow,
 };
 
-export function weatherIcon(condition: SkyCondition): string {
+export function weatherIcon(condition: SkyCondition): LucideIcon {
   return ICONS[condition];
 }
 

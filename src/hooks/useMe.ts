@@ -24,6 +24,10 @@ export interface Me {
   name: string | null;
   email: string | null;
   phone: string | null;
+  /** 소셜 프로필 사진. 「추가」 동의 항목이라 없을 수 있습니다(2-1) */
+  profileImageUrl: string | null;
+  /** `kakao` / `naver` — 가입 경로는 소셜 2종뿐입니다(2-1) */
+  authProvider: string | null;
   status: string;
   provider: MeProviderInfo | null;
 }
