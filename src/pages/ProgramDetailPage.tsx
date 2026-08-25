@@ -588,7 +588,7 @@ export default function ProgramDetailPage() {
       {/* ── 하단 고정 「참여하기」 (20-5) ─────────────────────────────────
           시안의 하단 고정 CTA입니다. 날짜 선택까지 실제로 동작하고, 결제 자리에만
           「준비 중」이 들어갑니다 — 예약이 붙는 날 그대로 씁니다. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur">
         <div className="container mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-3.5 sm:px-10">
           <div>
             <p className="text-lg font-extrabold leading-tight">

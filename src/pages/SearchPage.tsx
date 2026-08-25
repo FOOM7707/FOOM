@@ -258,7 +258,7 @@ export default function SearchPage() {
                 type="button"
                 aria-pressed={active}
                 className={cn(
-                  "rounded-full border bg-white px-3.5 py-1.5 text-[13px] text-muted-foreground",
+                  "rounded-full border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground",
                   active && "border-primary bg-primary text-primary-foreground"
                 )}
                 onClick={() => {
@@ -285,7 +285,7 @@ export default function SearchPage() {
 
         <div className="flex items-center gap-2">
           <select
-            className="h-9 rounded-md border border-input bg-white px-2.5 text-[13px]"
+            className="h-9 rounded-md border border-input bg-card px-2.5 text-[13px]"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="정렬 기준"
@@ -297,7 +297,7 @@ export default function SearchPage() {
             ))}
           </select>
 
-          <div className="flex overflow-hidden rounded-full border bg-white text-[13px] font-semibold">
+          <div className="flex overflow-hidden rounded-full border bg-card text-[13px] font-semibold">
             <button
               className={cn(
                 "px-3.5 py-1.5",

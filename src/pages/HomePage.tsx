@@ -101,7 +101,7 @@ export default function HomePage() {
   return (
     <div>
       {/* 2. 히어로 — 배지 + 제목 + 부제 + 버튼 2개 */}
-      <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E8F0EC] to-[#F4F7F5] px-5 pb-[90px] pt-8 text-center">
+      <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E7EFE9] to-[#F4F1E8] px-5 pb-[90px] pt-8 text-center">
         <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-primary/[0.12] px-3.5 py-[5px] text-[13px] font-bold text-primary">
           <span aria-hidden>🌲</span> 산림복지전문가 직연결 플랫폼
         </div>
@@ -121,7 +121,7 @@ export default function HomePage() {
           {/* 지도는 홈에 두지 않고 검색 화면의 지도 토글로 진입 (스키마 9-7 ⑤) */}
           <Link
             to="/search?view=map&sort=near"
-            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-white px-[26px] py-[11px] text-[14px] font-bold text-primary transition-colors hover:bg-secondary"
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-card px-[26px] py-[11px] text-[14px] font-bold text-primary transition-colors hover:bg-secondary"
           >
             📍 내 주변에서 찾기
           </Link>
@@ -135,10 +135,10 @@ export default function HomePage() {
             <Link
               key={category}
               to={`/search?category=${encodeURIComponent(category)}`}
-              className="group flex flex-col overflow-hidden rounded-[20px] border border-border bg-white shadow-[0_6px_20px_rgba(31,92,67,0.08)] transition-all duration-300 hover:-translate-y-2.5 hover:border-primary hover:shadow-[0_16px_36px_rgba(31,92,67,0.12)]"
+              className="group flex flex-col overflow-hidden rounded-[20px] border border-border bg-card shadow-[0_6px_20px_rgba(31,92,67,0.08)] transition-all duration-300 hover:-translate-y-2.5 hover:border-primary hover:shadow-[0_16px_36px_rgba(31,92,67,0.12)]"
             >
               <div className="relative max-h-[380px] w-full overflow-hidden bg-[#E2E7E3]" style={{ aspectRatio: "3 / 4" }}>
-                <span className="absolute left-3.5 top-3.5 z-[2] rounded-full bg-white/95 px-3 py-[5px] text-[12px] font-extrabold text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-sm">
+                <span className="absolute left-3.5 top-3.5 z-[2] rounded-full bg-card/95 px-3 py-[5px] text-[12px] font-extrabold text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.1)] backdrop-blur-sm">
                   {tag}
                 </span>
                 {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①).
@@ -164,13 +164,13 @@ export default function HomePage() {
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                 />
               </div>
-              <div className="flex flex-1 flex-col bg-white px-[18px] pb-[22px] pt-[18px]">
+              <div className="flex flex-1 flex-col bg-card px-[18px] pb-[22px] pt-[18px]">
                 <div className="mb-1 flex w-full items-center justify-between">
                   <div className="text-[20px] font-extrabold tracking-[-0.4px] text-foreground">
                     {category}
                   </div>
                   <div
-                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F4F7F5] text-[13px] text-primary transition-all group-hover:translate-x-[3px] group-hover:bg-primary group-hover:text-white"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-[13px] text-primary transition-all group-hover:translate-x-[3px] group-hover:bg-primary group-hover:text-white"
                     aria-hidden
                   >
                     →
@@ -231,7 +231,7 @@ export default function HomePage() {
           TODO(정식 오픈 전): 아래는 화면 구성 확인용 예시 후기입니다. 실제 reviews
           데이터가 0건인 상태로 정식 오픈하면 표시광고 문제가 되므로, 오픈 전에
           실제 데이터 연동 또는 섹션 숨김 처리가 반드시 필요합니다 (스키마 9-7 ④). */}
-      <section className="w-full border-t border-border bg-white px-6 pb-[100px] pt-20 text-center">
+      <section className="w-full border-t border-border px-6 pb-[100px] pt-20 text-center">
         <div className="mx-auto max-w-[1200px]">
           {/* 뜻 없는 영문 장식(FEEL THE DIFFERENCE 배지 · Real Experiences)을 걷어냈습니다.
               한국어 서비스라 읽히지 않고, 배지의 9px 글자는 어떤 화면에서도 읽을 수
@@ -245,7 +245,7 @@ export default function HomePage() {
             {REVIEWS.map((review) => (
               <div
                 key={review.name}
-                className="flex flex-col justify-between rounded-xl border border-border bg-secondary/50 px-6 py-7"
+                className="flex flex-col justify-between rounded-xl border border-border bg-card px-6 py-7"
               >
                 <div>
                   <div className="mb-3.5 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">

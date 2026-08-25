@@ -166,7 +166,7 @@ export default function FilterModal({
         className="absolute inset-0 cursor-default bg-black/50"
       />
 
-      <div className="relative flex max-h-[85vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
+      <div className="relative flex max-h-[85vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-card shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b px-5 py-4">
           <h2 className="text-base font-bold">필터</h2>
           <button

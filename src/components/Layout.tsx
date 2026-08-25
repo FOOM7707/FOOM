@@ -49,7 +49,7 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen flex-col">
       {/* 1. 헤더 — 로고 / 네비 / 로그인 + 전문가로 활동하기 */}
-      <header className="sticky top-0 z-50 h-[60px] w-full border-b border-border bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-50 h-[60px] w-full border-b border-border bg-background/95 backdrop-blur">
         <div className="flex h-full w-full items-center justify-between gap-4 px-5 min-[769px]:px-10">
           <Link
             to="/"

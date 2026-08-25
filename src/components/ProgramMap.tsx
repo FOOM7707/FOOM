@@ -423,7 +423,7 @@ export default function ProgramMap({
           지도 위에 얹으므로 z-10 — 카카오가 타일과 오버레이에 쓰는 값보다 위입니다. */}
       {status === "ready" && (
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
-          <div className="flex flex-col overflow-hidden rounded-lg border bg-background shadow-sm">
+          <div className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
             <button
               type="button"
               onClick={() => zoom(-1)}
@@ -450,7 +450,7 @@ export default function ProgramMap({
             disabled={geoStatus === "loading"}
             aria-label="내 위치로 이동"
             title="내 위치로 이동"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background shadow-sm hover:bg-secondary disabled:opacity-60"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border bg-card shadow-sm hover:bg-secondary disabled:opacity-60"
           >
             <LocateFixed
               className={cn("h-4 w-4", myLocation && "text-primary")}
@@ -475,7 +475,7 @@ export default function ProgramMap({
         )}
 
       {geoMessage && (
-        <p className="absolute inset-x-3 bottom-3 z-10 rounded-lg bg-background/95 px-3 py-2 text-xs leading-relaxed shadow-sm">
+        <p className="absolute inset-x-3 bottom-3 z-10 rounded-lg bg-card/95 px-3 py-2 text-xs leading-relaxed shadow-sm">
           {geoMessage}
         </p>
       )}

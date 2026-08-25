@@ -101,7 +101,7 @@ export default function BookingDrawer({
         className="absolute inset-0 cursor-default bg-black/50"
       />
 
-      <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[80vh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-2xl bg-background shadow-2xl">
+      <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[80vh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-2xl bg-card shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b px-5 py-4">
           <h2 className="text-base font-bold">{isOpen ? "일정 협의 안내" : "날짜 선택"}</h2>
           <button

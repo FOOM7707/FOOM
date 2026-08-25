@@ -353,7 +353,7 @@ export default function ProviderApplyPage() {
 
           **시안의 `cursor: pointer`는 가져오지 않았습니다** — 누를 데가 없는데
           손가락 커서가 뜨면 눌러보고 아무 일이 없어 고장으로 읽힙니다. */}
-      <section className="rounded-[32px] border bg-background p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
+      <section className="rounded-[32px] border bg-card p-7 shadow-[0_25px_50px_-12px_rgba(15,23,42,.05)] md:p-[60px]">
         <span className="mb-3 block text-[13.5px] font-extrabold uppercase tracking-[1.5px] text-primary">
           Verification Process
         </span>
@@ -369,10 +369,10 @@ export default function ProviderApplyPage() {
           {STEPS.map((step, i) => (
             <li
               key={step.title}
-              className="group rounded-[20px] border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-background hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
+              className="group rounded-[20px] border-[1.5px] border-transparent bg-muted p-6 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 hover:border-primary hover:bg-card hover:shadow-[0_20px_30px_-10px_rgba(31,92,67,.18)] md:p-8"
             >
               <div className="mb-6 flex items-center justify-between">
-                <span className="rounded-full border bg-background px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
+                <span className="rounded-full border bg-card px-3.5 py-1.5 text-[13px] font-extrabold text-muted-foreground transition-colors duration-300 group-hover:border-foreground group-hover:bg-foreground group-hover:text-background">
                   STEP {String(i + 1).padStart(2, "0")}
                 </span>
                 <span

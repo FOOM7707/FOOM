@@ -48,7 +48,7 @@ export default function ProgramMapCard({ program, distanceKm, onClose }: Props) 
   return (
     // 아래 여백은 핀 자리입니다 — 카드가 핀을 덮지 않고 그 위에 뜨게 합니다.
     <div className="w-[260px] pb-11">
-      <div className="overflow-hidden rounded-2xl bg-background shadow-[0_6px_24px_rgba(0,0,0,.28)]">
+      <div className="overflow-hidden rounded-2xl bg-card shadow-[0_6px_24px_rgba(0,0,0,.28)]">
         <div className="relative h-[140px] bg-secondary">
           {hasImages ? (
             <img
@@ -67,7 +67,7 @@ export default function ProgramMapCard({ program, distanceKm, onClose }: Props) 
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 shadow-sm hover:bg-background"
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-card/90 shadow-sm hover:bg-card"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -78,7 +78,7 @@ export default function ProgramMapCard({ program, distanceKm, onClose }: Props) 
                 type="button"
                 onClick={() => move(-1)}
                 aria-label="이전 사진"
-                className="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-sm hover:bg-background"
+                className="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-card/90 shadow-sm hover:bg-card"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -86,7 +86,7 @@ export default function ProgramMapCard({ program, distanceKm, onClose }: Props) 
                 type="button"
                 onClick={() => move(1)}
                 aria-label="다음 사진"
-                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-sm hover:bg-background"
+                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-card/90 shadow-sm hover:bg-card"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

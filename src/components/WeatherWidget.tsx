@@ -97,7 +97,7 @@ export default function WeatherWidget({
   return (
     <div
       className={cn(
-        "flex items-center gap-4 rounded-2xl border bg-white px-5 py-4",
+        "flex items-center gap-4 rounded-2xl border bg-card px-5 py-4",
         className
       )}
     >
