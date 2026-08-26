@@ -26,6 +26,23 @@ interface Props {
 }
 
 /**
+ * 예보 기준일 표기 — 「9월 3일 (수)」.
+ *
+ * **한국시간으로 고정합니다.** 브라우저 시간대를 그대로 쓰면 해외에서 접속했을 때
+ * 하루 어긋난 날짜가 표시되는데, 에러 없이 「옆 날짜」로만 나타나 알아채기 어렵습니다
+ * (서버 쪽 회차·예보 계산에서 같은 함정을 이미 겪었습니다).
+ */
+function formatWeatherDate(date: Date | undefined): string {
+  if (!date) return "오늘";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
+
+/**
  * 날씨 위젯 (스키마 16번 — 기상청 단기예보).
  *
  * **화면 렌더링을 막지 않습니다(16-3).** 자리표시자를 먼저 그리고 값이 오면
@@ -116,10 +133,13 @@ export default function WeatherWidget({
         );
       })()}
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex flex-wrap items-center gap-2">
-          <span className="text-[13px] font-semibold text-muted-foreground">
-            {regionLabel}
+        <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {/* 어느 날 기준인지 먼저 밝힙니다 — 예보가 없는 기간이어서 안내 문구로
+              대체될 때도 날짜는 남아야 「무슨 날짜를 물어본 것인지」를 알 수 있습니다. */}
+          <span className="text-[13px] font-bold text-foreground">
+            {formatWeatherDate(date)}
           </span>
+          <span className="text-[13px] text-muted-foreground">{regionLabel}</span>
           {w?.advisory && (
             <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11.5px] font-semibold text-destructive">
               {w.advisory}

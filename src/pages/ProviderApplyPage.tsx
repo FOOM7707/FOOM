@@ -35,7 +35,6 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { TreePine } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -306,22 +305,17 @@ export default function ProviderApplyPage() {
             <br />
             걱정 없이 하세요.
           </h1>
-          <p className="mt-7 max-w-lg break-keep text-[17px] leading-relaxed text-muted-foreground md:text-[19px]">
-            품(FOOM)은 산림복지전문가와 지역 주민을 잇습니다. 프로그램을 여는 일에만
-            집중하시도록 모집·결제·안내를 대신 맡습니다.
+          {/* 문장마다 줄을 나눕니다 — 두 문장이 이어져 흐르면서
+              「잇습니다.」 바로 뒤에 다음 문장이 붙어 읽혔습니다. */}
+          <p className="mt-7 max-w-xl break-keep text-[17px] leading-relaxed text-muted-foreground md:text-[19px]">
+            품(FOOM)은 산림복지전문가와 지역 주민을 잇습니다.
+            <br />
+            프로그램을 여는 일에만 집중하시도록 모집·결제·안내를 대신 맡습니다.
           </p>
 
-          {/* 시안의 회전 배지.
-              **Tailwind의 `animate-spin`을 씁니다** — 인라인 `animation: spin`으로 쓰면
-              그 이름의 keyframes가 CSS에 생성되지 않아 **조용히 안 돌아갑니다**.
-              기본 1초는 너무 빨라 시선을 계속 잡아채므로 24초로 늘렸고,
-              움직임을 줄이는 설정을 켠 사용자에게는 멈춥니다. */}
-          <div
-            className="mt-[30px] flex size-[120px] animate-spin items-center justify-center rounded-full border text-[32px] [animation-duration:24s] motion-reduce:animate-none"
-            aria-hidden
-          >
-            <TreePine className="h-7 w-7" strokeWidth={1.5} aria-hidden />
-          </div>
+          {/* 회전하는 나무 배지를 뺐습니다(2026-08-25 팀 요청). 뜻이 없는 장식인데
+              계속 움직여서 첫 화면에서 시선을 끌고 있었습니다 — 여기서 봐야 할 것은
+              제목과 사진입니다. */}
         </div>
 
         <div>
