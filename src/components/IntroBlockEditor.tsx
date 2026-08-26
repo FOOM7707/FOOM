@@ -16,8 +16,9 @@
  * 생기고, 그러면 사진 옆 칸이 넘쳐 지그재그가 무너집니다.
  */
 
-import { useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { useRef, useState } from "react";
+import { GripVertical, ImagePlus, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -75,6 +76,34 @@ export default function IntroBlockEditor({
 }: Props) {
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
+  /**
+   * 끌어서 순서 바꾸기.
+   *
+   * **↑/↓ 버튼을 없애지 않습니다.** 끌기는 휴대폰에서 동작하지 않고 키보드로도 쓸 수
+   * 없어서, 버튼이 유일한 대안입니다. 끌기는 넓은 화면에서 더 빠른 길일 뿐입니다.
+   *
+   * 카드 안에 입력칸이 있어서 카드 전체를 항상 끌 수 있게 두면 **글을 선택하려고
+   * 문지르는 순간 블록이 끌려갑니다.** 손잡이를 누른 동안에만 끌기가 켜집니다.
+   */
+  const [armed, setArmed] = useState(false);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  function endDrag() {
+    setArmed(false);
+    setDragFrom(null);
+    setDragOver(null);
+  }
+
+  /** 끌어 놓은 자리로 옮깁니다 — 서로 맞바꾸는 게 아니라 그 자리에 끼워 넣습니다 */
+  function reorder(from: number, to: number) {
+    if (from === to || to < 0 || to >= blocks.length) return;
+    const copy = [...blocks];
+    const [moved] = copy.splice(from, 1);
+    copy.splice(to, 0, moved);
+    onChange(copy);
+  }
+
   function update(index: number, patch: Partial<IntroBlock>) {
     onChange(blocks.map((b, i) => (i === index ? { ...b, ...patch } : b)));
   }
@@ -122,9 +151,46 @@ export default function IntroBlockEditor({
         const chosen = block.images[0];
 
         return (
-          <div key={i} className="flex flex-col gap-2.5 rounded-lg border px-3.5 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[12.5px] font-semibold text-primary">
+          <div
+            key={i}
+            draggable={armed}
+            onDragStart={(e) => {
+              setDragFrom(i);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragOver={(e) => {
+              if (dragFrom === null) return;
+              e.preventDefault();
+              setDragOver(i);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragFrom !== null) reorder(dragFrom, i);
+              endDrag();
+            }}
+            onDragEnd={endDrag}
+            className={cn(
+              "flex flex-col gap-3 rounded-xl border bg-muted/40 px-4 py-3.5 transition-colors",
+              dragFrom === i && "opacity-50",
+              dragOver === i && dragFrom !== i && "border-primary bg-secondary/60"
+            )}
+          >
+            <div className="flex items-center justify-between border-b pb-2.5">
+              <span className="flex items-center gap-1.5 text-[12.5px] font-bold text-primary">
+                {/* 손잡이를 누른 동안에만 끌기가 켜집니다 — 그렇지 않으면 글을 선택하려고
+                    문지를 때 블록이 끌려갑니다. */}
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="끌어서 순서 바꾸기"
+                  title="끌어서 순서 바꾸기 (또는 오른쪽 화살표 버튼)"
+                  onMouseDown={() => setArmed(true)}
+                  onTouchStart={() => setArmed(true)}
+                  onMouseUp={() => setArmed(false)}
+                  className="-ml-1 cursor-grab text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
+                >
+                  <GripVertical className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                </span>
                 {i + 1}번째 블록
                 <span className="ml-1.5 font-normal text-muted-foreground">
                   {layoutHint(i, block.images.length)}
@@ -159,142 +225,132 @@ export default function IntroBlockEditor({
               </div>
             </div>
 
-            {/* 사진 — 여기서 바로 추가하거나, 이미 있는 사진 중에서 고릅니다 */}
-            {photos.length === 0 && !onAddPhoto ? (
-              <p className="px-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
-                올려둔 사진이 없습니다. 위쪽 「프로그램 사진」에 먼저 올리면 여기서 고를 수
-                있습니다.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[12px] text-muted-foreground">
-                  {chosen
-                    ? "고른 사진 (다시 누르면 뺍니다)"
-                    : photos.length === 0
-                      ? "사진을 넣으면 글과 좌우로 나란히 놓입니다"
-                      : "쓸 사진을 고르거나 새로 추가하세요"}
-                </span>
-                <ul className="flex flex-wrap gap-2">
-                  {photos.map((photo, pi) => {
-                    const isChosen = chosen?.path === photo.path;
-                    const taken = usedByOtherBlock(i, photo.path);
-                    return (
-                      <li key={photo.path}>
-                        <button
-                          type="button"
-                          disabled={taken}
-                          onClick={() => togglePhoto(i, photo)}
-                          title={
-                            taken
-                              ? "다른 블록에서 쓰고 있습니다"
-                              : isChosen
-                                ? "빼기"
-                                : "이 사진 쓰기"
-                          }
-                          className={`relative block overflow-hidden rounded-md border-2 transition ${
-                            isChosen
-                              ? "border-primary"
-                              : "border-transparent hover:border-muted-foreground/40"
-                          } ${taken ? "cursor-not-allowed opacity-30" : ""}`}
-                        >
-                          <img
-                            src={photo.url}
-                            alt=""
-                            loading="lazy"
-                            className="h-16 w-24 object-cover"
-                          />
-                          {/* 앨범에서의 순서 — 첫 장이 대표 사진입니다 */}
-                          <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[10.5px] font-semibold text-white">
-                            {pi + 1}
-                          </span>
-                          {isChosen && (
-                            <span className="absolute inset-x-0 bottom-0 bg-primary py-[1px] text-[10.5px] font-bold text-primary-foreground">
-                              사용 중
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                  {/* 이 블록에서 바로 새 사진 추가 (v29).
-                      등록 화면에서도 눌립니다 — 저장할 때 함께 올라갑니다. */}
-                  {onAddPhoto && (
-                    <li>
-                      <input
-                        ref={(el) => {
-                          inputRefs.current[i] = el;
-                        }}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        hidden
-                        onChange={(e) => void addHere(i, e.target.files)}
-                      />
-                      <button
-                        type="button"
-                        disabled={busy || atLimit}
-                        onClick={() => inputRefs.current[i]?.click()}
-                        title={
-                          atLimit
-                            ? "사진 장수 상한에 닿았습니다. 위쪽 「프로그램 사진」에서 빼고 추가하세요"
-                            : "새 사진 올려서 이 블록에 넣기"
-                        }
-                        className="flex h-16 w-24 flex-col items-center justify-center rounded-md border-2 border-dashed text-[11px] leading-tight text-muted-foreground transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <span className="text-[15px] leading-none">＋</span>
-                        <span className="mt-0.5">새 사진</span>
-                      </button>
-                    </li>
-                  )}
-                </ul>
-                {progress && (
-                  <span className="text-[11.5px] text-muted-foreground">{progress}</span>
+            {/* 참고 시안과 같은 「사진 왼쪽 · 글 오른쪽」 배치입니다. 좁은 화면에서는
+                사진이 위로 올라갑니다. */}
+            <div className="grid gap-4 sm:grid-cols-[150px_1fr]">
+              {/* ── 사진 ─────────────────────────────────────────────── */}
+              <div className="flex flex-col gap-2">
+                <input
+                  ref={(el) => {
+                    inputRefs.current[i] = el;
+                  }}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  hidden
+                  onChange={(e) => void addHere(i, e.target.files)}
+                />
+
+                {chosen ? (
+                  <button
+                    type="button"
+                    onClick={() => togglePhoto(i, chosen)}
+                    title="빼기"
+                    className="group relative block aspect-[4/3] overflow-hidden rounded-lg border-2 border-primary"
+                  >
+                    <img src={chosen.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/55 py-1 text-[11.5px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      빼기
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || atLimit || !onAddPhoto}
+                    onClick={() => inputRefs.current[i]?.click()}
+                    title={
+                      atLimit
+                        ? "사진 장수 상한에 닿았습니다"
+                        : "새 사진 올려서 이 블록에 넣기"
+                    }
+                    className="flex aspect-[4/3] flex-col items-center justify-center rounded-lg border-2 border-dashed border-input bg-card text-muted-foreground transition-colors hover:border-primary hover:bg-secondary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-input disabled:hover:bg-card"
+                  >
+                    <ImagePlus className="mb-1 h-6 w-6" strokeWidth={1.5} aria-hidden />
+                    <span className="text-[12.5px] font-bold">사진 등록</span>
+                  </button>
                 )}
+
+                {/* 이미 올린 사진에서 고르기 — 대표 사진처럼 이미 있는 것을 쓸 때입니다 */}
+                {photos.length > 0 && (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {photos.map((photo, pi) => {
+                      const isChosen = chosen?.path === photo.path;
+                      const taken = usedByOtherBlock(i, photo.path);
+                      return (
+                        <li key={photo.path}>
+                          <button
+                            type="button"
+                            disabled={taken}
+                            onClick={() => togglePhoto(i, photo)}
+                            title={
+                              taken ? "다른 블록에서 쓰고 있습니다" : isChosen ? "빼기" : "이 사진 쓰기"
+                            }
+                            className={`relative block overflow-hidden rounded border-2 transition ${
+                              isChosen ? "border-primary" : "border-transparent hover:border-muted-foreground/40"
+                            } ${taken ? "cursor-not-allowed opacity-30" : ""}`}
+                          >
+                            <img src={photo.url} alt="" loading="lazy" className="h-9 w-12 object-cover" />
+                            <span className="absolute left-0.5 top-0.5 rounded bg-black/55 px-1 text-[10px] font-semibold text-white">
+                              {pi + 1}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {progress && <span className="text-[12px] text-muted-foreground">{progress}</span>}
               </div>
-            )}
 
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`intro-heading-${i}`} className="text-[12.5px]">
-                소제목
-              </Label>
-              <Input
-                id={`intro-heading-${i}`}
-                value={block.heading}
-                onChange={(e) => update(i, { heading: e.target.value })}
-                maxLength={MAX_HEADING_LENGTH}
-                placeholder="예: 숲 입구에서 함께 출발합니다"
-              />
-            </div>
+              {/* ── 글 ──────────────────────────────────────────────── */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={`intro-heading-${i}`} className="text-[13px]">
+                    소제목
+                  </Label>
+                  <Input
+                    id={`intro-heading-${i}`}
+                    value={block.heading}
+                    onChange={(e) => update(i, { heading: e.target.value })}
+                    maxLength={MAX_HEADING_LENGTH}
+                    placeholder="예: 숲 입구에서 함께 출발합니다"
+                  />
+                  <span className="self-end text-[12px] text-muted-foreground">
+                    {block.heading.length}/{MAX_HEADING_LENGTH}
+                  </span>
+                </div>
 
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`intro-body-${i}`} className="text-[12.5px]">
-                설명
-              </Label>
-              <Textarea
-                id={`intro-body-${i}`}
-                value={block.body}
-                onChange={(e) => update(i, { body: e.target.value })}
-                maxLength={MAX_BODY_LENGTH}
-                rows={3}
-                placeholder="이 순서에서 무엇을 하는지 적어 주세요."
-              />
-              <span className="self-end text-[11.5px] text-muted-foreground">
-                {block.body.length}/{MAX_BODY_LENGTH}
-              </span>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={`intro-body-${i}`} className="text-[13px]">
+                    설명
+                  </Label>
+                  <Textarea
+                    id={`intro-body-${i}`}
+                    value={block.body}
+                    onChange={(e) => update(i, { body: e.target.value })}
+                    maxLength={MAX_BODY_LENGTH}
+                    rows={4}
+                    placeholder="이 순서에서 무엇을 하는지 적어 주세요."
+                  />
+                  <span className="self-end text-[12px] text-muted-foreground">
+                    {block.body.length}/{MAX_BODY_LENGTH}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         );
       })}
 
-      <div className="flex items-center gap-3">
-        <Button
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           disabled={blocks.length >= MAX_INTRO_BLOCKS}
           onClick={() => onChange([...blocks, emptyIntroBlock()])}
+          className="flex items-center gap-2 rounded-xl border border-dashed border-primary px-6 py-3 text-sm font-bold text-primary transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:hover:bg-transparent"
         >
-          + 소개 블록 추가
-        </Button>
+          <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+          소개 블록 추가
+        </button>
         <span className="text-xs text-muted-foreground">
           {blocks.length >= MAX_INTRO_BLOCKS
             ? `블록은 ${MAX_INTRO_BLOCKS}개까지입니다`

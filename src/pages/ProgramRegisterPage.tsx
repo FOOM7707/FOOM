@@ -24,6 +24,18 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import AddressSearchField from "@/components/AddressSearchField";
+import FormCard from "@/components/FormCard";
+import { cn } from "@/lib/utils";
+import {
+  Accessibility,
+  BookOpen,
+  CalendarDays,
+  Images,
+  ListChecks,
+  MapPin,
+  SquarePen,
+  Users,
+} from "lucide-react";
 import ScheduleFields, {
   emptyScheduleRow,
   toSchedulePayload,
@@ -620,12 +632,12 @@ export default function ProgramRegisterPage() {
   }
 
   if (loading || meLoading || loadingProgram) {
-    return <div className="container mx-auto max-w-xl px-5 py-8">불러오는 중…</div>;
+    return <div className="container mx-auto max-w-[800px] px-5 py-8">불러오는 중…</div>;
   }
 
   if (!user) {
     return (
-      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+      <div className="container mx-auto max-w-[800px] px-5 py-8 pb-32">
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold">로그인이 필요합니다</h1>
@@ -642,7 +654,7 @@ export default function ProgramRegisterPage() {
   // permission-denied로 거부돼, 사용자가 무엇이 문제인지 알 수 없었습니다.
   if (me && me.role !== "provider") {
     return (
-      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+      <div className="container mx-auto max-w-[800px] px-5 py-8 pb-32">
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold">전문가 계정만 등록할 수 있습니다</h1>
@@ -661,7 +673,7 @@ export default function ProgramRegisterPage() {
 
   if (isEdit && !loaded) {
     return (
-      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+      <div className="container mx-auto max-w-[800px] px-5 py-8 pb-32">
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold">프로그램을 불러오지 못했습니다</h1>
@@ -679,7 +691,7 @@ export default function ProgramRegisterPage() {
 
   if (createdId) {
     return (
-      <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
+      <div className="container mx-auto max-w-[800px] px-5 py-8 pb-32">
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold text-secondary-foreground">
@@ -731,13 +743,16 @@ export default function ProgramRegisterPage() {
     );
   }
 
+  // 연한 바탕 + 흰 카드 구성입니다 — 카드가 순백이라 바탕도 순백이면 경계가 흐려
+  // 어디까지가 한 묶음인지 안 보입니다(참고 시안과 같은 구성).
   return (
-    <div className="container mx-auto max-w-xl px-5 py-8 pb-20">
-      <h1 className="mb-2.5 text-[22px] font-bold">
+    <div className="min-h-screen bg-[#F8FAF7]">
+      <div className="container mx-auto max-w-[800px] px-5 py-8 pb-32">
+      <h1 className="mb-1.5 text-[26px] font-extrabold tracking-tight">
         {isEdit ? "프로그램 수정" : "프로그램 등록"}
       </h1>
       {isEdit ? (
-        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+        <p className="mb-7 text-[14px] leading-relaxed text-muted-foreground">
           {loaded!.status === "published" ? (
             <>
               현재 <strong>게시 중</strong>입니다. 고쳐도 <strong>게시가 중단되지
@@ -761,7 +776,7 @@ export default function ProgramRegisterPage() {
           )}
         </p>
       ) : (
-        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+        <p className="mb-7 text-[14px] leading-relaxed text-muted-foreground">
           저장하면 <strong>작성 중(draft)</strong> 상태가 되고, 심사를 요청해야 게시됩니다.
           {" "}
           <Link to="/my/programs" className="underline">
@@ -815,14 +830,17 @@ export default function ProgramRegisterPage() {
         </p>
       )}
 
-      <form className="flex flex-col gap-[18px]" onSubmit={handleSubmit}>
+      <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
         {/* 사진 (v29 — 등록 화면에서도 고를 수 있습니다).
 
             저장 자리 이름에 프로그램 번호가 필요한 것은 그대로입니다(18-3). 다만
             **브라우저가 파일을 들고 있다가 저장할 때 함께 올립니다** — 「글 다 쓰고
             저장하고 다시 들어와서 사진」은 작성하는 사람에게 두 번 일입니다. */}
-        <fieldset className="flex flex-col gap-2.5 rounded-lg border px-4 py-3.5">
-          <legend className="px-1 text-[13px] text-muted-foreground">프로그램 사진</legend>
+        <FormCard
+          title="대표 사진"
+          icon={Images}
+          desc="검색 목록과 상세 페이지 맨 위에 쓰이는 한 장입니다. 소개에 쓸 나머지 사진은 「프로그램 소개」의 각 블록에서 올립니다."
+        >
           {isEdit && loaded ? (
             <ProgramImageUploader
               programId={loaded.id}
@@ -832,7 +850,10 @@ export default function ProgramRegisterPage() {
             />
           ) : (
             <PendingImagePicker
-              photos={pending}
+              /* 대표는 목록의 첫 장입니다(imageUrls[0]). 이 칸은 그 한 장만 맡고,
+                 소개 블록에서 올린 사진은 그 블록에서 관리합니다. */
+              photos={pending.slice(0, 1)}
+              max={1}
               onPick={addPhotos}
               onRemove={removePending}
               onMove={movePending}
@@ -840,44 +861,47 @@ export default function ProgramRegisterPage() {
               progress={photoProgress}
             />
           )}
-        </fieldset>
+        </FormCard>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="title">프로그램명</Label>
-          <Input
-            id="title"
-            name="title"
-            required
-            placeholder="예: 주말 산림치유 명상 프로그램"
-            defaultValue={loaded?.title ?? ""}
-          />
-        </div>
+        {/* ── 기본 정보 ─────────────────────────────────────────────────── */}
+        <FormCard title="기본 정보" icon={SquarePen}>
+          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="title">프로그램명</Label>
+            <Input
+              id="title"
+              name="title"
+              required
+              placeholder="예: 주말 산림치유 명상 프로그램"
+              defaultValue={loaded?.title ?? ""}
+            />
+          </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="description">소개</Label>
-          <Textarea
-            id="description"
-            name="description"
-            required
-            rows={4}
-            placeholder="프로그램 소개를 입력하세요"
-            defaultValue={loaded?.description ?? ""}
-          />
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="description">소개</Label>
+            <Textarea
+              id="description"
+              name="description"
+              required
+              rows={4}
+              placeholder="프로그램 소개를 입력하세요"
+              defaultValue={loaded?.description ?? ""}
+            />
+          </div>
 
-        <div className="flex gap-3">
-          <div className="flex flex-1 flex-col gap-1.5">
-            <Label htmlFor="category">카테고리</Label>
-            <Select id="category" name="category" required defaultValue={loaded?.category ?? ""}>
-              <option value="" disabled>
-                선택하세요
-              </option>
-              {CATEGORIES.filter((c) => c !== "전체").map((c) => (
-                <option key={c} value={c}>
-                  {c}
+          <div className="flex gap-3">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="category">카테고리</Label>
+              <Select id="category" name="category" required defaultValue={loaded?.category ?? ""}>
+                <option value="" disabled>
+                  선택하세요
                 </option>
-              ))}
-            </Select>
+                {CATEGORIES.filter((c) => c !== "전체").map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
           </div>
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="qualificationType">자격 유형</Label>
@@ -898,24 +922,29 @@ export default function ProgramRegisterPage() {
             </Select>
           </div>
         </div>
+          </div>
+        </FormCard>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="address">장소(주소)</Label>
-          <AddressSearchField value={place} onChange={setPlace} />
-        </div>
+        {/* ── 장소와 가격 ───────────────────────────────────────────────── */}
+        <FormCard title="장소와 가격" icon={MapPin}>
+          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="address">장소(주소)</Label>
+            <AddressSearchField value={place} onChange={setPlace} />
+          </div>
 
-        <div className="flex gap-3">
-          <div className="flex flex-1 flex-col gap-1.5">
-            <Label htmlFor="price">가격(원)</Label>
-            <Input
-              id="price"
-              name="price"
-              type="number"
-              min={0}
-              required
-              placeholder="35000"
-              defaultValue={loaded?.price ?? ""}
-            />
+          <div className="flex gap-3">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="price">가격(원)</Label>
+              <Input
+                id="price"
+                name="price"
+                type="number"
+                min={0}
+                required
+                placeholder="35000"
+                defaultValue={loaded?.price ?? ""}
+              />
           </div>
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="minCapacity">최소 인원</Label>
@@ -944,34 +973,55 @@ export default function ProgramRegisterPage() {
           </div>
         </div>
 
-        <fieldset className="flex flex-col gap-2.5 rounded-lg border px-4 py-3.5">
-          <legend className="px-1 text-[13px] text-muted-foreground">운영 방식</legend>
-          {SCHEDULE_OPTIONS.map((opt) => (
-            <label
-              key={opt.value}
-              className={`flex items-start gap-2.5 text-sm ${
-                opt.disabled ? "cursor-not-allowed opacity-55" : ""
-              }`}
-            >
-              <input
-                type="radio"
-                name="scheduleType"
-                value={opt.value}
-                required
-                disabled={opt.disabled}
-                checked={scheduleType === opt.value}
-                onChange={() => changeScheduleType(opt.value)}
-                className="mt-1"
-              />
-              <span>
-                <strong className="font-semibold">{opt.label}</strong>
-                <span className="block text-xs text-muted-foreground">{opt.hint}</span>
-              </span>
-            </label>
-          ))}
+          </div>
+        </FormCard>
 
-          <div className="mt-1.5 flex flex-col gap-3 border-t pt-3.5">
-            <p className="text-[13px] font-semibold">진행 날짜</p>
+        {/* ── 운영 방식 ─────────────────────────────────────────────────── */}
+        <FormCard
+          title="운영 방식"
+          icon={CalendarDays}
+          desc="어떻게 진행할지 고르고, 실제로 여는 날짜를 넣습니다."
+        >
+          {/* 카드형 선택지 — 라디오 점만 있으면 무엇이 골라졌는지 한눈에 안 들어옵니다.
+              「매주 반복」은 만드는 서버 경로가 없어 비활성입니다(고를 수 있게 열면
+              날짜를 넣을 방법이 없는 채로 등록됩니다). */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {SCHEDULE_OPTIONS.map((opt) => {
+              const selected = scheduleType === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={cn(
+                    "flex items-start gap-3 rounded-xl border p-4 transition-colors",
+                    opt.disabled
+                      ? "cursor-not-allowed opacity-55"
+                      : "cursor-pointer hover:border-primary",
+                    selected && !opt.disabled && "border-primary bg-secondary/60"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="scheduleType"
+                    value={opt.value}
+                    required
+                    disabled={opt.disabled}
+                    checked={selected}
+                    onChange={() => changeScheduleType(opt.value)}
+                    className="mt-0.5 accent-primary"
+                  />
+                  <span className="min-w-0">
+                    <strong className="block text-[15px] font-bold">{opt.label}</strong>
+                    <span className="mt-1 block text-[13px] leading-relaxed text-muted-foreground">
+                      {opt.hint}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3 border-t pt-5">
+            <p className="text-[15px] font-bold">진행 날짜</p>
 
             {isEdit && loaded && (
               <>
@@ -1010,7 +1060,7 @@ export default function ProgramRegisterPage() {
           {scheduleType === "open" && (
             <div className="mt-1 flex gap-3">
               <div className="flex flex-1 flex-col gap-1.5">
-                <Label htmlFor="availableFrom" className="text-[13px]">
+                <Label htmlFor="availableFrom" className="text-[14px]">
                   문의 가능 시작일
                 </Label>
                 <Input
@@ -1021,7 +1071,7 @@ export default function ProgramRegisterPage() {
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1.5">
-                <Label htmlFor="availableUntil" className="text-[13px]">
+                <Label htmlFor="availableUntil" className="text-[14px]">
                   문의 가능 종료일
                 </Label>
                 <Input
@@ -1033,14 +1083,14 @@ export default function ProgramRegisterPage() {
               </div>
             </div>
           )}
-        </fieldset>
+        </FormCard>
 
-        <fieldset className="flex flex-col gap-3 rounded-lg border px-4 py-3.5">
-          <legend className="px-1 text-[13px] text-muted-foreground">프로그램 소개</legend>
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-            사진과 글만 넣으시면 <strong className="font-semibold">배치는 자동으로</strong>{" "}
-            됩니다. 상세 페이지에서 사진 장수에 따라 좌우 번갈이 또는 가로 전체로 놓입니다.
-          </p>
+        {/* ── 프로그램 소개 ─────────────────────────────────────────────── */}
+        <FormCard
+          title="프로그램 소개"
+          icon={BookOpen}
+          desc="사진과 글만 넣으시면 배치는 자동으로 됩니다 — 상세 페이지에서 좌우로 번갈아 놓입니다. 순서는 왼쪽 손잡이를 끌거나 화살표 버튼으로 바꿉니다."
+        >
           {/* 사진은 「프로그램 사진」과 같은 목록에서 고릅니다(v29) — 블록마다 따로
               올리면 같은 사진이 앨범과 소개 글에 두 번 저장됩니다. 여기서 새로
               추가해도 그 목록(=앨범)에 함께 들어갑니다. */}
@@ -1053,15 +1103,17 @@ export default function ProgramRegisterPage() {
             blocks={introBlocks}
             onChange={setIntroBlocks}
           />
-        </fieldset>
+        </FormCard>
 
-        <fieldset className="flex flex-col gap-4 rounded-lg border px-4 py-3.5">
-          <legend className="px-1 text-[13px] text-muted-foreground">
-            포함·불포함·준비물
-          </legend>
-
+        {/* ── 상세 구성 항목 ────────────────────────────────────────────── */}
+        <FormCard
+          title="상세 구성 항목"
+          icon={ListChecks}
+          desc="목록에서 고르고, 없으면 직접 입력합니다(구분마다 3개까지). 같은 항목을 포함과 불포함에 함께 고를 수 없습니다."
+        >
+          <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <Label className="text-[13px] font-semibold">포함 사항</Label>
+            <Label className="text-[15px] font-bold">포함 사항</Label>
             <KeywordPicker
               tone="include"
               options={INCLUDE_OPTIONS}
@@ -1074,8 +1126,8 @@ export default function ProgramRegisterPage() {
           </div>
 
           <div className="flex flex-col gap-2 border-t pt-3.5">
-            <Label className="text-[13px] font-semibold">불포함 사항</Label>
-            <p className="text-[12px] leading-relaxed text-muted-foreground">
+            <Label className="text-[15px] font-bold">불포함 사항</Label>
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
               현장에서 따로 내야 하는 비용을 빠뜨리지 마세요 — 미리 알리지 않으면 분쟁이
               됩니다.
             </p>
@@ -1091,7 +1143,7 @@ export default function ProgramRegisterPage() {
           </div>
 
           <div className="flex flex-col gap-2 border-t pt-3.5">
-            <Label className="text-[13px] font-semibold">준비물</Label>
+            <Label className="text-[15px] font-bold">준비물</Label>
             <KeywordPicker
               tone="prepare"
               options={PREPARATION_OPTIONS}
@@ -1099,40 +1151,46 @@ export default function ProgramRegisterPage() {
               onChange={setPreparations}
             />
           </div>
-        </fieldset>
+          </div>
+        </FormCard>
 
-        <fieldset className="flex flex-col gap-3 rounded-lg border px-4 py-3.5">
-          <legend className="px-1 text-[13px] text-muted-foreground">참가 조건</legend>
-          <div className="flex gap-3">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="targetAgeMin" className="text-[13px]">
-                참가 가능 연령(최소)
-              </Label>
-              <Input
-                id="targetAgeMin"
-                name="targetAgeMin"
-                type="number"
-                min={0}
-                placeholder="비우면 제한 없음"
-                defaultValue={loaded?.targetAgeMin ?? ""}
-              />
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label htmlFor="targetAgeMax" className="text-[13px]">
-                참가 가능 연령(최대)
-              </Label>
-              <Input
-                id="targetAgeMax"
-                name="targetAgeMax"
-                type="number"
-                min={0}
-                placeholder="비우면 제한 없음"
-                defaultValue={loaded?.targetAgeMax ?? ""}
-              />
-            </div>
+        {/* ── 참가 조건 ─────────────────────────────────────────────────── */}
+        <FormCard
+          title="참가 조건"
+          icon={Users}
+          desc="난이도는 걷는 거리로 자동 계산되므로 따로 고르지 않습니다."
+        >
+          <div className="flex flex-col gap-5">
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Label htmlFor="targetAgeMin" className="text-[14px]">
+                  참가 가능 연령(최소)
+                </Label>
+                <Input
+                  id="targetAgeMin"
+                  name="targetAgeMin"
+                  type="number"
+                  min={0}
+                  placeholder="비우면 제한 없음"
+                  defaultValue={loaded?.targetAgeMin ?? ""}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Label htmlFor="targetAgeMax" className="text-[14px]">
+                  참가 가능 연령(최대)
+                </Label>
+                <Input
+                  id="targetAgeMax"
+                  name="targetAgeMax"
+                  type="number"
+                  min={0}
+                  placeholder="비우면 제한 없음"
+                  defaultValue={loaded?.targetAgeMax ?? ""}
+                />
+              </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="walkingDistanceM" className="text-[13px]">
+            <Label htmlFor="walkingDistanceM" className="text-[14px]">
               총 걷는 거리(m)
             </Label>
             <Input
@@ -1143,12 +1201,12 @@ export default function ProgramRegisterPage() {
               placeholder="예: 2000"
               defaultValue={loaded?.walkingDistanceM ?? ""}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               난이도는 이 값으로 자동 표시됩니다 — 1km 이하 쉬움 / 1~3km 보통 / 3km 이상 어려움.
             </p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rainAlternative" className="text-[13px]">
+            <Label htmlFor="rainAlternative" className="text-[14px]">
               우천 시 대체 방식
             </Label>
             <Select
@@ -1164,24 +1222,43 @@ export default function ProgramRegisterPage() {
               ))}
             </Select>
           </div>
-        </fieldset>
+          </div>
+        </FormCard>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="barrierFree" defaultChecked={loaded?.barrierFree ?? false} />
-          배리어프리(무장애) 코스입니다
+        {/* ── 배리어프리 ────────────────────────────────────────────────── */}
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-card p-5 sm:px-7">
+          <input
+            type="checkbox"
+            name="barrierFree"
+            defaultChecked={loaded?.barrierFree ?? false}
+            className="h-[18px] w-[18px] accent-primary"
+          />
+          <Accessibility className="h-[18px] w-[18px] text-primary" strokeWidth={1.75} aria-hidden />
+          <span className="text-[15px] font-bold">배리어프리(무장애) 코스입니다</span>
         </label>
 
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="lg" disabled={busy}>
-            {busy ? "저장 중…" : isEdit ? "수정 내용 저장" : "작성 중으로 저장"}
-          </Button>
-          {isEdit && (
-            <Button type="button" size="lg" variant="outline" asChild>
-              <Link to="/my/programs">내 프로그램으로</Link>
-            </Button>
-          )}
+        {/* ── 하단 고정 저장 바 ─────────────────────────────────────────────
+            폼이 길어서 저장하려면 매번 끝까지 내려가야 했습니다. 어디서 쓰다가도
+            바로 저장할 수 있게 화면 아래에 고정합니다. */}
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur">
+          <div className="container mx-auto flex max-w-[800px] items-center justify-between gap-3 px-5 py-3.5">
+            <p className="hidden text-[13px] text-muted-foreground sm:block">
+              {isEdit ? "고친 내용은 저장해야 반영됩니다" : "저장하면 작성 중 상태가 됩니다"}
+            </p>
+            <div className="flex flex-1 gap-2 sm:flex-none">
+              {isEdit && (
+                <Button type="button" size="lg" variant="outline" asChild>
+                  <Link to="/my/programs">내 프로그램으로</Link>
+                </Button>
+              )}
+              <Button type="submit" size="lg" className="flex-1 sm:flex-none" disabled={busy}>
+                {busy ? "저장 중…" : isEdit ? "수정 내용 저장" : "작성 중으로 저장"}
+              </Button>
+            </div>
+          </div>
         </div>
       </form>
+      </div>
     </div>
   );
 }

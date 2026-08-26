@@ -1,74 +1,357 @@
-
-import { Link } from "react-router-dom";
-import { MapPin } from "lucide-react";
-import type { Category } from "@/types/firestore";
-
 /**
- * 홈 화면 — docs/디자인-웹페이지-초안.html 기준 구현.
- * 확정사항은 스키마 v10 9-7 참고: 사진 카드 1장 고정(①), 날씨는 프로모 카드 편입(②),
- * Pretendard 단독(③), 지도는 홈에 배치하지 않고 "내 주변에서 찾기"로 진입(⑤).
+ * 홈 화면 (2026-08-26 개편).
+ *
+ * **디자인은 참고 시안을 따르고, 기능은 우리 것을 그대로 씁니다.** 시안에 있던
+ * 「전문가 찾기」·「맞춤 견적요청」처럼 **없는 기능을 약속하는 자리는 빼거나 실제로
+ * 되는 것으로 바꿨습니다** — 눌렀을 때 갈 곳이 없는 메뉴를 두지 않는다는 규칙(15-9).
+ *
+ * 구성: 첫 화면(제목 + 통합 검색 + 카테고리 아이콘) → 인기 프로그램 → 전문가 배너
+ *       → 후기.
  */
 
-/** 홈의 모든 블록이 같은 좌우 기준선을 씁니다 — 후기 섹션·푸터가 1200이라
- *  카드 그리드만 1360이면 스크롤할 때 좌우가 어긋나 보입니다. */
-const WIDE_CONTAINER = "mx-auto w-full max-w-[1200px] px-6";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Baby, Building, Flower2, Footprints, Leaf, Search } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { CATEGORIES } from "@/types/firestore";
+import { DEFAULT_FILTERS, toSearchQuery, type SearchRow } from "@/lib/programFilter";
+import { REGION_KEYS } from "@/lib/sido";
+import { Select } from "@/components/ui/select";
 
-// 3. 카테고리 사진 카드 5종 — 자격유형 공식명칭 (스키마 9-7 ⑥)
-//
-// **이 사진은 우리가 넣는 고정 사진입니다(v29 팀 확정).** 등록된 프로그램의 사진을
-// 끌어오지 않습니다 — 이 자리는 브랜드 첫인상이라 누가 무엇을 올리느냐에 따라 바뀌면
-// 안 됩니다. 프로그램 사진이 쓰이는 곳은 목록 카드와 상세 페이지입니다.
-//
-// 파일을 넣는 방법: `public/home/`에 아래 `image` 이름으로 jpg를 넣으면 끝입니다.
-// TODO(정식 오픈 전): `interimImage`의 Unsplash 외부 이미지는 시안 확인용 임시입니다.
-// 자체 촬영·구매 이미지로 교체합니다 — 외부 핫링크 상태로 오픈하지 않습니다(9-7 ⑧).
-const PHOTO_CARDS: {
-  category: Category;
-  desc: [string, string];
-  /** 우리가 넣는 고정 사진. `public/home/`에 이 이름으로 파일을 넣으면 바로 바뀝니다 */
-  image: string;
-  /** 파일을 넣기 전까지 임시로 보여줄 사진 — 오픈 전 반드시 교체 */
-  interimImage: string;
-}[] = [
-  {
-    category: "숲해설",
-    desc: ["숲해설가와 걷는", "자연 생태 체험"],
-    image: "/home/forest-guide.jpg",
-    interimImage:
-      "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    category: "유아숲체험",
-    desc: ["아이와 함께하는", "창의 숲 놀이·교육"],
-    image: "/home/kids-forest.jpg",
-    interimImage:
-      "https://images.unsplash.com/photo-1476514525535-ce74f45814d0?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    category: "산림치유",
-    desc: ["몸과 마음을 쉬어가는", "숲 힐링 프로그램"],
-    image: "/home/healing.jpg",
-    interimImage:
-      "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    category: "숲길등산",
-    desc: ["전문가와 안전하게", "걷는 트레킹 안내"],
-    image: "/home/trail.jpg",
-    interimImage:
-      "https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    category: "단체·기업",
-    desc: ["기관 및 단체를 위한", "맞춤형 숲 프로그램"],
-    image: "/home/group.jpg",
-    interimImage:
-      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80",
-  },
-];
+const CONTAINER = "mx-auto w-full max-w-[1140px] px-5";
 
+/**
+ * 검색 바 안의 입력칸 — 테두리·배경·기본 여백을 걷어냅니다.
+ *
+ * 높이를 줄이면서 **안쪽 여백은 그대로 두면 글자 아래(받침)가 잘립니다.** `py-0`으로
+ * 여백을 없애고 줄 높이(`leading`)로 자리를 잡습니다. 펼침 화살표는 공용 부품이
+ * 그리므로 오른쪽 자리(`pr-7`)만 비워 둡니다.
+ */
+const SEARCH_CONTROL =
+  "h-[26px] w-full rounded-none border-0 bg-transparent px-0 pr-7 py-0 text-[14.5px] font-semibold leading-[26px] shadow-none focus-visible:ring-0";
 
-// 5. 후기 섹션 예시 데이터 (초안 그대로 — 화면 구성 확인용)
+/**
+ * 카테고리 아이콘 — `lucide-react` 한 세트로 통일합니다(2026-08-25 규칙).
+ *
+ * **삽화(PNG)를 쓰지 않습니다.** 넣어봤지만 다섯 칸의 그림체·여백·색이 제각각이라
+ * 한 줄로 놓았을 때 정리가 안 되고, 배경을 투명하게 처리해도 화면에 따라 어둡게
+ * 비치는 문제가 있었습니다. 선 아이콘은 굵기와 크기가 같아 줄이 가지런합니다.
+ */
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  숲해설: Leaf, // 나뭇잎
+  산림치유: Flower2, // 꽃 — 시안은 명상하는 사람인데 아이콘 세트에 그 모양이 없습니다
+  유아숲체험: Baby, // 아기
+  숲길등산: Footprints, // 발자국 — 시안의 등산화에 가장 가까운 모양입니다
+  "단체·기업": Building, // 건물(창문 격자)
+};
+
+/**
+ * 첫 화면에 놓는 순서 — 시안과 같습니다.
+ * (검색 화면의 카테고리 줄은 공식 목록 순서를 그대로 씁니다)
+ */
+const CATEGORY_LIST = ["숲해설", "산림치유", "유아숲체험", "숲길등산", "단체·기업"].filter(
+  (c) => (CATEGORIES as readonly string[]).includes(c)
+);
+
+interface SearchResponse {
+  programs: SearchRow[];
+  total: number;
+}
+
+/** 인기 프로그램에 보여줄 장수. 한 줄(4칸)을 채웁니다 */
+const FEATURED_COUNT = 4;
+
+export default function HomePage() {
+  const navigate = useNavigate();
+
+  const [region, setRegion] = useState("");
+  const [category, setCategory] = useState("");
+  const [headcount, setHeadcount] = useState("");
+
+  /** 인기 프로그램 — 판정은 서버가 합니다(검색 화면과 같은 경로) */
+  const [featured, setFeatured] = useState<SearchRow[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const query = toSearchQuery(DEFAULT_FILTERS, "인기순", "");
+    apiFetch<SearchResponse>(`/programs/search?${query}`)
+      .then((res) => {
+        if (alive) setFeatured(res.programs.slice(0, FEATURED_COUNT));
+      })
+      // 첫 화면이 오류로 깨지지 않게 합니다 — 목록이 비면 아래에서 안내로 대체됩니다.
+      .catch(() => {
+        if (alive) setFeatured([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  function submitSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const p = new URLSearchParams();
+    if (category) p.set("category", category);
+    if (region) p.set("region", region);
+    if (headcount) p.set("headcount", headcount);
+    navigate(`/search?${p.toString()}`);
+  }
+
+  return (
+    <div className="bg-[#F8FAF7]">
+      {/* ── 첫 화면 ───────────────────────────────────────────────────────
+          시안대로 흰 바탕입니다. 아래 목록 영역과 색이 갈려 첫 화면이 도드라집니다. */}
+      <section className="border-b bg-card px-5 pb-14 pt-12 text-center sm:pt-14">
+        <h1 className="text-balance text-[26px] font-extrabold leading-tight tracking-tight sm:text-[32px]">
+          검증된 산림복지전문가를 매칭받아보세요
+        </h1>
+        <p className="mt-3 text-pretty text-[15px] text-muted-foreground sm:text-base">
+          숲해설가, 산림치유지도사 등 국가공인 전문가와 함께하는 맞춤형 숲 프로그램
+        </p>
+
+        {/* 통합 검색 — 고른 값은 검색 화면의 필터로 그대로 넘어갑니다(주소에 남으므로
+            뒤로가기·링크 공유도 됩니다).
+
+            **칸 높이보다 안쪽 여백이 크면 글자 아래가 잘립니다** — 「전국」의 ㄴ·ㄱ
+            받침이 그렇게 잘렸습니다. 공용 입력칸의 기본 여백을 여기서는 걷어내고
+            줄 높이로 자리를 잡습니다. */}
+        <form
+          onSubmit={submitSearch}
+          className="mx-auto mt-8 flex w-full max-w-[820px] flex-col gap-1 rounded-2xl border bg-card p-3 shadow-[0_12px_28px_rgba(31,92,67,0.08)] lg:flex-row lg:items-stretch lg:gap-0 lg:rounded-full lg:p-2 lg:pl-8"
+        >
+          <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
+            <span className="mb-0.5 block text-[12px] font-bold text-primary">지역</span>
+            <Select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className={SEARCH_CONTROL + (region === "" ? " font-normal text-muted-foreground" : "")}
+            >
+              <option value="">어느 지역을 찾으시나요?</option>
+              {REGION_KEYS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </Select>
+          </label>
+
+          <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
+            <span className="mb-0.5 block text-[12px] font-bold text-primary">프로그램 종류</span>
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={
+                SEARCH_CONTROL + (category === "" ? " font-normal text-muted-foreground" : "")
+              }
+            >
+              <option value="">전체 카테고리</option>
+              {CATEGORY_LIST.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </label>
+
+          <label className="flex flex-1 flex-col justify-center px-3 py-2.5 text-left lg:py-1">
+            <span className="mb-0.5 block text-[12px] font-bold text-primary">참여 인원</span>
+            <input
+              type="number"
+              min={1}
+              value={headcount}
+              onChange={(e) => setHeadcount(e.target.value)}
+              placeholder="인원 선택 (예: 4명)"
+              className="h-[26px] w-full bg-transparent text-[14.5px] font-semibold leading-[26px] outline-none placeholder:font-normal placeholder:text-muted-foreground"
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="mt-1 inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-8 py-3.5 text-[15px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground lg:mt-0"
+          >
+            <Search className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            검색하기
+          </button>
+        </form>
+
+        {/* 카테고리 — 누르면 그 종류만 걸린 검색 결과로 갑니다 */}
+        <ul className="mx-auto mt-11 flex max-w-[820px] flex-wrap justify-center gap-x-8 gap-y-6 sm:gap-x-10">
+          {CATEGORY_LIST.map((c) => (
+            <li key={c}>
+              <Link
+                to={`/search?category=${encodeURIComponent(c)}`}
+                className="group flex w-[88px] flex-col items-center gap-2.5 rounded-xl outline-none transition-transform hover:-translate-y-1 focus-visible:-translate-y-1"
+              >
+                {/* 아이콘은 32px 인라인 SVG이고 원형 배경 가운데에 놓입니다.
+                    평소부터 브랜드 초록입니다 — 회색으로 깔아뒀더니 첫 화면에서 가장
+                    눈에 띄어야 할 줄이 흐려 보였습니다. */}
+                <span className="flex h-[68px] w-[68px] items-center justify-center rounded-full border-2 border-transparent bg-secondary text-primary transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground group-focus-visible:border-primary group-focus-visible:bg-primary group-focus-visible:text-primary-foreground">
+                  {(() => {
+                    const Icon = CATEGORY_ICONS[c] ?? Leaf;
+                    return <Icon className="h-8 w-8" strokeWidth={2} aria-hidden />;
+                  })()}
+                </span>
+                <span className="text-[14.5px] font-bold transition-colors group-hover:text-primary group-focus-visible:text-primary">
+                  {c}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* ── 인기 프로그램 ─────────────────────────────────────────────────
+          실제 등록·승인된 프로그램입니다. 순위 기준(예약 수)을 채우는 배치가 아직
+          없어 서버가 「최근 게시순」으로 떨어뜨립니다 — 값이 전부 0인 채로 인기순을
+          쓰면 순서가 매번 바뀌기 때문입니다. */}
+      <section className={`${CONTAINER} pt-12`}>
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <h2 className="text-[20px] font-extrabold tracking-tight sm:text-[22px]">
+            지금 만나볼 수 있는 숲 프로그램
+          </h2>
+          <Link
+            to="/search"
+            className="shrink-0 text-[14px] font-bold text-primary hover:underline"
+          >
+            전체보기 →
+          </Link>
+        </div>
+
+        {featured === null ? (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: FEATURED_COUNT }).map((_, i) => (
+              <li key={i} className="overflow-hidden rounded-2xl border bg-card">
+                <div className="h-[200px] animate-pulse bg-muted" />
+                <div className="space-y-2 p-4">
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  <div className="h-4 w-full animate-pulse rounded bg-muted" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : featured.length === 0 ? (
+          <p className="rounded-2xl border bg-card px-6 py-12 text-center text-[14px] leading-relaxed text-muted-foreground">
+            아직 게시된 프로그램이 없습니다.
+            <br />
+            전문가가 프로그램을 올리고 심사를 통과하면 여기에 나타납니다.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {featured.map((p) => (
+              <li key={p.id}>
+                <Link
+                  to={`/programs/${p.id}`}
+                  className="group flex h-full flex-col overflow-hidden rounded-2xl border bg-card transition-all hover:-translate-y-1 hover:shadow-[0_12px_24px_rgba(31,92,67,0.10)]"
+                >
+                  <div className="relative h-[200px] bg-muted">
+                    <span className="absolute left-3 top-3 z-[2] rounded-full bg-foreground/75 px-2.5 py-1 text-[11.5px] font-semibold text-white backdrop-blur-sm">
+                      {p.category}
+                    </span>
+                    {/* 대표 사진은 imageUrls[0]입니다. 아직 썸네일이 없어 원본을 쓰므로
+                        지연 로딩합니다 — 게시 프로그램이 늘면 목록이 가장 비싼 화면이
+                        됩니다(20-6). */}
+                    {p.imageUrls?.[0] ? (
+                      <img
+                        src={p.imageUrls[0]}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-sm font-bold text-muted-foreground">
+                        사진 준비 중
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-4">
+                    <p className="mb-1.5 truncate text-[12.5px] text-muted-foreground">
+                      {p.location.address || "장소 미정"}
+                    </p>
+                    <p className="mb-3 line-clamp-2 min-h-[42px] text-[15px] font-bold leading-[1.4]">
+                      {p.title}
+                    </p>
+                    <div className="mt-auto flex items-center justify-between border-t pt-2.5">
+                      {/* 평점은 후기가 있을 때만 — 0.0점은 「나쁜 평가」로 읽힙니다(2-3) */}
+                      <span className="text-[13px] font-bold text-cta">
+                        {p.ratingCount > 0 ? `★ ${p.ratingAvg.toFixed(1)} (${p.ratingCount})` : ""}
+                      </span>
+                      <span className="text-[15px] font-extrabold text-primary">
+                        {p.price.toLocaleString()}원~
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* ── 전문가 배너 ───────────────────────────────────────────────────
+          시안의 「1분 만에 맞춤 견적 신청」 자리입니다. 견적 요청 기능이 없어서
+          지금 실제로 되는 것(전문가 가입 안내)으로 바꿨습니다. */}
+      <section className={`${CONTAINER} pt-14`}>
+        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl bg-gradient-to-br from-[#1F5C43] to-[#2D6A4F] px-8 py-10 text-white sm:px-12 lg:flex-row lg:items-center">
+          <div>
+            <h3 className="text-balance text-[21px] font-extrabold leading-snug sm:text-[24px]">
+              숲에서 일하는 전문가이신가요?
+            </h3>
+            <p className="mt-2.5 text-pretty text-[15px] leading-relaxed text-white/85">
+              내 프로그램을 올리고 우리 동네 주민들을 직접 만나보세요. 자격을 확인한
+              전문가만 등록할 수 있습니다.
+            </p>
+          </div>
+          <Link
+            to="/provider/apply"
+            className="shrink-0 rounded-xl bg-cta px-7 py-3.5 text-[15px] font-bold text-white transition-colors hover:bg-cta-hover"
+          >
+            전문가 가입 안내 보기
+          </Link>
+        </div>
+      </section>
+
+      {/* ── 후기 ──────────────────────────────────────────────────────────
+          TODO(정식 오픈 전): 아래는 화면 구성 확인용 예시 후기입니다. 실제 reviews
+          데이터가 0건인 상태로 정식 오픈하면 표시광고 문제가 되므로, 오픈 전에
+          실제 데이터 연동 또는 섹션 숨김 처리가 반드시 필요합니다 (스키마 9-7 ④). */}
+      <section className={`${CONTAINER} py-16`}>
+        <h2 className="mb-6 text-balance text-[20px] font-extrabold tracking-tight sm:text-[22px]">
+          숲이 준 일상의 변화, 직접 경험한 이야기
+        </h2>
+        <ul className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {REVIEWS.map((review) => (
+            <li
+              key={review.name}
+              className="flex flex-col justify-between rounded-2xl border bg-card px-6 py-6"
+            >
+              <div>
+                <div className="mb-3 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">
+                  ★★★★★
+                </div>
+                <p className="mb-6 text-pretty text-[14px] leading-[1.7]">"{review.text}"</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-[13px] font-bold text-primary"
+                  aria-hidden
+                >
+                  {review.initial}
+                </span>
+                <span className="min-w-0">
+                  <b className="block text-[14px] font-bold">{review.name}</b>
+                  <span className="text-[12.5px] text-muted-foreground">{review.program}</span>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+// 후기 섹션 예시 데이터 (화면 구성 확인용 — 위 TODO 참고)
 const REVIEWS = [
   {
     text: "아이와 유아숲체험에 참여했는데, 전문가분이 해설을 너무 쉽고 재미있게 해주셔서 아이가 숲을 보는 눈이 달라졌어요. 주말마다 또 가고 싶어해요!",
@@ -89,184 +372,3 @@ const REVIEWS = [
     initial: "이",
   },
 ];
-
-export default function HomePage() {
-  // 카테고리 카드 사진은 우리가 고정으로 넣습니다(v29) — 프로그램을 읽지 않습니다.
-  // 날씨도 여기서 빼냈습니다(v29 팀 확정) — 아래 프로모 카드 주석 참고.
-  return (
-    <div>
-      {/* 2. 히어로 — 배지 + 제목 + 부제 + 버튼 2개 */}
-      <section className="flex w-full flex-col items-center bg-gradient-to-b from-[#E8F0EC] to-[#F4F7F5] px-5 pb-[90px] pt-8 text-center">
-        {/* 알약 배경과 이모지를 뺐습니다 — 제목 위에 붙는 알약 라벨은 어느 사이트에나
-            있는 형태라, 배경을 빼고 글자만 남기는 편이 눈에 덜 걸립니다. */}
-        <p className="mb-3 text-[13px] font-bold text-primary">
-          산림복지전문가 직연결 플랫폼
-        </p>
-        <h1 className="mb-2 text-[24px] font-extrabold leading-[1.25] tracking-[-0.8px] text-foreground min-[769px]:text-[34px] min-[1201px]:whitespace-nowrap">
-          우리 동네 숲에서, 오늘 뭐 하지?
-        </h1>
-        <p className="mb-5 text-[15px] leading-snug text-[#4A5852] min-[1201px]:whitespace-nowrap">
-          국가공인 산림복지전문가와 함께하는 맞춤형 숲 프로그램
-        </p>
-        <div className="flex flex-wrap justify-center gap-3">
-          <Link
-            to="/search"
-            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary px-[26px] py-[11px] text-[14px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground"
-          >
-            프로그램 둘러보기
-          </Link>
-          {/* 지도는 홈에 두지 않고 검색 화면의 지도 토글로 진입 (스키마 9-7 ⑤) */}
-          <Link
-            to="/search?view=map&sort=near"
-            className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-card px-[26px] py-[11px] text-[14px] font-bold text-primary transition-colors hover:bg-secondary"
-          >
-            <MapPin className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            내 주변에서 찾기
-          </Link>
-        </div>
-      </section>
-
-      {/* 3. 사진 카드 5종 — 히어로 위로 겹쳐 올라오는 레이아웃 */}
-      <section className={`${WIDE_CONTAINER} relative z-10 -mt-14 mb-20`}>
-        <div className="grid grid-cols-1 gap-5 min-[481px]:grid-cols-2 min-[769px]:grid-cols-3 min-[1201px]:grid-cols-5">
-          {PHOTO_CARDS.map(({ category, desc, image, interimImage }) => (
-            <Link
-              key={category}
-              to={`/search?category=${encodeURIComponent(category)}`}
-              className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-[0_4px_16px_rgba(31,92,67,0.10)] transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_14px_32px_rgba(31,92,67,0.16)]"
-            >
-              <div className="relative max-h-[380px] w-full overflow-hidden bg-[#E2E7E3]" style={{ aspectRatio: "3 / 4" }}>
-                {/* 이미지 1장 고정 — 자동 슬라이드 금지 (스키마 9-7 ①).
-
-                    **등록된 프로그램의 사진을 쓰지 않습니다(v29 팀 확정).** 이 자리는
-                    우리가 고르는 고정 사진이어야 합니다 — 프로그램 사진을 끌어오면
-                    누가 무엇을 올리느냐에 따라 홈 첫 화면이 바뀌고, 통제할 수 없는
-                    사진이 브랜드 첫인상이 됩니다.
-
-                    `public/home/{파일명}.jpg`를 넣으면 그 파일이 쓰이고, 없으면 임시
-                    사진으로 대체됩니다 — 파일만 넣으면 되도록 코드 수정이 필요 없게
-                    해뒀습니다. */}
-                <img
-                  src={image}
-                  onError={(e) => {
-                    const el = e.currentTarget;
-                    if (el.dataset.interim === "on") return;
-                    el.dataset.interim = "on";
-                    el.src = interimImage;
-                  }}
-                  alt={`${category} 프로그램`}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-                />
-              </div>
-              <div className="flex flex-1 flex-col bg-card px-[18px] pb-[22px] pt-[18px]">
-                <div className="mb-1 flex w-full items-center justify-between">
-                  <div className="text-[20px] font-extrabold tracking-[-0.4px] text-foreground">
-                    {category}
-                  </div>
-                  <div
-                    className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-[13px] text-primary transition-all group-hover:translate-x-[3px] group-hover:bg-primary group-hover:text-white"
-                    aria-hidden
-                  >
-                    →
-                  </div>
-                </div>
-                <div className="text-[14px] leading-[1.4] text-muted-foreground">
-                  {desc[0]}
-                  <br />
-                  {desc[1]}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* 4. 프로모 2단 카드.
-
-          **날씨를 여기서 빼냈습니다(v29 팀 확정).** 첫 화면의 날씨는 「어디 날씨인지」가
-          정해지지 않습니다 — 위치를 물어보면 방문 즉시 권한 창이 뜨고, 안 물어보면
-          서울 기준값이라 대부분의 방문자에게 틀립니다. **날씨가 필요한 자리는 프로그램
-          상세**입니다. 거기서는 그 프로그램이 열리는 장소와 날짜가 정해져 있어 예약
-          판단에 실제로 쓰입니다(16번). */}
-      <section className={`${WIDE_CONTAINER} mb-[90px] grid grid-cols-1 gap-6 min-[1201px]:grid-cols-[1.8fr_1fr]`}>
-        <div className="flex min-h-[220px] flex-col justify-center gap-3 rounded-2xl bg-gradient-to-br from-[#1F5C43] to-[#163F2E] p-7 text-white min-[769px]:p-11">
-          <b className="block text-[20px] font-extrabold leading-[1.35] min-[769px]:text-[24px]">
-            우리 동네 숲에서 만나는
-            <br />
-            특별한 맞춤형 산림복지 서비스
-          </b>
-          <p className="text-[15px] leading-relaxed text-[#C3DFC2]">
-            검증된 산림복지전문가가 직접 기획하고 운영합니다. 프로그램마다 진행 장소의
-            날씨 예보를 함께 보여드립니다.
-          </p>
-        </div>
-
-        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-[#EFE4D6] bg-[#FAF6F0] px-7 py-9">
-          <div>
-            <b className="mb-1.5 block text-[19px] font-extrabold leading-[1.3] text-[#5A3E2B]">
-              산림복지전문가이신가요?
-            </b>
-            <p className="text-[14px] text-[#8C6A53]">
-              내 프로그램을 올리고 지역 주민들을 직접 만나보세요.
-            </p>
-          </div>
-          {/* 헤더의 같은 버튼과 목적지를 맞춥니다 — 공급자가 아닌 사용자를 등록 폼으로
-              바로 보내면 폼을 다 채운 뒤에야 권한 거부를 만납니다(15-1). */}
-          <Link
-            to="/provider/apply"
-            className="inline-block rounded-full bg-cta px-7 py-[13px] text-[14px] font-extrabold text-white transition-colors hover:bg-cta-hover"
-          >
-            전문가 가입 안내 보기
-          </Link>
-        </div>
-      </section>
-
-      {/* 5. 후기 섹션
-          TODO(정식 오픈 전): 아래는 화면 구성 확인용 예시 후기입니다. 실제 reviews
-          데이터가 0건인 상태로 정식 오픈하면 표시광고 문제가 되므로, 오픈 전에
-          실제 데이터 연동 또는 섹션 숨김 처리가 반드시 필요합니다 (스키마 9-7 ④). */}
-      <section className="w-full border-t border-border px-6 pb-[100px] pt-20 text-center">
-        <div className="mx-auto max-w-[1200px]">
-          {/* 뜻 없는 영문 장식(FEEL THE DIFFERENCE 배지 · Real Experiences)을 걷어냈습니다.
-              한국어 서비스라 읽히지 않고, 배지의 9px 글자는 어떤 화면에서도 읽을 수
-              없었습니다. #00852E는 브랜드 그린(#1F5C43)과 계열이 다른 세 번째
-              초록이기도 했습니다. */}
-          <h2 className="mb-12 text-balance text-[24px] font-extrabold tracking-[-0.6px] text-foreground min-[769px]:text-[30px]">
-            숲이 준 일상의 변화, 직접 경험한 이야기
-          </h2>
-
-          <div className="grid grid-cols-1 gap-5 text-left min-[901px]:grid-cols-3">
-            {REVIEWS.map((review) => (
-              <div
-                key={review.name}
-                className="flex flex-col justify-between rounded-xl border border-border bg-secondary/50 px-6 py-7"
-              >
-                <div>
-                  <div className="mb-3.5 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">
-                    ★★★★★
-                  </div>
-                  <p className="mb-7 text-pretty text-[14px] leading-[1.6] text-foreground">
-                    "{review.text}"
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-[13px] font-bold text-primary"
-                    aria-hidden
-                  >
-                    {review.initial}
-                  </div>
-                  <div>
-                    <b className="block text-[14px] font-bold text-foreground">{review.name}</b>
-                    <span className="text-[12px] text-muted-foreground">{review.program}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}

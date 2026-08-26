@@ -14,6 +14,7 @@ import { useSearchParams } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 import { CATEGORIES } from "../types/firestore";
 import FilterModal from "../components/FilterModal";
+import { REGION_KEYS } from "@/lib/sido";
 import ProgramCard from "../components/ProgramCard";
 import ProgramMap from "../components/ProgramMap";
 import { Input } from "@/components/ui/input";
@@ -55,12 +56,22 @@ export default function SearchPage() {
   // 조용히 무시합니다 — 어차피 서버가 거부하는 값입니다.
   const initialFrom = params.get("from");
   const initialTo = params.get("to");
+  // 지역·인원도 URL로 들어옵니다 — 홈의 통합 검색이 이 값으로 넘겨보냅니다.
+  // 모르는 값은 조용히 무시합니다(주소를 직접 고친 경우).
+  const initialRegion = params.get("region");
+  const initialHeadcount = params.get("headcount");
   const [filters, setFilters] = useState<ProgramFilters>(() => {
     const from = initialFrom && DATE_RE.test(initialFrom) ? initialFrom : null;
     const to = from && initialTo && DATE_RE.test(initialTo) ? initialTo : null;
+    const region = (REGION_KEYS as string[]).includes(initialRegion ?? "")
+      ? (initialRegion as ProgramFilters["region"])
+      : null;
+    const headcountNum = Number(initialHeadcount);
     return {
       ...DEFAULT_FILTERS,
       categories: initialCategory ? [initialCategory] : [],
+      region,
+      headcount: Number.isInteger(headcountNum) && headcountNum > 0 ? headcountNum : null,
       from,
       to,
     };
