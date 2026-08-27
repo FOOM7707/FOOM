@@ -22,11 +22,13 @@ import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { distanceKm, type LatLng } from "@/lib/geo";
 import { ApiError, apiFetch } from "@/lib/api";
-import type { Program } from "@/types/firestore";
+import type { Program, Sido } from "@/types/firestore";
+import { SIDO_LABEL } from "@/lib/districts";
 import {
   DEFAULT_FILTERS,
   countActiveFilters,
   toSearchQuery,
+  type PlaceFilter,
   type ProgramFilters,
   type SearchRow,
   type SortKey,
@@ -49,6 +51,21 @@ export default function SearchPage() {
   // 검색어도 주소로 들어옵니다 — 홈의 지역 칸에 권역이 아닌 지명을 치면
   // 그 글자가 여기로 넘어옵니다(홈의 `submitSearch` 참고).
   const [keyword, setKeyword] = useState(() => params.get("q") ?? "");
+
+  /**
+   * 홈에서 고른 지역(시도 + 지역 이름). 권역 필터보다 좁아서 **필터 모델에 넣지
+   * 않고** 따로 들고 다니며 칩으로 보여줍니다(`PlaceFilter` 주석).
+   *
+   * 모르는 시도 코드는 조용히 무시합니다 — 주소를 직접 고친 경우입니다.
+   */
+  const [place, setPlace] = useState<PlaceFilter | null>(() => {
+    const sido = params.get("sido");
+    if (sido == null || SIDO_LABEL[sido as Sido] == null) return null;
+    const short = SIDO_LABEL[sido as Sido];
+    const localityRaw = params.get("locality");
+    const locality = localityRaw != null && localityRaw.trim() !== "" ? localityRaw.trim() : null;
+    return { sido, locality, label: locality ? `${short} ${locality}` : short };
+  });
 
   // 카테고리는 **다중 선택**입니다(17-3). 빈 배열이 「전체」이고 별도 값을 두지
   // 않습니다 — 「전체」를 값으로 만들면 "전체이면서 숲해설"인 상태가 생깁니다.
@@ -113,8 +130,8 @@ export default function SearchPage() {
 
   const search = useCallback(
     async (f: ProgramFilters, s: SortKey, q: string): Promise<SearchResponse> =>
-      apiFetch<SearchResponse>(`/programs/search?${toSearchQuery(f, s, q)}`),
-    []
+      apiFetch<SearchResponse>(`/programs/search?${toSearchQuery(f, s, q, place)}`),
+    [place]
   );
 
   // 검색어는 타이핑 중이라 **잠깐 기다렸다** 요청합니다. 글자마다 보내면 요청이
@@ -227,6 +244,27 @@ export default function SearchPage() {
             onChange={(e) => setKeyword(e.target.value)}
           />
 
+          {/* 걸린 지역을 눈에 보이게 둡니다 — 홈에서 고른 조건이 화면에 안 보이면
+              「왜 결과가 적은지」를 알 수 없고, 넓히는 방법도 없습니다. */}
+          {place && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlace(null);
+                const next = new URLSearchParams(params);
+                next.delete("sido");
+                next.delete("locality");
+                setParams(next, { replace: true });
+              }}
+              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-secondary px-4 text-[14px] font-semibold text-secondary-foreground"
+            >
+              {place.label}
+              <span aria-hidden className="text-[15px] leading-none">
+                ×
+              </span>
+              <span className="sr-only">지역 조건 지우기</span>
+            </button>
+          )}
         </div>
 
         {status === "denied" && (
@@ -371,9 +409,13 @@ export default function SearchPage() {
           ))}
           {!loading && filtered.length === 0 && (
             <p className="col-span-full py-10 text-muted-foreground">
-              {activeFilterCount > 0 || filters.categories.length > 0 || keyword.trim() !== ""
-                ? "선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요."
-                : "아직 게시된 프로그램이 없습니다. 심사를 통과한 프로그램이 여기 나타납니다."}
+              {place
+                ? `${place.label}에는 아직 등록된 프로그램이 없습니다 — 지역 조건을 지우면 전국에서 찾습니다.`
+                : activeFilterCount > 0 ||
+                    filters.categories.length > 0 ||
+                    keyword.trim() !== ""
+                  ? "선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요."
+                  : "아직 게시된 프로그램이 없습니다. 심사를 통과한 프로그램이 여기 나타납니다."}
             </p>
           )}
         </div>

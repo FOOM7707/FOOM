@@ -111,16 +111,38 @@ const SORT_TO_SERVER: Record<SortKey, string> = {
  * **기본값은 보내지 않습니다** — 주소창과 요청이 짧아지고, 서버 기본값과 어긋날
  * 여지도 줄어듭니다.
  */
+/**
+ * 홈의 지역 칸에서 고른 곳 — 권역(`ProgramFilters.region`)보다 좁습니다.
+ *
+ * **필터 모델에 넣지 않았습니다.** 상세 필터 모달은 권역 단위로 고르는 화면이고,
+ * 여기에 시도·지역 이름을 섞으면 「모달에서 경상을 골랐는데 사상구가 함께 걸린」
+ * 상태를 화면에 표현할 방법이 없어집니다. 검색 화면이 따로 들고 다니며 칩으로
+ * 보여주고, 칩을 지우면 사라집니다.
+ */
+export interface PlaceFilter {
+  /** 시도 코드 */
+  sido: string;
+  /** 시·군·구·읍·면·동 이름. null이면 시도 전체 */
+  locality: string | null;
+  /** 화면에 보여줄 이름 — 「부산 사상구」 */
+  label: string;
+}
+
 export function toSearchQuery(
   filters: ProgramFilters,
   sort: SortKey,
-  keyword: string
+  keyword: string,
+  place?: PlaceFilter | null
 ): string {
   const q = new URLSearchParams();
   const trimmed = keyword.trim();
   if (trimmed !== "") q.set("keyword", trimmed);
   if (filters.categories.length > 0) q.set("categories", filters.categories.join(","));
   if (filters.region) q.set("region", filters.region);
+  if (place) {
+    q.set("sido", place.sido);
+    if (place.locality) q.set("locality", place.locality);
+  }
   if (filters.priceMin > 0) q.set("priceMin", String(filters.priceMin));
   if (filters.priceMax < PRICE_MAX) q.set("priceMax", String(filters.priceMax));
   if (filters.headcount != null) q.set("headcount", String(filters.headcount));
