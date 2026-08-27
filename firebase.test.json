@@ -33,6 +33,12 @@
     "storage": {
       "port": 19199
     },
+    "eventarc": {
+      "port": 19299
+    },
+    "tasks": {
+      "port": 19499
+    },
     "hub": {
       "port": 14400
     },

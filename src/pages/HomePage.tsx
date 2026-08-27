@@ -23,15 +23,13 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { CATEGORIES } from "@/types/firestore";
-import {
-  DEFAULT_FILTERS,
-  toSearchQuery,
-  type PlaceFilter,
-  type SearchRow,
-} from "@/lib/programFilter";
+import { DEFAULT_FILTERS, toSearchQuery, type SearchRow } from "@/lib/programFilter";
 import { Select } from "@/components/ui/select";
 import DateRangeCalendar from "@/components/DateRangeCalendar";
-import RegionSearchField, { type ProgramDistrict } from "@/components/RegionSearchField";
+import RegionSearchField, {
+  type ProgramDistrict,
+  type RegionPick,
+} from "@/components/RegionSearchField";
 import { matchRegion } from "@/lib/regionMatch";
 
 const CONTAINER = "mx-auto w-full max-w-[1140px] px-5";
@@ -92,7 +90,7 @@ export default function HomePage() {
 
   const [region, setRegion] = useState("");
   /** 목록에서 고른 지역. 직접 친 글자만 있으면 null입니다 */
-  const [place, setPlace] = useState<PlaceFilter | null>(null);
+  const [pick, setPick] = useState<RegionPick | null>(null);
   const [category, setCategory] = useState("");
   const [headcount, setHeadcount] = useState("");
   const [from, setFrom] = useState<string | null>(null);
@@ -129,14 +127,17 @@ export default function HomePage() {
     const p = new URLSearchParams();
     if (category) p.set("category", category);
 
-    // 지역은 세 갈래로 넘어갑니다.
-    // ① 목록에서 고른 곳 → 시도(+지역 이름). 가장 정확합니다
-    // ② 고르지 않고 「충청」·「수도권」처럼 권역 이름을 친 경우 → 권역
-    // ③ 그 밖의 글자(「양평」·「성산일출봉」) → **검색어**로 넘깁니다. 조용히
+    // 지역은 네 갈래로 넘어갑니다.
+    // ① 기본 목록의 권역을 고른 경우 → 권역(전과 같습니다)
+    // ② 쳐서 찾은 시도·시군구·동을 고른 경우 → 시도(+지역 이름). 가장 좁습니다
+    // ③ 고르지 않고 「수도권」처럼 권역으로 읽히는 말을 친 경우 → 권역
+    // ④ 그 밖의 글자(「양평」·「성산일출봉」) → **검색어**로 넘깁니다. 조용히
     //    버리면 고른 조건이 무시된 채 전체 결과가 나와 왜 안 걸렸는지 알 수 없습니다
-    if (place) {
-      p.set("sido", place.sido);
-      if (place.locality) p.set("locality", place.locality);
+    if (pick?.region) {
+      p.set("region", pick.region);
+    } else if (pick?.sido) {
+      p.set("sido", pick.sido);
+      if (pick.locality) p.set("locality", pick.locality);
     } else if (region.trim() !== "") {
       const matchedRegion = matchRegion(region);
       if (matchedRegion) p.set("region", matchedRegion);
@@ -179,7 +180,7 @@ export default function HomePage() {
             <RegionSearchField
               value={region}
               onChange={setRegion}
-              onPick={setPlace}
+              onPick={setPick}
               programDistricts={districts}
               placeholder="어느 지역을 찾으시나요?"
               className={

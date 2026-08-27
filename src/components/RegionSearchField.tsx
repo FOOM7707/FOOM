@@ -1,15 +1,16 @@
 /**
- * 지역 칸 — **목록에서 고르기와 직접 입력이 함께 됩니다** (2026-08-27, 팀 요청).
+ * 지역 칸 — **평소에는 권역 7개만 보여주고, 치면 전국에서 찾습니다** (2026-08-27).
  *
- * 「사상구」만 쳐도 「부산 사상구」로 알아듣습니다. 후보는 두 곳에서 옵니다.
+ * 목록을 그냥 열었을 때 「서울 종로구」·「서울 중구」가 25줄 늘어서면, 지역을 훑어
+ * 고르려던 사람이 **전국 245개를 스크롤로 뒤져야** 합니다. 그래서 기본 목록은 전과
+ * 같이 **권역**(서울 / 경기·인천 / 강원 / 충청 / 전라 / 경상 / 제주)뿐이고, 전국
+ * 데이터는 **뒤에서 받칩니다** — 「사상구」라고 치는 순간 나옵니다.
  *
- * ① **전국 행정구역 목록**(`src/lib/districts.ts`) — 시·도 17개와 시·군·구 228개.
- *    프로그램이 없는 지역도 나옵니다(전국 서비스가 되면 그때 채워질 자리입니다).
- * ② **프로그램이 있는 지역**(검색 응답의 `districts`) — 읍·면·동까지 내려옵니다.
- *    전국 동 이름은 3,500개라 파일로 들지 않고, 우리가 가진 곳만 서버가 알려줍니다.
- *
- * **②를 위에 올리고 개수를 함께 보여줍니다.** 프로그램이 없는 지역을 고르면 결과가
- * 0건인데, 그걸 고르기 전에 알려주는 편이 낫습니다 — 0건은 고장으로 읽힙니다.
+ * 치면 세 곳에서 후보를 찾습니다.
+ * ① **권역** — 「충청」·「경상」처럼 우리 묶음 이름을 친 경우
+ * ② **프로그램이 있는 지역**(검색 응답의 `districts`) — 읍·면·동까지. 개수를 붙여
+ *    위에 올립니다. 없는 지역을 골라 0건을 보면 고장으로 읽힙니다
+ * ③ **전국 행정구역 목록**(`src/lib/districts.ts`) — 시·도 17 + 시·군·구 228
  *
  * 목록에 없는 말(「양평」·「성산일출봉」)을 쳐도 버리지 않습니다. 홈이 그 글자를
  * **검색어로** 넘깁니다 — 조용히 버리면 왜 안 걸렸는지 알 방법이 없습니다.
@@ -23,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DISTRICTS, SIDO_LABEL } from "@/lib/districts";
-import type { PlaceFilter } from "@/lib/programFilter";
+import { REGION_KEYS, type RegionKey } from "@/lib/sido";
 import type { Sido } from "@/types/firestore";
 
 /** 검색 응답이 알려주는 「프로그램이 있는 지역」 */
@@ -33,18 +34,29 @@ export interface ProgramDistrict {
   count: number;
 }
 
-interface Candidate extends PlaceFilter {
-  /** 게시된 프로그램 수 — 전국 목록에서 온 후보는 없습니다 */
+/**
+ * 고른 지역. **두 갈래입니다** — 권역이면 `region`, 그보다 좁으면 `sido`(+`locality`).
+ * 검색에 실리는 조건이 서로 달라서 한 모양으로 합치지 않았습니다.
+ */
+export interface RegionPick {
+  label: string;
+  /** 권역을 고른 경우 */
+  region?: RegionKey;
+  /** 시도를 고른 경우 */
+  sido?: string;
+  /** 시·군·구·읍·면·동을 고른 경우. 시도 전체면 null */
+  locality?: string | null;
+  /** 게시된 프로그램 수 — 전국 목록에서 온 후보에는 없습니다 */
   count?: number;
 }
 
 /**
- * 한 번에 보여줄 후보 수. 228개를 다 그리면 목록이 화면을 덮고, 스크롤을 내려
- * 찾는 것은 「목록에서 고르기」의 이점을 없앱니다 — 더 치면 좁혀집니다.
+ * 치는 중일 때 한 번에 보여줄 후보 수. 전국 245개를 다 그리면 목록이 화면을 덮고,
+ * 스크롤로 찾는 것은 「목록에서 고르기」의 이점을 없앱니다 — 더 치면 좁혀집니다.
  */
 const MAX_VISIBLE = 8;
 
-/** 공백·구분점을 떼고 비교합니다 — 「경기 수원시」와 「경기수원시」가 같은 값입니다 */
+/** 공백·구분점을 떼고 비교합니다 — 「경기 인천」과 「경기·인천」이 같은 값입니다 */
 function normalize(text: string): string {
   return text.replace(/[\s·/,]/g, "");
 }
@@ -57,7 +69,7 @@ interface Props {
    * 목록에서 고른 지역. 글자를 다시 치면 null로 비웁니다 — 고른 뒤에 글자를 바꿨는데
    * 옛 선택이 남아 있으면 화면과 실제로 걸리는 조건이 어긋납니다.
    */
-  onPick: (pick: PlaceFilter | null) => void;
+  onPick: (pick: RegionPick | null) => void;
   /** 검색 응답의 `districts` */
   programDistricts?: ProgramDistrict[];
   /** 입력칸에 그대로 붙는 클래스 — 홈의 검색 막대는 테두리 없는 형태를 씁니다 */
@@ -78,15 +90,21 @@ export default function RegionSearchField({
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  /** 프로그램이 있는 지역 먼저, 그 뒤에 전국 목록. 같은 지역은 앞의 것만 남깁니다 */
-  const all = useMemo<Candidate[]>(() => {
-    const mine: Candidate[] = (programDistricts ?? []).map((d) => ({
+  /** 기본 목록 — 전과 같은 권역 7개 */
+  const regions = useMemo<RegionPick[]>(
+    () => REGION_KEYS.map((r) => ({ label: r, region: r })),
+    []
+  );
+
+  /** 치는 중일 때 뒤에서 받치는 목록. 같은 지역은 앞의 것(개수가 있는 쪽)만 남깁니다 */
+  const backing = useMemo<RegionPick[]>(() => {
+    const mine: RegionPick[] = (programDistricts ?? []).map((d) => ({
       sido: d.sido,
       locality: d.name,
       label: `${SIDO_LABEL[d.sido as Sido] ?? ""} ${d.name}`.trim(),
       count: d.count,
     }));
-    const nationwide: Candidate[] = DISTRICTS.map((d) => ({
+    const nationwide: RegionPick[] = DISTRICTS.map((d) => ({
       sido: d.sido,
       locality: d.name,
       label: d.label,
@@ -101,15 +119,20 @@ export default function RegionSearchField({
     });
   }, [programDistricts]);
 
-  const matched = useMemo(() => {
-    const q = normalize(value);
-    if (q === "") return all;
-    return all.filter(
-      (c) => normalize(c.label).includes(q) || normalize(c.locality ?? "").includes(q)
-    );
-  }, [all, value]);
+  const typed = normalize(value);
 
-  const visible = matched.slice(0, MAX_VISIBLE);
+  /**
+   * 아무것도 치지 않았으면 권역만. 치면 권역 → 프로그램 있는 곳 → 전국 순서로
+   * 좁힙니다(`backing`이 이미 그 순서입니다).
+   */
+  const matched = useMemo<RegionPick[]>(() => {
+    if (typed === "") return regions;
+    const hit = (c: RegionPick) =>
+      normalize(c.label).includes(typed) || normalize(c.locality ?? "").includes(typed);
+    return [...regions.filter(hit), ...backing.filter(hit)];
+  }, [typed, regions, backing]);
+
+  const visible = typed === "" ? matched : matched.slice(0, MAX_VISIBLE);
   const hidden = matched.length - visible.length;
 
   // 다른 곳을 누르면 닫습니다. 입력칸의 blur로 닫으면 **목록 항목을 누르는 순간**
@@ -123,9 +146,9 @@ export default function RegionSearchField({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  function pick(c: Candidate) {
+  function pick(c: RegionPick) {
     onChange(c.label);
-    onPick({ sido: c.sido, locality: c.locality, label: c.label });
+    onPick(c);
     setOpen(false);
   }
 
@@ -175,7 +198,7 @@ export default function RegionSearchField({
         <div className="absolute left-0 top-[calc(100%+6px)] z-30 w-[15rem] overflow-hidden rounded-xl border bg-card text-left shadow-[0_10px_24px_rgba(0,0,0,0.10)]">
           <ul role="listbox" className="max-h-72 overflow-auto py-1.5">
             {visible.map((c) => (
-              <li key={`${c.sido}|${c.locality ?? ""}`}>
+              <li key={c.region ?? `${c.sido}|${c.locality ?? ""}`}>
                 <button
                   type="button"
                   role="option"
@@ -199,10 +222,16 @@ export default function RegionSearchField({
               </li>
             )}
           </ul>
-          {hidden > 0 && (
-            <p className="border-t px-4 py-2 text-[12px] text-muted-foreground">
-              {hidden}곳 더 있습니다 — 더 치면 좁혀집니다
+          {typed === "" ? (
+            <p className="border-t px-4 py-2 text-[12px] leading-relaxed text-muted-foreground">
+              시·군·구도 찾습니다 — 「사상구」처럼 직접 쳐 보세요
             </p>
+          ) : (
+            hidden > 0 && (
+              <p className="border-t px-4 py-2 text-[12px] text-muted-foreground">
+                {hidden}곳 더 있습니다 — 더 치면 좁혀집니다
+              </p>
+            )
           )}
         </div>
       )}
