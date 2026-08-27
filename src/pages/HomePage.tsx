@@ -11,13 +11,26 @@
 
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Baby, Building, Flower2, Footprints, Leaf, Search } from "lucide-react";
+import {
+  Baby,
+  Building,
+  CalendarDays,
+  Flower2,
+  Footprints,
+  Leaf,
+  Search,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { CATEGORIES } from "@/types/firestore";
 import { DEFAULT_FILTERS, toSearchQuery, type SearchRow } from "@/lib/programFilter";
-import { REGION_KEYS } from "@/lib/sido";
 import { Select } from "@/components/ui/select";
+import DateRangeCalendar from "@/components/DateRangeCalendar";
+import RegionSearchField, {
+  type ProgramDistrict,
+  type RegionPick,
+} from "@/components/RegionSearchField";
+import { matchRegion } from "@/lib/regionMatch";
 
 const CONTAINER = "mx-auto w-full max-w-[1140px] px-5";
 
@@ -57,6 +70,16 @@ const CATEGORY_LIST = ["숲해설", "산림치유", "유아숲체험", "숲길�
 interface SearchResponse {
   programs: SearchRow[];
   total: number;
+  /** 회차가 있는 날 — 달력의 점 */
+  calendarDates?: string[];
+  /** 게시된 프로그램이 있는 지역 — 지역 칸 자동완성 */
+  districts?: ProgramDistrict[];
+}
+
+/** 「8월 29일」 — 검색 막대에 고른 기간을 보여줄 때 씁니다 */
+function dateLabel(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${Number(m)}월 ${Number(d)}일`;
 }
 
 /** 인기 프로그램에 보여줄 장수. 한 줄(4칸)을 채웁니다 */
@@ -66,18 +89,29 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const [region, setRegion] = useState("");
+  /** 목록에서 고른 지역. 직접 친 글자만 있으면 null입니다 */
+  const [pick, setPick] = useState<RegionPick | null>(null);
   const [category, setCategory] = useState("");
   const [headcount, setHeadcount] = useState("");
+  const [from, setFrom] = useState<string | null>(null);
+  const [to, setTo] = useState<string | null>(null);
+  const [dateOpen, setDateOpen] = useState(false);
 
   /** 인기 프로그램 — 판정은 서버가 합니다(검색 화면과 같은 경로) */
   const [featured, setFeatured] = useState<SearchRow[] | null>(null);
+  /** 달력의 점과 지역 자동완성 — 같은 응답이 함께 내려줍니다 */
+  const [calendarDates, setCalendarDates] = useState<string[]>([]);
+  const [districts, setDistricts] = useState<ProgramDistrict[]>([]);
 
   useEffect(() => {
     let alive = true;
     const query = toSearchQuery(DEFAULT_FILTERS, "인기순", "");
     apiFetch<SearchResponse>(`/programs/search?${query}`)
       .then((res) => {
-        if (alive) setFeatured(res.programs.slice(0, FEATURED_COUNT));
+        if (!alive) return;
+        setFeatured(res.programs.slice(0, FEATURED_COUNT));
+        setCalendarDates(res.calendarDates ?? []);
+        setDistricts(res.districts ?? []);
       })
       // 첫 화면이 오류로 깨지지 않게 합니다 — 목록이 비면 아래에서 안내로 대체됩니다.
       .catch(() => {
@@ -92,7 +126,29 @@ export default function HomePage() {
     e.preventDefault();
     const p = new URLSearchParams();
     if (category) p.set("category", category);
-    if (region) p.set("region", region);
+
+    // 지역은 네 갈래로 넘어갑니다.
+    // ① 기본 목록의 권역을 고른 경우 → 권역(전과 같습니다)
+    // ② 쳐서 찾은 시도·시군구·동을 고른 경우 → 시도(+지역 이름). 가장 좁습니다
+    // ③ 고르지 않고 「수도권」처럼 권역으로 읽히는 말을 친 경우 → 권역
+    // ④ 그 밖의 글자(「양평」·「성산일출봉」) → **검색어**로 넘깁니다. 조용히
+    //    버리면 고른 조건이 무시된 채 전체 결과가 나와 왜 안 걸렸는지 알 수 없습니다
+    if (pick?.region) {
+      p.set("region", pick.region);
+    } else if (pick?.sido) {
+      p.set("sido", pick.sido);
+      if (pick.locality) p.set("locality", pick.locality);
+    } else if (region.trim() !== "") {
+      const matchedRegion = matchRegion(region);
+      if (matchedRegion) p.set("region", matchedRegion);
+      else p.set("q", region.trim());
+    }
+
+    if (from) {
+      p.set("from", from);
+      // 시작만 고른 상태로 검색하면 그 하루로 봅니다 — 서버 판정과 같은 규칙입니다.
+      p.set("to", to ?? from);
+    }
     if (headcount) p.set("headcount", headcount);
     navigate(`/search?${p.toString()}`);
   }
@@ -117,23 +173,79 @@ export default function HomePage() {
             줄 높이로 자리를 잡습니다. */}
         <form
           onSubmit={submitSearch}
-          className="mx-auto mt-8 flex w-full max-w-[820px] flex-col gap-1 rounded-2xl border bg-card p-3 shadow-[0_12px_28px_rgba(31,92,67,0.08)] lg:flex-row lg:items-stretch lg:gap-0 lg:rounded-full lg:p-2 lg:pl-8"
+          className="relative mx-auto mt-8 flex w-full max-w-[940px] flex-col gap-1 rounded-2xl border bg-card p-3 shadow-[0_12px_28px_rgba(31,92,67,0.08)] lg:flex-row lg:items-stretch lg:gap-0 lg:rounded-full lg:p-2 lg:pl-8"
         >
           <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
             <span className="mb-0.5 block text-[12px] font-bold text-primary">지역</span>
-            <Select
+            <RegionSearchField
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className={SEARCH_CONTROL + (region === "" ? " font-normal text-muted-foreground" : "")}
-            >
-              <option value="">어느 지역을 찾으시나요?</option>
-              {REGION_KEYS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </Select>
+              onChange={setRegion}
+              onPick={setPick}
+              programDistricts={districts}
+              placeholder="어느 지역을 찾으시나요?"
+              className={
+                SEARCH_CONTROL + " outline-none placeholder:font-normal placeholder:text-muted-foreground"
+              }
+            />
           </label>
+
+          {/* 날짜 — 검색 화면 필터의 달력을 그대로 씁니다(오늘~+90일, 최대 31일).
+              **누르면 이 자리 아래로 펼칩니다.** 단계별로 화면을 넘기는 방식은 쓰지
+              않았습니다 — 지역만 정하는 사람과 날짜만 정하는 사람이 대부분인데,
+              단계로 만들면 앞 칸을 비운 사람이 다음으로 갈 수 없습니다. */}
+          <div className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
+            <span className="mb-0.5 block text-[12px] font-bold text-primary">날짜</span>
+            <button
+              type="button"
+              onClick={() => setDateOpen((v) => !v)}
+              className="flex h-[26px] w-full items-center gap-1.5 bg-transparent text-left text-[14.5px] font-semibold leading-[26px] outline-none"
+            >
+              <CalendarDays className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {from ? (
+                <span className="truncate">
+                  {dateLabel(from)}
+                  {to && to !== from ? ` ~ ${dateLabel(to)}` : ""}
+                </span>
+              ) : (
+                <span className="truncate font-normal text-muted-foreground">
+                  언제 가시나요?
+                </span>
+              )}
+            </button>
+          </div>
+
+          {dateOpen && (
+            <div className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-[min(680px,92vw)] -translate-x-1/2 rounded-2xl border bg-card p-4 text-left shadow-[0_14px_32px_rgba(0,0,0,0.12)]">
+              <DateRangeCalendar
+                from={from}
+                to={to}
+                onChange={(nextFrom, nextTo) => {
+                  setFrom(nextFrom);
+                  setTo(nextTo);
+                }}
+                markedDates={calendarDates}
+              />
+              <div className="mt-3 flex items-center justify-between border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFrom(null);
+                    setTo(null);
+                  }}
+                  className="text-[13px] text-muted-foreground underline"
+                >
+                  날짜 지우기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateOpen(false)}
+                  className="rounded-full bg-primary px-5 py-2 text-[13.5px] font-bold text-primary-foreground"
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          )}
 
           <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
             <span className="mb-0.5 block text-[12px] font-bold text-primary">프로그램 종류</span>

@@ -45,6 +45,18 @@ export interface SearchFilters {
   categories: string[];
   /** null = 전국 */
   region: string | null;
+  /**
+   * 시도 코드 하나. 홈의 지역 칸이 「부산」·「부산 사상구」를 고르면 들어옵니다.
+   * `region`(권역)보다 좁고, 둘이 함께 오면 둘 다 통과해야 합니다.
+   */
+  sido: string | null;
+  /**
+   * 시·군·구·읍·면·동 이름 하나(「사상구」·「화서동」). **주소에 이 이름이 들어
+   * 있는지**로 봅니다 — 저장된 값이 시도 코드뿐이라 그보다 좁은 판정은 주소
+   * 문자열밖에 근거가 없습니다. 같은 이름이 여러 시도에 있으므로(중구·남구)
+   * **`sido`와 함께 와야 뜻이 정해집니다.**
+   */
+  locality: string | null;
   priceMin: number;
   priceMax: number;
   /** 함께 가는 인원. null = 상관없음 */
@@ -61,6 +73,31 @@ export interface SearchFilters {
   to: string | null;
   sort: SortKey;
   limit: number;
+}
+
+/**
+ * 유효한 시도 코드 — 권역 매핑표에서 뽑습니다. 17개를 따로 적으면 표와 어긋날 수
+ * 있고, 어긋나면 「그 지역만 검색에서 빠지는」 형태로 나타납니다.
+ */
+const ALL_SIDO = new Set<string>(Object.values(REGION_TO_SIDO).flat());
+
+/**
+ * 주소에서 시·군·구·읍·면·동 이름만 뽑습니다 — 응답의 `districts`에 씁니다.
+ *
+ * **시도 이름 목록을 따로 들지 않습니다.** 시도는 전부 `도`·`특별시`·`광역시`·
+ * `특별자치시`로 끝나거나 짧은 형태(「경기」·「서울」)라, 아래 접미사 규칙만으로
+ * 걸러집니다 — 목록을 또 만들면 시도 표와 어긋날 자리가 하나 더 생깁니다.
+ *
+ * 번지·건물번호(숫자 섞인 토큰)와 도로명(`…로`·`…길`)은 지역 이름이 아니라 뺍니다.
+ */
+export function extractDistrictNames(address: unknown): string[] {
+  if (typeof address !== "string") return [];
+  return address
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t !== "" && !/\d/.test(t))
+    .filter((t) => /(시|군|구|읍|면|동)$/.test(t))
+    .filter((t) => !/(특별시|광역시|특별자치시)$/.test(t));
 }
 
 function num(value: unknown, fallback: number): number {
@@ -126,6 +163,16 @@ export function parseSearchQuery(query: Record<string, unknown>, now = new Date(
     throw new AppError("invalid-argument", "알 수 없는 지역입니다");
   }
 
+  const sidoRaw = query.sido == null || query.sido === "" ? null : String(query.sido);
+  if (sidoRaw != null && !ALL_SIDO.has(sidoRaw)) {
+    throw new AppError("invalid-argument", "알 수 없는 지역입니다");
+  }
+
+  // 지역 이름은 목록으로 검증하지 않습니다 — 전국 행정구역 목록을 서버에도 두면
+  // 화면과 두 벌이 되고, 통합·신설이 있을 때 한쪽만 고쳐 「검색되던 지역이 갑자기
+  // 안 되는」 상태가 됩니다. 길이만 자릅니다(주소 포함 검사라 위험이 없습니다).
+  const localityRaw = typeof query.locality === "string" ? query.locality.trim() : "";
+
   const sortRaw = String(query.sort ?? "popular");
   const sort: SortKey = (["popular", "price_asc", "recent", "rating"] as const).includes(
     sortRaw as SortKey
@@ -143,6 +190,8 @@ export function parseSearchQuery(query: Record<string, unknown>, now = new Date(
     keyword: keywordRaw === "" ? null : keywordRaw.slice(0, 60),
     categories,
     region,
+    sido: sidoRaw,
+    locality: localityRaw === "" ? null : localityRaw.slice(0, 20),
     priceMin: Math.max(0, num(query.priceMin, 0)),
     priceMax: Math.min(PRICE_MAX, num(query.priceMax, PRICE_MAX)),
     headcount,
@@ -159,6 +208,19 @@ export function parseSearchQuery(query: Record<string, unknown>, now = new Date(
 
 interface Candidate extends Record<string, unknown> {
   id: string;
+}
+
+/**
+ * 지역 이름 — 주소에 그 이름이 들어 있는지 봅니다.
+ *
+ * **공백을 떼고 비교합니다.** 「부산진구」가 주소에 「부산진 구」로 저장될 일은
+ * 없지만, 화면에서 넘어온 값에 공백이 섞이는 것은 막을 수 없습니다.
+ */
+function matchesLocality(program: Candidate, locality: string): boolean {
+  const location = (program.location ?? {}) as { address?: string };
+  if (typeof location.address !== "string") return false;
+  const strip = (v: string) => v.replace(/\s+/g, "");
+  return strip(location.address).includes(strip(locality));
 }
 
 function inRegion(sido: unknown, region: string): boolean {
@@ -210,6 +272,8 @@ export function matchesFilters(program: Candidate, f: SearchFilters): boolean {
     return false;
   }
   if (f.region && !inRegion(program.sido, f.region)) return false;
+  if (f.sido && program.sido !== f.sido) return false;
+  if (f.locality && !matchesLocality(program, f.locality)) return false;
 
   const price = (program.price as number) ?? 0;
   if (price < f.priceMin) return false;
@@ -346,6 +410,20 @@ export interface SearchResult {
    * 상태에서는 「점이 있는데 결과 0건」이 생길 수 있고, 그때는 안내 문구로 대응합니다.
    */
   calendarDates: string[];
+  /**
+   * **게시된 프로그램이 있는 지역** — 홈의 지역 칸 자동완성에 씁니다.
+   *
+   * 전국 행정구역 목록은 화면이 파일로 들고 있는데(`src/lib/districts.ts`), 그건
+   * 시·군·구까지입니다. **읍·면·동은 전국을 넣으면 3,500개**가 되므로, 우리가
+   * 실제로 프로그램을 가진 동 이름만 여기서 알려줍니다 — 이 함수가 어차피 게시
+   * 프로그램 전체를 읽으므로 추가 비용이 없습니다(`calendarDates`와 같은 방식).
+   *
+   * `count`가 있어 화면이 **프로그램이 있는 지역을 위에 올릴 수** 있습니다.
+   * 고른 지역에 프로그램이 없으면 결과가 0건인데, 그걸 미리 보여주는 편이 낫습니다.
+   *
+   * **필터와 무관한 전체 게시 프로그램 기준**입니다(`calendarDates`와 같은 한계).
+   */
+  districts: Array<{ sido: string; name: string; count: number }>;
 }
 
 export async function searchPrograms(
@@ -380,10 +458,29 @@ export async function searchPrograms(
     }
   }
 
+  // 지역 이름 모으기 — 한 프로그램이 「수원시」·「팔달구」·「화서동」 셋에 함께
+  // 들어갑니다(셋 다 유효한 검색어입니다).
+  const districtCounts = new Map<string, { sido: string; name: string; count: number }>();
+  for (const p of candidates) {
+    const sido = typeof p.sido === "string" ? p.sido : null;
+    if (sido == null) continue;
+    const location = (p.location ?? {}) as { address?: string };
+    for (const name of extractDistrictNames(location.address)) {
+      const key = `${sido}|${name}`;
+      const hit = districtCounts.get(key);
+      if (hit) hit.count += 1;
+      else districtCounts.set(key, { sido, name, count: 1 });
+    }
+  }
+
   return {
     programs: sorted.slice(0, filters.limit).map(toRow),
     total: matched.length,
     truncated: matched.length > filters.limit,
     calendarDates: [...dateSet].sort(),
+    districts: [...districtCounts.values()]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      // 응답이 커지지 않게 상한을 둡니다. 자동완성 후보라 전국 목록이 뒤를 받칩니다.
+      .slice(0, 100),
   };
 }

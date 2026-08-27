@@ -4,9 +4,12 @@
  * 운영 방식에 따라 받는 것이 다릅니다.
  * - 1회성  : 날짜 한 줄
  * - 회차제 : 여러 줄(추가·삭제)
- * - 매주 반복 : **입력칸을 만들지 않습니다** — 반복 회차를 만드는 서버 경로가
- *   아직 없어서, 칸을 두면 입력해도 저장되지 않는 것처럼 보입니다
  * - 상시모집 : 날짜를 받지 않습니다(예약자와 협의). 문의 가능 기간만 받습니다
+ * - 매주 반복 : **등록 화면의 선택지에서 뺐습니다**(2026-08-27, 팀 요청).
+ *   반복 회차를 만드는 서버 경로가 없어 고를 수 없게 막아둔 상태였고, 고를 수
+ *   없는 칸이 화면에 남아 있을 이유가 없습니다. 아래 안내 문구는 **그전에
+ *   저장된 프로그램**을 위해 남겨둡니다 — 지우면 그 프로그램의 수정 화면이
+ *   아무 설명 없이 비어 보입니다
  *
  * **공휴일·주말을 걸러내지 않습니다.** 숲 프로그램은 쉬는 날이 성수기라, 빼면
  * 가장 잘 팔리는 날이 예약 불가가 됩니다. 특정 날짜를 닫아야 하면 그 회차를
@@ -16,6 +19,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import TimeField from "@/components/TimeField";
+import { addHours } from "@/lib/time";
 import type { ScheduleType } from "../types/firestore";
 
 export interface ScheduleRowInput {
@@ -97,9 +102,10 @@ export default function ScheduleFields({
   if (scheduleType === "weekly") {
     return (
       <p className="rounded-lg bg-muted px-3.5 py-3 text-[13px] leading-relaxed text-muted-foreground">
-        <strong className="font-semibold">매주 반복은 준비 중입니다.</strong> 지금은{" "}
-        <strong className="font-semibold">회차제</strong>로 날짜를 직접 넣어 주세요 — 매주
-        같은 요일을 여러 줄로 추가하면 같은 결과가 됩니다.
+        <strong className="font-semibold">매주 반복은 더 이상 고를 수 없습니다.</strong> 이
+        프로그램은 그전에 저장된 것입니다 — 위에서{" "}
+        <strong className="font-semibold">회차제</strong>로 바꾸고 매주 같은 요일을 여러 줄로
+        추가하면 같은 결과가 됩니다.
       </p>
     );
   }
@@ -119,7 +125,7 @@ export default function ScheduleFields({
   return (
     <div className="flex flex-col gap-3">
       {rows.map((row, i) => (
-        <div key={i} className="flex flex-col gap-2 rounded-lg border px-3.5 py-3">
+        <div key={i} className="flex flex-col gap-2.5 rounded-lg border px-3.5 py-3">
           {isSeries && (
             <div className="flex items-center justify-between">
               <span className="text-[12.5px] font-semibold text-primary">
@@ -140,42 +146,39 @@ export default function ScheduleFields({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            <div className="flex min-w-[9.5rem] flex-1 flex-col gap-1">
-              <Label htmlFor={`schedule-date-${i}`} className="text-[12.5px]">
-                진행 날짜
-              </Label>
-              <Input
-                id={`schedule-date-${i}`}
-                type="date"
-                value={row.date}
-                onChange={(e) => update(i, { date: e.target.value })}
-                required
-              />
-            </div>
-            <div className="flex w-[6.5rem] flex-col gap-1">
-              <Label htmlFor={`schedule-start-${i}`} className="text-[12.5px]">
-                시작
-              </Label>
-              <Input
-                id={`schedule-start-${i}`}
-                type="time"
-                value={row.startTime}
-                onChange={(e) => update(i, { startTime: e.target.value })}
-                required
-              />
-            </div>
-            <div className="flex w-[6.5rem] flex-col gap-1">
-              <Label htmlFor={`schedule-end-${i}`} className="text-[12.5px]">
-                종료
-              </Label>
-              <Input
-                id={`schedule-end-${i}`}
-                type="time"
-                value={row.endTime}
-                onChange={(e) => update(i, { endTime: e.target.value })}
-              />
-            </div>
+          {/* 날짜를 위, 시간·정원을 아래로 나눕니다 — 시간 칸이 목록 세 개로
+              바뀌면서 넉 칸을 한 줄에 두면 좁은 화면에서 줄이 어중간하게
+              끊깁니다(어디까지가 「시작」인지 안 보입니다). */}
+          <div className="flex flex-col gap-1">
+            <Label htmlFor={`schedule-date-${i}`} className="text-[12.5px]">
+              진행 날짜
+            </Label>
+            <Input
+              id={`schedule-date-${i}`}
+              type="date"
+              className="max-w-[13rem]"
+              value={row.date}
+              onChange={(e) => update(i, { date: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
+            <TimeField
+              id={`schedule-start-${i}`}
+              label="시작"
+              value={row.startTime}
+              onChange={(next) => update(i, { startTime: next })}
+              required
+            />
+            <TimeField
+              id={`schedule-end-${i}`}
+              label="종료"
+              value={row.endTime}
+              onChange={(next) => update(i, { endTime: next })}
+              allowEmpty
+              emptyDefault={addHours(row.startTime, 2)}
+            />
             <div className="flex w-[6rem] flex-col gap-1">
               <Label htmlFor={`schedule-capacity-${i}`} className="text-[12.5px]">
                 정원
@@ -215,7 +218,8 @@ export default function ScheduleFields({
       {rows.length > 0 && !compact && (
         <p className="text-xs leading-relaxed text-muted-foreground">
           정원은 회차마다 따로 셉니다. 위의 「최대 인원」이 기본값으로 들어가고, 회차별로
-          줄이거나 늘릴 수 있습니다(최대 인원까지).
+          줄이거나 늘릴 수 있습니다(최대 인원까지). 시간은 직접 입력할 수 있고, 종료 시간은{" "}
+          <strong className="font-semibold">미정</strong>으로 둘 수 있습니다.
         </p>
       )}
     </div>

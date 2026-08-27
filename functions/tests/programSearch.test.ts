@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   PERIOD_MAX_DAYS,
   PRICE_MAX,
+  extractDistrictNames,
   matchesFilters,
   parseSearchQuery,
   searchPrograms,
@@ -410,5 +411,122 @@ describe("searchPrograms — 정렬", () => {
     );
     const ids = result.programs.map((p) => p.id);
     expect(ids.indexOf(high)).toBeLessThan(ids.indexOf(low));
+  });
+});
+
+/**
+ * 지역 이름 필터 (2026-08-27 신규).
+ *
+ * 확인하는 것: **주소에서 지역 이름만 뽑는지**(시도 이름·번지·도로명이 섞이면 자동완성
+ * 후보가 오염됩니다) / 시도 코드로 먼저 좁히는지(「중구」는 다섯 시도에 있습니다) /
+ * 응답의 지역 목록이 개수와 함께 오는지.
+ */
+describe("extractDistrictNames — 주소에서 지역 이름만", () => {
+  it("시·군·구·읍·면·동만 뽑고 시도 이름은 뺀다", () => {
+    expect(extractDistrictNames("부산광역시 사상구 학장동 123-4")).toEqual([
+      "사상구",
+      "학장동",
+    ]);
+    expect(extractDistrictNames("경기 수원시 팔달구 화서동 12")).toEqual([
+      "수원시",
+      "팔달구",
+      "화서동",
+    ]);
+  });
+
+  it("세종특별자치시·제주특별자치도처럼 시도로 끝나는 이름을 뽑지 않는다", () => {
+    // 「특별자치시」가 시로 끝나서 접미사 규칙만으로는 걸리므로 따로 막습니다.
+    expect(extractDistrictNames("세종특별자치시 조치원읍")).toEqual(["조치원읍"]);
+    expect(extractDistrictNames("제주특별자치도 제주시 애월읍")).toEqual([
+      "제주시",
+      "애월읍",
+    ]);
+  });
+
+  it("도로명·번지는 지역 이름이 아니다", () => {
+    expect(extractDistrictNames("서울특별시 중구 세종대로 110")).toEqual(["중구"]);
+    expect(extractDistrictNames("")).toEqual([]);
+    expect(extractDistrictNames(null)).toEqual([]);
+  });
+});
+
+describe("parseSearchQuery — 시도·지역 이름", () => {
+  it("알 수 없는 시도 코드는 거부한다", () => {
+    expect(() => defaults({ sido: "hwaseong" })).toThrow();
+  });
+
+  it("시도 코드 17종은 통과한다", () => {
+    expect(defaults({ sido: "busan" }).sido).toBe("busan");
+    expect(defaults({ sido: "sejong" }).sido).toBe("sejong");
+  });
+
+  it("지역 이름은 목록으로 검증하지 않고 길이만 자른다", () => {
+    expect(defaults({ locality: "사상구" }).locality).toBe("사상구");
+    expect(defaults({ locality: "  " }).locality).toBeNull();
+    expect(defaults({ locality: "가".repeat(50) }).locality).toHaveLength(20);
+  });
+});
+
+describe("matchesFilters — 시도·지역 이름", () => {
+  const busanJunggu = {
+    id: "a",
+    sido: "busan",
+    location: { address: "부산광역시 중구 대청동1가 1" },
+  };
+  const seoulJunggu = {
+    id: "b",
+    sido: "seoul",
+    location: { address: "서울특별시 중구 세종대로 110" },
+  };
+
+  it("시도가 다르면 걸러진다", () => {
+    expect(matchesFilters(busanJunggu, defaults({ sido: "busan" }))).toBe(true);
+    expect(matchesFilters(seoulJunggu, defaults({ sido: "busan" }))).toBe(false);
+  });
+
+  it("같은 이름이 여러 시도에 있어도 시도로 갈린다 — 「중구」", () => {
+    const f = defaults({ sido: "busan", locality: "중구" });
+    expect(matchesFilters(busanJunggu, f)).toBe(true);
+    expect(matchesFilters(seoulJunggu, f)).toBe(false);
+  });
+
+  it("주소에 없는 지역 이름은 걸러진다", () => {
+    expect(matchesFilters(busanJunggu, defaults({ locality: "사상구" }))).toBe(false);
+    expect(matchesFilters(busanJunggu, defaults({ locality: "대청동" }))).toBe(true);
+  });
+
+  it("주소가 없는 프로그램은 지역 이름으로 찾을 수 없다", () => {
+    expect(matchesFilters({ id: "c", sido: "busan" }, defaults({ locality: "중구" }))).toBe(
+      false
+    );
+  });
+});
+
+describe("searchPrograms — 지역 이름으로 좁히기", () => {
+  it("주소의 시·군·구로 좁혀진다", async () => {
+    await makePublished({ title: "홍천 둘레길", location: { address: "강원도 홍천군 서면" } });
+    await makePublished({ title: "평창 숲길", location: { address: "강원도 평창군 대관령면" } });
+
+    const all = await searchPrograms(testDb, defaults({ sido: "gangwon" }));
+    const titles = all.programs.map((p) => p.title);
+    expect(titles).toContain("홍천 둘레길");
+    expect(titles).toContain("평창 숲길");
+
+    const narrowed = await searchPrograms(testDb, defaults({ sido: "gangwon", locality: "홍천군" }));
+    const narrowedTitles = narrowed.programs.map((p) => p.title);
+    expect(narrowedTitles).toContain("홍천 둘레길");
+    expect(narrowedTitles).not.toContain("평창 숲길");
+  });
+
+  it("응답이 「프로그램이 있는 지역」을 개수와 함께 알려준다", async () => {
+    await makePublished({ location: { address: "강원도 홍천군 서면" } });
+
+    const res = await searchPrograms(testDb, defaults());
+    const hongcheon = res.districts.find((d) => d.name === "홍천군");
+    expect(hongcheon).toBeDefined();
+    expect(hongcheon?.sido).toBe("gangwon");
+    expect(hongcheon?.count).toBeGreaterThan(0);
+    // 시도 이름은 지역 목록에 들어가지 않습니다.
+    expect(res.districts.some((d) => d.name.endsWith("특별시"))).toBe(false);
   });
 });

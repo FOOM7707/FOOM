@@ -50,6 +50,7 @@ import {
   EXCLUDE_OPTIONS,
   INCLUDE_OPTIONS,
   PREPARATION_OPTIONS,
+  emptyIntroBlock,
   emptyKeywordField,
   type IntroBlock,
   type KeywordField,
@@ -68,22 +69,19 @@ import {
 import type { IntroBlockImage } from "@/lib/programContent";
 import type { PickedPlace } from "@/lib/places";
 
-// 「매주 반복」은 반복 회차를 만드는 서버 경로가 아직 없어 고를 수 없습니다.
-// 고를 수 있게 두면 날짜를 넣을 방법이 없는 채로 등록되어, 영구히 예약 불가인
-// 프로그램이 생깁니다(서버도 심사 요청 단계에서 같은 이유로 거부합니다).
+// 「매주 반복」은 선택지에서 뺐습니다(2026-08-27, 팀 요청). 반복 회차를 만드는
+// 서버 경로가 없어 그전에도 고를 수 없게 막아둔 상태였는데, 눌러도 안 되는 칸이
+// 남아 있으면 「우리가 못 하는 것」으로 읽힙니다. 회차제로 같은 요일을 여러 줄
+// 추가하면 같은 결과가 되므로 대체 수단은 이미 있습니다.
+//
+// **서버는 그대로 둡니다.** `weekly`로 저장된 옛 프로그램의 심사 요청은 계속
+// 거부되고(2-4), 반복 템플릿을 만드는 날 화면과 서버를 함께 엽니다.
 const SCHEDULE_OPTIONS: {
   value: ScheduleType;
   label: string;
   hint: string;
-  disabled?: boolean;
 }[] = [
   { value: "single", label: "1회성", hint: "특정 날짜 1회만 진행" },
-  {
-    value: "weekly",
-    label: "매주 반복 (준비 중)",
-    hint: "회차제로 같은 요일을 여러 줄 추가하면 같은 결과가 됩니다",
-    disabled: true,
-  },
   { value: "series", label: "회차제", hint: "여러 회차로 나눠 순차 진행" },
   { value: "open", label: "상시모집(협의형)", hint: "정원 없이 결제 후 채팅으로 일정 협의" },
 ];
@@ -186,7 +184,11 @@ export default function ProgramRegisterPage() {
   const [includes, setIncludes] = useState<KeywordField>(emptyKeywordField());
   const [excludes, setExcludes] = useState<KeywordField>(emptyKeywordField());
   const [preparations, setPreparations] = useState<KeywordField>(emptyKeywordField());
-  const [introBlocks, setIntroBlocks] = useState<IntroBlock[]>([]);
+  // 소개 블록은 **한 칸이 열린 상태로 시작합니다** (2026-08-27, 팀 요청).
+  // 「＋ 소개 블록 추가」를 눌러야 칸이 나타나는 방식이었는데, 그 버튼을 찾지 못해
+  // 소개를 아예 안 쓰고 넘어가는 일이 생깁니다(첫 블록이 상세 페이지의 첫 문단입니다).
+  // 손대지 않은 빈 칸은 저장할 때 걸러내므로, 소개를 안 쓰고 저장해도 막히지 않습니다.
+  const [introBlocks, setIntroBlocks] = useState<IntroBlock[]>([emptyIntroBlock()]);
 
   // 저장 전에 고른 사진 (등록 화면에서만 씁니다 — 수정 화면은 바로 올립니다).
   // 사진이 저장될 자리 이름에 프로그램 번호가 들어가서 저장 전에는 올릴 곳이
@@ -227,7 +229,9 @@ export default function ProgramRegisterPage() {
       setIncludes(res.program.includes ?? emptyKeywordField());
       setExcludes(res.program.excludes ?? emptyKeywordField());
       setPreparations(res.program.preparations ?? emptyKeywordField());
-      setIntroBlocks(res.program.introBlocks ?? []);
+      // 저장된 소개가 없으면 등록 화면과 같이 한 칸을 열어둡니다.
+      const savedBlocks = res.program.introBlocks ?? [];
+      setIntroBlocks(savedBlocks.length > 0 ? savedBlocks : [emptyIntroBlock()]);
       // 새로 추가할 줄은 비운 상태로 시작합니다 — 이미 저장된 날짜는 위에 따로 보여줍니다.
       setScheduleRows([]);
     } catch (err) {
@@ -294,7 +298,7 @@ export default function ProgramRegisterPage() {
     } else if (next === "series") {
       setScheduleRows((rows) => (rows.length > 0 ? rows : [emptyScheduleRow(capacity)]));
     } else {
-      // 매주 반복·상시모집은 날짜를 받지 않습니다.
+      // 상시모집은 날짜를 받지 않습니다(매주 반복은 옛 프로그램에만 남아 있습니다).
       setScheduleRows([]);
     }
   }
@@ -420,7 +424,7 @@ export default function ProgramRegisterPage() {
     setIncludes(emptyKeywordField());
     setExcludes(emptyKeywordField());
     setPreparations(emptyKeywordField());
-    setIntroBlocks([]);
+    setIntroBlocks([emptyIntroBlock()]);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -450,10 +454,18 @@ export default function ProgramRegisterPage() {
       return;
     }
 
+    // **아무것도 손대지 않은 칸은 없는 것으로 봅니다.** 화면이 소개 블록 한 칸을
+    // 미리 열어두므로(위 useState), 걸러내지 않으면 소개를 안 쓴 사람이 저장할 때마다
+    // 「1번째 소개 블록을 채우거나 지우세요」에 막힙니다.
+    const filledIntroBlocks = introBlocks.filter(
+      (b) =>
+        !(b.heading.trim() === "" && b.body.trim() === "" && b.images.length === 0)
+    );
+
     // 사진만 있고 글이 없는 블록은 서버도 거부합니다(무슨 사진인지 알 수 없음).
     // 여기서 먼저 막는 이유: 등록 경로는 사진을 나중에 연결하므로 서버 메시지가
     // 「블록이 비어 있습니다」로 나와 사진을 넣었는데도 비었다고 읽힙니다.
-    const emptyBlock = introBlocks.findIndex(
+    const emptyBlock = filledIntroBlocks.findIndex(
       (b) => b.heading.trim() === "" && b.body.trim() === ""
     );
     if (emptyBlock >= 0) {
@@ -498,7 +510,7 @@ export default function ProgramRegisterPage() {
       includes,
       excludes,
       preparations,
-      introBlocks,
+      introBlocks: filledIntroBlocks,
     };
 
     if (isEdit && editingId) {
@@ -553,7 +565,7 @@ export default function ProgramRegisterPage() {
         requireAuth: true,
         body: {
           ...body,
-          introBlocks: introBlocks.map((b) => ({ ...b, images: [] })),
+          introBlocks: filledIntroBlocks.map((b) => ({ ...b, images: [] })),
           schedules,
         },
       });
@@ -581,7 +593,7 @@ export default function ProgramRegisterPage() {
 
         // 소개 블록이 가리키던 임시 경로를 실제 경로로 바꿔 연결합니다.
         const byPendingPath = new Map(uploaded.map((u) => [pendingPath(u.id), u]));
-        const linked = introBlocks.map((b) => ({
+        const linked = filledIntroBlocks.map((b) => ({
           ...b,
           images: b.images.flatMap((im) => {
             const found = byPendingPath.get(im.path);
@@ -982,9 +994,7 @@ export default function ProgramRegisterPage() {
           icon={CalendarDays}
           desc="어떻게 진행할지 고르고, 실제로 여는 날짜를 넣습니다."
         >
-          {/* 카드형 선택지 — 라디오 점만 있으면 무엇이 골라졌는지 한눈에 안 들어옵니다.
-              「매주 반복」은 만드는 서버 경로가 없어 비활성입니다(고를 수 있게 열면
-              날짜를 넣을 방법이 없는 채로 등록됩니다). */}
+          {/* 카드형 선택지 — 라디오 점만 있으면 무엇이 골라졌는지 한눈에 안 들어옵니다. */}
           <div className="grid gap-3 sm:grid-cols-2">
             {SCHEDULE_OPTIONS.map((opt) => {
               const selected = scheduleType === opt.value;
@@ -992,11 +1002,8 @@ export default function ProgramRegisterPage() {
                 <label
                   key={opt.value}
                   className={cn(
-                    "flex items-start gap-3 rounded-xl border p-4 transition-colors",
-                    opt.disabled
-                      ? "cursor-not-allowed opacity-55"
-                      : "cursor-pointer hover:border-primary",
-                    selected && !opt.disabled && "border-primary bg-secondary/60"
+                    "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:border-primary",
+                    selected && "border-primary bg-secondary/60"
                   )}
                 >
                   <input
@@ -1004,7 +1011,6 @@ export default function ProgramRegisterPage() {
                     name="scheduleType"
                     value={opt.value}
                     required
-                    disabled={opt.disabled}
                     checked={selected}
                     onChange={() => changeScheduleType(opt.value)}
                     className="mt-0.5 accent-primary"
