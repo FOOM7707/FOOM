@@ -46,7 +46,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
-  const [keyword, setKeyword] = useState("");
+  // 검색어도 주소로 들어옵니다 — 홈의 지역 칸에 권역이 아닌 지명을 치면
+  // 그 글자가 여기로 넘어옵니다(홈의 `submitSearch` 참고).
+  const [keyword, setKeyword] = useState(() => params.get("q") ?? "");
 
   // 카테고리는 **다중 선택**입니다(17-3). 빈 배열이 「전체」이고 별도 값을 두지
   // 않습니다 — 「전체」를 값으로 만들면 "전체이면서 숲해설"인 상태가 생깁니다.

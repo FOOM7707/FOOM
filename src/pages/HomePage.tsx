@@ -16,8 +16,9 @@ import type { LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { CATEGORIES } from "@/types/firestore";
 import { DEFAULT_FILTERS, toSearchQuery, type SearchRow } from "@/lib/programFilter";
-import { REGION_KEYS } from "@/lib/sido";
 import { Select } from "@/components/ui/select";
+import RegionSearchField from "@/components/RegionSearchField";
+import { matchRegion } from "@/lib/regionMatch";
 
 const CONTAINER = "mx-auto w-full max-w-[1140px] px-5";
 
@@ -92,7 +93,12 @@ export default function HomePage() {
     e.preventDefault();
     const p = new URLSearchParams();
     if (category) p.set("category", category);
-    if (region) p.set("region", region);
+    // 지역은 직접 입력도 받습니다. 권역으로 맞춰지면 지역 필터로, 아니면
+    // **검색어로** 넘깁니다 — 「양평」처럼 권역이 아닌 지명을 조용히 버리면
+    // 고른 조건이 무시된 채 전체 결과가 나옵니다(왜 안 걸렸는지 알 수 없습니다).
+    const matchedRegion = matchRegion(region);
+    if (matchedRegion) p.set("region", matchedRegion);
+    else if (region.trim() !== "") p.set("q", region.trim());
     if (headcount) p.set("headcount", headcount);
     navigate(`/search?${p.toString()}`);
   }
@@ -121,18 +127,14 @@ export default function HomePage() {
         >
           <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
             <span className="mb-0.5 block text-[12px] font-bold text-primary">지역</span>
-            <Select
+            <RegionSearchField
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className={SEARCH_CONTROL + (region === "" ? " font-normal text-muted-foreground" : "")}
-            >
-              <option value="">어느 지역을 찾으시나요?</option>
-              {REGION_KEYS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </Select>
+              onChange={setRegion}
+              placeholder="어느 지역을 찾으시나요?"
+              className={
+                SEARCH_CONTROL + " outline-none placeholder:font-normal placeholder:text-muted-foreground"
+              }
+            />
           </label>
 
           <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
