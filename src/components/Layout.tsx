@@ -1,7 +1,8 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { TreePine } from "lucide-react";
+import { TreePine, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LoginDialog from "./LoginDialog";
+import MobileTabBar from "./MobileTabBar";
 import { useAuth } from "@/hooks/useAuth";
 import { CATEGORIES } from "@/types/firestore";
 
@@ -46,6 +47,13 @@ export default function Layout() {
   // 관리자에게만 메뉴를 보여줍니다(12-3). **메뉴를 숨기는 것은 보안이 아닙니다** —
   // 누구나 주소창에 /admin 을 칠 수 있고, 실제 차단은 함수 진입부와 보안규칙이 합니다.
   const { isAdmin, user } = useAuth();
+
+  // 하단 탭바를 숨길 화면 — 상세(`/programs/:id`)·등록·수정(`/programs/new`,
+  // `/programs/:id/edit`)은 하단에 「참여하기」·「저장」 고정 바가 이미 있어,
+  // 탭바를 함께 띄우면 하단이 두 줄로 겹칩니다. 이 화면들만 `/programs/`로 시작합니다
+  // (목록은 `/search`라 해당 없음). 탭바가 없는 화면은 본문 하단 여백도 빼야
+  // 빈 공간이 남지 않습니다.
+  const hideTabBar = location.pathname.startsWith("/programs/");
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -100,10 +108,13 @@ export default function Layout() {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
+            {/* 좁은 화면에서 관리자·「전문가로 활동하기」는 숨깁니다 — 전문가는 하단
+                탭바, 관리자는 마이페이지 탭으로 접근합니다. 헤더에는 로그인 버튼과
+                (로그인 시) 마이페이지 아이콘만 남겨 로고와 한 줄에 들어가게 합니다. */}
             {isAdmin && (
               <Link
                 to="/admin"
-                className="text-[13px] font-bold text-primary underline-offset-4 hover:underline"
+                className="hidden text-[13px] font-bold text-primary underline-offset-4 hover:underline min-[769px]:inline"
               >
                 관리자
               </Link>
@@ -113,17 +124,39 @@ export default function Layout() {
                 권한 거부를 만나게 됩니다. 안내 화면을 거치게 합니다(15-1). */}
             <Link
               to="/provider/apply"
-              className="rounded-md bg-primary px-4 py-[7px] text-[13px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground"
+              className="hidden rounded-md bg-primary px-4 py-[7px] text-[13px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground min-[769px]:inline-block"
             >
               전문가로 활동하기
             </Link>
+
+            {/* 계정 — 좁은 화면에서만. 탐색(찾기·지도·전문가)은 하단 탭바가 맡고,
+                이 사람 아이콘은 마이페이지로 바로 갑니다. 마이페이지 안에 예약내역·
+                관리자 탭이 모두 있어 서랍(햄버거)을 따로 두지 않습니다.
+                **로그인한 사람에게만** 보입니다 — 비로그인이 눌러 봐야 「로그인이
+                필요합니다」만 나오고, 그쪽은 왼쪽 로그인 버튼이 담당합니다. */}
+            {user && (
+              <Link
+                to="/my"
+                aria-label="마이페이지"
+                className={cn(
+                  "-mr-1 flex h-10 w-10 items-center justify-center rounded-md text-foreground hover:bg-secondary min-[769px]:hidden",
+                  location.pathname === "/my" && "text-primary"
+                )}
+              >
+                <UserRound className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+              </Link>
+            )}
           </div>
         </div>
       </header>
 
-      <main className="flex-1">
+      {/* 하단 탭바가 뜨는 화면(모바일)에서는 본문 마지막 내용이 탭바에 가리지 않게
+          그 높이만큼 아래 여백을 둡니다. 탭바를 숨기는 화면과 데스크톱에서는 뺍니다. */}
+      <main className={cn("flex-1", !hideTabBar && "pb-16 min-[769px]:pb-0")}>
         <Outlet />
       </main>
+
+      {!hideTabBar && <MobileTabBar />}
 
       {/* 6. 다크 푸터 — 배경은 네이비(#05131D)가 아니라 다크 포레스트 #0E211A 계열 (스키마 9-7 ⑦) */}
       <footer className="mt-auto bg-footer px-6 pb-8 pt-16 text-white">
