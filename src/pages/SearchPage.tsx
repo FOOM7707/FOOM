@@ -7,14 +7,20 @@
  *
  * **예외가 하나 있습니다 — 「가까운거리순」.** 서버는 사용자의 현재위치를 모르므로
  * 후보를 받아 화면에서 거리로 다시 정렬합니다.
+ *
+ * ⚠️ **조건의 원본은 주소(URL)입니다 — 화면이 따로 기억하지 않습니다**(17-4 ⑤).
+ *    헤더의 「프로그램 찾기」↔「지도로 찾기」와 푸터의 카테고리 링크는 **같은 화면
+ *    안에서 주소만 바꿉니다**(화면을 새로 만들지 않습니다). 조건을 화면이 기억하면
+ *    그때 주소를 다시 읽지 않아, **주소와 헤더 강조는 바뀌었는데 목록은 그대로**가
+ *    됩니다. 반대로 화면 안 조작이 주소에 안 남으면 링크를 공유했을 때 상대가 다른
+ *    화면을 봅니다. 읽고 쓰는 규칙은 `programFilter.ts`에 있습니다.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SlidersHorizontal } from "lucide-react";
 import { CATEGORIES } from "../types/firestore";
 import FilterModal from "../components/FilterModal";
-import { REGION_KEYS } from "@/lib/sido";
 import ProgramCard from "../components/ProgramCard";
 import ProgramMap from "../components/ProgramMap";
 import { Input } from "@/components/ui/input";
@@ -22,15 +28,15 @@ import { cn } from "@/lib/utils";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { distanceKm, type LatLng } from "@/lib/geo";
 import { ApiError, apiFetch } from "@/lib/api";
-import type { Program, Sido } from "@/types/firestore";
-import { SIDO_LABEL } from "@/lib/districts";
+import type { Program } from "@/types/firestore";
 import {
-  DEFAULT_FILTERS,
   countActiveFilters,
+  parseSearchScreenParams,
+  toScreenParams,
   toSearchQuery,
-  type PlaceFilter,
   type ProgramFilters,
   type SearchRow,
+  type SearchScreenState,
   type SortKey,
 } from "@/lib/programFilter";
 
@@ -44,66 +50,65 @@ interface SearchResponse {
   calendarDates: string[];
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
-  // 검색어도 주소로 들어옵니다 — 홈의 지역 칸에 권역이 아닌 지명을 치면
-  // 그 글자가 여기로 넘어옵니다(홈의 `submitSearch` 참고).
-  const [keyword, setKeyword] = useState(() => params.get("q") ?? "");
+
+  // 주소 글자를 의존성으로 씁니다. `params` 객체는 렌더마다 새로 올 수 있어서,
+  // 그대로 쓰면 조건이 그대로인데도 계속 다시 계산합니다.
+  const queryString = params.toString();
+  const screen = useMemo(
+    () => parseSearchScreenParams(new URLSearchParams(queryString)),
+    [queryString]
+  );
+  const { filters, place, sort, view } = screen;
+
+  /** 주소에 적힌 검색어. 타이핑 중에는 입력칸 값과 잠깐 다릅니다 */
+  const urlKeyword = screen.keyword;
+  const [keyword, setKeyword] = useState(urlKeyword);
+  /**
+   * 우리가 주소에 마지막으로 적은 검색어.
+   *
+   * **밖에서 주소가 바뀐 경우와 구분하려고 둡니다** — 이게 없으면 타이핑하는 중에
+   * (아직 주소에 안 적힌 상태) 입력칸이 주소값으로 되돌아가 글자가 지워집니다.
+   */
+  const writtenKeyword = useRef(urlKeyword);
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   /**
-   * 홈에서 고른 지역(시도 + 지역 이름). 권역 필터보다 좁아서 **필터 모델에 넣지
-   * 않고** 따로 들고 다니며 칩으로 보여줍니다(`PlaceFilter` 주석).
+   * 조건을 바꾸는 **유일한 통로** — 주소를 다시 씁니다.
    *
-   * 모르는 시도 코드는 조용히 무시합니다 — 주소를 직접 고친 경우입니다.
+   * 바꾸지 않은 값도 함께 적습니다. 예전에는 카테고리를 누르면 주소를 통째로 새로
+   * 만들어 **기간·지역 조건이 조용히 사라졌습니다.**
+   *
+   * 주소를 **덮어쓰는(replace)** 이유 — 필터를 여러 번 만진 뒤 뒤로가기를 누르는
+   * 사람은 찾기 화면을 벗어나려는 것이지 필터를 한 칸씩 되돌리려는 것이 아닙니다
+   * (마이페이지 탭에서 이미 같은 판단을 했습니다).
    */
-  const [place, setPlace] = useState<PlaceFilter | null>(() => {
-    const sido = params.get("sido");
-    if (sido == null || SIDO_LABEL[sido as Sido] == null) return null;
-    const short = SIDO_LABEL[sido as Sido];
-    const localityRaw = params.get("locality");
-    const locality = localityRaw != null && localityRaw.trim() !== "" ? localityRaw.trim() : null;
-    return { sido, locality, label: locality ? `${short} ${locality}` : short };
-  });
-
-  // 카테고리는 **다중 선택**입니다(17-3). 빈 배열이 「전체」이고 별도 값을 두지
-  // 않습니다 — 「전체」를 값으로 만들면 "전체이면서 숲해설"인 상태가 생깁니다.
-  // 홈에서 카테고리 카드를 눌러 들어오면 `?category=`로 한 개가 들어옵니다.
-  const initialCategory = params.get("category");
-  // 기간은 URL로도 들어옵니다(17-4 ⑤ — 뒤로가기·링크 공유). 형식이 어긋난 값은
-  // 조용히 무시합니다 — 어차피 서버가 거부하는 값입니다.
-  const initialFrom = params.get("from");
-  const initialTo = params.get("to");
-  // 지역·인원도 URL로 들어옵니다 — 홈의 통합 검색이 이 값으로 넘겨보냅니다.
-  // 모르는 값은 조용히 무시합니다(주소를 직접 고친 경우).
-  const initialRegion = params.get("region");
-  const initialHeadcount = params.get("headcount");
-  const [filters, setFilters] = useState<ProgramFilters>(() => {
-    const from = initialFrom && DATE_RE.test(initialFrom) ? initialFrom : null;
-    const to = from && initialTo && DATE_RE.test(initialTo) ? initialTo : null;
-    const region = (REGION_KEYS as string[]).includes(initialRegion ?? "")
-      ? (initialRegion as ProgramFilters["region"])
-      : null;
-    const headcountNum = Number(initialHeadcount);
-    return {
-      ...DEFAULT_FILTERS,
-      categories: initialCategory ? [initialCategory] : [],
-      region,
-      headcount: Number.isInteger(headcountNum) && headcountNum > 0 ? headcountNum : null,
-      from,
-      to,
-    };
-  });
-  const [filterOpen, setFilterOpen] = useState(false);
-
-  const [sort, setSort] = useState<SortKey>(
-    params.get("sort") === "near" ? "가까운거리순" : "인기순"
+  const apply = useCallback(
+    (next: Partial<SearchScreenState>) => {
+      const merged: SearchScreenState = { ...screen, keyword, ...next };
+      writtenKeyword.current = merged.keyword.trim();
+      setParams(toScreenParams(merged), { replace: true });
+    },
+    [screen, keyword, setParams]
   );
-  const [view, setView] = useState<"list" | "map">(
-    params.get("view") === "map" ? "map" : "list"
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // 밖에서 주소가 바뀌면(헤더·푸터 링크, 뒤로가기, 홈에서 넘어옴) 입력칸도 맞춥니다.
+  useEffect(() => {
+    if (urlKeyword === writtenKeyword.current) return;
+    writtenKeyword.current = urlKeyword;
+    setKeyword(urlKeyword);
+  }, [urlKeyword]);
+
+  // 타이핑이 멈추면 주소에 적습니다. 글자마다 적으면 주소가 매 글자 바뀌고 그때마다
+  // 서버 요청이 나갑니다 — 늦게 온 응답이 먼저 온 것을 덮어써 결과가 튑니다.
+  useEffect(() => {
+    if (keyword.trim() === urlKeyword.trim()) return;
+    const timer = window.setTimeout(() => apply({ keyword }), 250);
+    return () => window.clearTimeout(timer);
+  }, [keyword, urlKeyword, apply]);
 
   // 위치를 묻는 버튼은 두지 않습니다. 물어보는 시점이 두 곳뿐이라 버튼이 없어도
   // 됩니다 — ① 「가까운거리순」을 고를 때(정렬 기준이 위치라 없으면 정렬이 안 됩니다)
@@ -128,54 +133,54 @@ export default function SearchPage() {
   /** 모달의 「N개 결과 보기」 — 서버가 돌려준 값입니다. 세는 중이면 null */
   const [draftCount, setDraftCount] = useState<number | null>(null);
 
-  const search = useCallback(
-    async (f: ProgramFilters, s: SortKey, q: string): Promise<SearchResponse> =>
-      apiFetch<SearchResponse>(`/programs/search?${toSearchQuery(f, s, q, place)}`),
-    [place]
+  /**
+   * 서버에 보낼 쿼리.
+   *
+   * **주소가 아니라 이 값이 바뀔 때만 다시 부릅니다.** 「가까운거리순」은 서버에
+   * 인기순으로 나가므로(화면이 거리로 다시 정렬), 주소만 바뀌고 요청은 같습니다 —
+   * 주소를 의존성으로 쓰면 그때 쓸데없이 한 번 더 부릅니다.
+   */
+  const listQuery = useMemo(
+    () => toSearchQuery(filters, sort, urlKeyword, place),
+    [filters, sort, urlKeyword, place]
   );
 
-  // 검색어는 타이핑 중이라 **잠깐 기다렸다** 요청합니다. 글자마다 보내면 요청이
-  // 수십 개 쌓이고, 늦게 온 응답이 먼저 온 응답을 덮어써 결과가 튑니다.
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(
-      () => {
-        setLoading(true);
-        search(filters, sort, keyword)
-          .then((res) => {
-            if (cancelled) return;
-            setRows(res.programs);
-            setTotal(res.total);
-            setCalendarDates(res.calendarDates ?? []);
-            setError(null);
-          })
-          .catch((err) => {
-            if (cancelled) return;
-            setError(err instanceof ApiError ? err.message : "목록을 불러오지 못했습니다");
-            setRows([]);
-            setTotal(0);
-          })
-          .finally(() => {
-            if (!cancelled) setLoading(false);
-          });
-      },
-      keyword.trim() === "" ? 0 : 250
-    );
+    setLoading(true);
+    apiFetch<SearchResponse>(`/programs/search?${listQuery}`)
+      .then((res) => {
+        if (cancelled) return;
+        setRows(res.programs);
+        setTotal(res.total);
+        setCalendarDates(res.calendarDates ?? []);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? err.message : "목록을 불러오지 못했습니다");
+        setRows([]);
+        setTotal(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
-  }, [filters, sort, keyword, search]);
+  }, [listQuery]);
 
   /** 모달에서 값을 만질 때 개수를 다시 셉니다. 적용 전이라 목록은 그대로입니다. */
   const countDraft = useCallback(
     (draft: ProgramFilters) => {
       setDraftCount(null);
-      void search(draft, sort, keyword)
+      void apiFetch<SearchResponse>(
+        `/programs/search?${toSearchQuery(draft, sort, urlKeyword, place)}`
+      )
         .then((res) => setDraftCount(res.total))
         .catch(() => setDraftCount(null));
     },
-    [search, sort, keyword]
+    [sort, urlKeyword, place]
   );
 
   // 모달을 열 때 현재 조건의 개수를 먼저 채워둡니다 — 손대기 전에도 숫자가 보입니다.
@@ -206,29 +211,13 @@ export default function SearchPage() {
     ? rows.filter((r) => r.scheduleType === "open").length
     : 0;
 
-  /** URL에 남기는 것: 카테고리 1개 + 기간(17-4 ⑤ — 뒤로가기·링크 공유) */
-  function writeParams(categories: string[], from: string | null, to: string | null) {
-    const p: Record<string, string> = {};
-    if (categories.length === 1) p.category = categories[0];
-    if (from) {
-      p.from = from;
-      p.to = to ?? from;
-    }
-    setParams(p);
-  }
-
   /** 「전체」는 배타적입니다 — 개별을 고르면 전체가 풀리고, 다 풀면 전체로 돌아옵니다 */
   function toggleCategory(c: string) {
-    setFilters((f) => {
-      const next = f.categories.includes(c)
-        ? f.categories.filter((x) => x !== c)
-        : [...f.categories, c];
-      writeParams(next, f.from, f.to);
-      return { ...f, categories: next };
-    });
+    const next = filters.categories.includes(c)
+      ? filters.categories.filter((x) => x !== c)
+      : [...filters.categories, c];
+    apply({ filters: { ...filters, categories: next } });
   }
-
-
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8 pb-16">
@@ -249,13 +238,7 @@ export default function SearchPage() {
           {place && (
             <button
               type="button"
-              onClick={() => {
-                setPlace(null);
-                const next = new URLSearchParams(params);
-                next.delete("sido");
-                next.delete("locality");
-                setParams(next, { replace: true });
-              }}
+              onClick={() => apply({ place: null })}
               className="inline-flex h-11 items-center gap-1.5 rounded-full bg-secondary px-4 text-[14px] font-semibold text-secondary-foreground"
             >
               {place.label}
@@ -314,8 +297,7 @@ export default function SearchPage() {
                 )}
                 onClick={() => {
                   if (c === "전체") {
-                    setFilters((f) => ({ ...f, categories: [] }));
-                    writeParams([], filters.from, filters.to);
+                    apply({ filters: { ...filters, categories: [] } });
                     return;
                   }
                   toggleCategory(c);
@@ -338,7 +320,7 @@ export default function SearchPage() {
           <select
             className="h-9 rounded-md border border-input bg-card px-2.5 text-[13px]"
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
+            onChange={(e) => apply({ sort: e.target.value as SortKey })}
             aria-label="정렬 기준"
           >
             {SORTS.map((s) => (
@@ -348,22 +330,26 @@ export default function SearchPage() {
             ))}
           </select>
 
+          {/* 이 버튼도 주소를 바꿉니다 — 안 그러면 지도를 보는 중인데 헤더는
+              「프로그램 찾기」가 강조되고, 그 주소를 공유하면 목록이 열립니다. */}
           <div className="flex overflow-hidden rounded-full border bg-card text-[13px] font-semibold">
             <button
+              type="button"
               className={cn(
                 "px-3.5 py-1.5",
                 view === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
               )}
-              onClick={() => setView("list")}
+              onClick={() => apply({ view: "list" })}
             >
               목록형
             </button>
             <button
+              type="button"
               className={cn(
                 "px-3.5 py-1.5",
                 view === "map" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
               )}
-              onClick={() => setView("map")}
+              onClick={() => apply({ view: "map" })}
             >
               지도형
             </button>
@@ -428,8 +414,7 @@ export default function SearchPage() {
         calendarDates={calendarDates}
         onDraftChange={countDraft}
         onApply={(next) => {
-          setFilters(next);
-          writeParams(next.categories, next.from, next.to);
+          apply({ filters: next });
           setFilterOpen(false);
         }}
         onClose={() => setFilterOpen(false)}
