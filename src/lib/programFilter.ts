@@ -1,5 +1,6 @@
-import type { Difficulty, TargetAgeTag } from "@/types/firestore";
-import type { RegionKey } from "@/lib/sido";
+import { CATEGORIES, type Difficulty, type Sido, type TargetAgeTag } from "@/types/firestore";
+import { REGION_KEYS, type RegionKey } from "@/lib/sido";
+import { SIDO_LABEL } from "@/lib/districts";
 
 /**
  * 검색 필터 — **화면 표시용 값과 쿼리 만들기만** 남아 있습니다 (스키마 17-3).
@@ -181,4 +182,173 @@ export interface SearchRow {
   scheduleDates: string[];
   imageUrls: string[];
   location: { address: string; lat: number | null; lng: number | null };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 주소(URL) ↔ 화면 조건
+ *
+ * **주소가 원본입니다**(17-4 ⑤). 화면이 조건을 따로 기억하지 않습니다.
+ *
+ * 왜 이렇게 두는가 — 헤더의 「프로그램 찾기」↔「지도로 찾기」와 푸터의 카테고리
+ * 링크는 **같은 화면 안에서 주소만 바꿉니다**(화면을 새로 만들지 않습니다).
+ * 화면이 조건을 자기 안에 기억하면 그때 주소를 다시 읽지 않아, **주소와 헤더
+ * 강조는 바뀌었는데 목록은 그대로**가 됩니다. 실제로 그 고장이 있었습니다.
+ *
+ * ⚠️ 17-4 ⑤의 예시 주소는 `price=0-50000`·`age=`·`level=`·`bf=`처럼 짧은 이름을
+ *    쓰지만, 여기서는 **검색 API에 보내는 이름과 같은 이름**을 씁니다
+ *    (`priceMin`·`ageTags`·`difficulty`·`barrierFree`). 이름이 두 벌이면 옮겨 적는
+ *    자리가 생기고 한쪽만 고치는 사고가 납니다. 홈·헤더·푸터가 이미 쓰고 있는
+ *    `category`·`region`·`headcount`·`from`·`to`·`sido`·`locality`·`q`·`view`는
+ *    그대로 둡니다 — 바꾸면 그 링크들이 조용히 무시됩니다.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** 찾기 화면이 다루는 조건 한 벌 */
+export interface SearchScreenState {
+  filters: ProgramFilters;
+  place: PlaceFilter | null;
+  sort: SortKey;
+  view: "list" | "map";
+  keyword: string;
+}
+
+/**
+ * 정렬 ↔ 주소 값.
+ *
+ * **서버로 보내는 값(`SORT_TO_SERVER`)과 다릅니다** — 「가까운거리순」은 서버가
+ * 판단할 수 없어 인기순으로 받아 화면이 다시 정렬하는데, 주소에까지 `popular`로
+ * 적으면 링크를 열었을 때 정렬이 인기순으로 바뀝니다.
+ */
+const SORT_TO_URL: Record<SortKey, string> = {
+  인기순: "popular",
+  낮은가격순: "price_asc",
+  평점순: "rating",
+  가까운거리순: "near",
+};
+
+const URL_TO_SORT: Record<string, SortKey> = Object.fromEntries(
+  Object.entries(SORT_TO_URL).map(([key, value]) => [value, key as SortKey])
+) as Record<string, SortKey>;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const AGE_TAG_VALUES = new Set<string>(AGE_TAG_LABELS.map((a) => a.value));
+const DIFFICULTY_VALUES = new Set<string>(DIFFICULTY_LABELS.map((d) => d.value));
+/** 「전체」는 UI 전용 값이라 주소에 적지 않습니다(4번 enum 주석과 같은 규칙) */
+const CATEGORY_VALUES = new Set<string>(CATEGORIES.filter((c) => c !== "전체"));
+
+/** 정수만 받습니다. 값이 없거나 숫자가 아니면 null — 주소는 손으로 고칠 수 있습니다 */
+function intOrNull(raw: string | null): number | null {
+  if (raw == null || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : null;
+}
+
+/**
+ * 주소 → 화면 조건.
+ *
+ * **모르는 값은 조용히 무시하고 기본값으로 떨어집니다.** 주소는 손으로 고칠 수
+ * 있고 옛 링크도 남아 있어서, 오류로 처리하면 화면이 열리지 않습니다.
+ */
+export function parseSearchScreenParams(params: URLSearchParams): SearchScreenState {
+  const from = (() => {
+    const raw = params.get("from");
+    return raw != null && DATE_RE.test(raw) ? raw : null;
+  })();
+  const to = (() => {
+    if (from == null) return null;
+    const raw = params.get("to");
+    return raw != null && DATE_RE.test(raw) ? raw : null;
+  })();
+
+  const regionRaw = params.get("region");
+  const region = (REGION_KEYS as string[]).includes(regionRaw ?? "")
+    ? (regionRaw as ProgramFilters["region"])
+    : null;
+
+  // 가격은 범위가 뒤집히면(min > max) 결과가 영원히 0건인데 화면에는 이유가
+  // 보이지 않습니다 — 그런 조합은 기본값으로 되돌립니다.
+  const minRaw = intOrNull(params.get("priceMin"));
+  const maxRaw = intOrNull(params.get("priceMax"));
+  const priceMin = minRaw != null && minRaw >= 0 && minRaw <= PRICE_MAX ? minRaw : 0;
+  const priceMaxCandidate =
+    maxRaw != null && maxRaw >= 0 && maxRaw <= PRICE_MAX ? maxRaw : PRICE_MAX;
+  const priceMax = priceMaxCandidate >= priceMin ? priceMaxCandidate : PRICE_MAX;
+
+  const headcountRaw = intOrNull(params.get("headcount"));
+  const difficultyRaw = params.get("difficulty");
+
+  const place: PlaceFilter | null = (() => {
+    const sido = params.get("sido");
+    if (sido == null || SIDO_LABEL[sido as Sido] == null) return null;
+    const short = SIDO_LABEL[sido as Sido];
+    const localityRaw = params.get("locality");
+    const locality =
+      localityRaw != null && localityRaw.trim() !== "" ? localityRaw.trim() : null;
+    return { sido, locality, label: locality ? `${short} ${locality}` : short };
+  })();
+
+  return {
+    filters: {
+      ...DEFAULT_FILTERS,
+      categories: (params.get("category") ?? "")
+        .split(",")
+        .map((c) => c.trim())
+        .filter((c) => CATEGORY_VALUES.has(c)),
+      region,
+      priceMin,
+      priceMax,
+      headcount: headcountRaw != null && headcountRaw > 0 ? headcountRaw : null,
+      ageTags: (params.get("ageTags") ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => AGE_TAG_VALUES.has(t)) as ProgramFilters["ageTags"],
+      difficulty:
+        difficultyRaw != null && DIFFICULTY_VALUES.has(difficultyRaw)
+          ? (difficultyRaw as ProgramFilters["difficulty"])
+          : null,
+      barrierFree: params.get("barrierFree") === "1",
+      rainAlternative: params.get("rainAlternative") === "1",
+      from,
+      to,
+    },
+    place,
+    sort: URL_TO_SORT[params.get("sort") ?? ""] ?? "인기순",
+    view: params.get("view") === "map" ? "map" : "list",
+    keyword: params.get("q") ?? "",
+  };
+}
+
+/**
+ * 화면 조건 → 주소.
+ *
+ * **기본값은 적지 않습니다** — 주소가 짧아지고, 「아무 조건도 안 건 상태」가
+ * 주소에서도 한눈에 보입니다.
+ */
+export function toScreenParams(state: SearchScreenState): URLSearchParams {
+  const p = new URLSearchParams();
+  const { filters: f } = state;
+
+  const keyword = state.keyword.trim();
+  if (keyword !== "") p.set("q", keyword);
+  if (f.categories.length > 0) p.set("category", f.categories.join(","));
+  if (state.place) {
+    p.set("sido", state.place.sido);
+    if (state.place.locality) p.set("locality", state.place.locality);
+  }
+  if (f.region) p.set("region", f.region);
+  if (f.priceMin > 0) p.set("priceMin", String(f.priceMin));
+  if (f.priceMax < PRICE_MAX) p.set("priceMax", String(f.priceMax));
+  if (f.headcount != null) p.set("headcount", String(f.headcount));
+  if (f.ageTags.length > 0) p.set("ageTags", f.ageTags.join(","));
+  if (f.difficulty) p.set("difficulty", f.difficulty);
+  if (f.barrierFree) p.set("barrierFree", "1");
+  if (f.rainAlternative) p.set("rainAlternative", "1");
+  if (f.from) {
+    p.set("from", f.from);
+    // 시작만 고른 상태는 그 하루로 봅니다 — 서버 판정·검색 쿼리와 같은 규칙입니다.
+    p.set("to", f.to ?? f.from);
+  }
+  if (state.sort !== "인기순") p.set("sort", SORT_TO_URL[state.sort]);
+  if (state.view === "map") p.set("view", "map");
+
+  return p;
 }
