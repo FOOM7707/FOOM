@@ -517,7 +517,9 @@ export default function ProgramDetailPage() {
 
         {/* ── 오른쪽: 신청에 필요한 것 ─────────────────────────────────────
             스크롤해도 따라옵니다(`sticky`). 헤더가 60px이라 그만큼 띄웁니다. */}
-        <aside ref={bookingCardRef} className="lg:sticky lg:top-[84px]">
+        {/* min-w-0: 모바일 1열에서 이 칸이 내용보다 안 줄어드는 grid 기본 동작
+            때문에 가로로 넘치지 않게 합니다(왼쪽 칸과 같은 처리). */}
+        <aside ref={bookingCardRef} className="min-w-0 lg:sticky lg:top-[84px]">
           <div className="flex flex-col gap-5 rounded-2xl border p-6 shadow-[0_4px_20px_rgba(31,92,67,0.07)]">
             <div>
               <div className="flex items-baseline gap-2">
@@ -696,12 +698,16 @@ export default function ProgramDetailPage() {
         )}
       >
         <div className="container mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-3.5 sm:px-10">
-          <div>
-            <p className="text-lg font-extrabold leading-tight">
+          {/* min-w-0: 좁은 화면에서 이 텍스트 칸이 내용 폭 아래로 줄어들 수 있게
+              합니다. 없으면 긴 날짜 문구가 안 줄고, 오른쪽 고정폭 버튼과 합쳐
+              바가 화면 밖으로 넘쳐 페이지 전체가 좌우로 밀립니다. 날짜는 넘치면
+              말줄임(truncate)으로 자릅니다. */}
+          <div className="min-w-0">
+            <p className="truncate text-lg font-extrabold leading-tight">
               {program.price.toLocaleString()}원
               <span className="ml-1 text-sm font-normal text-muted-foreground">/ 1인</span>
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {program.scheduleType === "open"
                 ? "날짜를 협의해서 정하는 프로그램입니다"
                 : firstSchedule
@@ -711,7 +717,7 @@ export default function ProgramDetailPage() {
           </div>
           <Button
             size="lg"
-            className="min-w-[160px]"
+            className="min-w-[160px] shrink-0"
             disabled={!canParticipate}
             onClick={() => {
               setPreselectId(null);
