@@ -30,6 +30,7 @@ import RegionSearchField, {
   type ProgramDistrict,
   type RegionPick,
 } from "@/components/RegionSearchField";
+import ReviewCarousel from "@/components/ReviewCarousel";
 import { matchRegion } from "@/lib/regionMatch";
 
 const CONTAINER = "mx-auto w-full max-w-[1140px] px-5";
@@ -428,36 +429,13 @@ export default function HomePage() {
           데이터가 0건인 상태로 정식 오픈하면 표시광고 문제가 되므로, 오픈 전에
           실제 데이터 연동 또는 섹션 숨김 처리가 반드시 필요합니다 (스키마 9-7 ④). */}
       <section className={`${CONTAINER} py-16`}>
-        <h2 className="mb-6 text-balance text-[20px] font-extrabold tracking-tight sm:text-[22px]">
+        <h2 className="mb-2 text-balance text-[20px] font-extrabold tracking-tight sm:text-[22px]">
           숲이 준 일상의 변화, 직접 경험한 이야기
         </h2>
-        <ul className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          {REVIEWS.map((review) => (
-            <li
-              key={review.name}
-              className="flex flex-col justify-between rounded-2xl border bg-card px-6 py-6"
-            >
-              <div>
-                <div className="mb-3 text-[13px] tracking-[2px] text-cta" aria-label="별점 5점 만점에 5점">
-                  ★★★★★
-                </div>
-                <p className="mb-6 text-pretty text-[14px] leading-[1.7]">"{review.text}"</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-[13px] font-bold text-primary"
-                  aria-hidden
-                >
-                  {review.initial}
-                </span>
-                <span className="min-w-0">
-                  <b className="block text-[14px] font-bold">{review.name}</b>
-                  <span className="text-[12.5px] text-muted-foreground">{review.program}</span>
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        {/* 옆으로 끌어 넘기는 후기 — 좁은 화면에서 세로로 길게 쌓이던 것을 바꿨습니다.
+            안내 한 줄을 둬 「끌 수 있다」를 알립니다(스크롤바를 감췄기 때문). */}
+        <p className="mb-6 text-[13px] text-muted-foreground">옆으로 넘겨 더 보기</p>
+        <ReviewCarousel reviews={REVIEWS} />
       </section>
     </div>
   );
