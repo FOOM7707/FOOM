@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { CATEGORIES } from "@/types/firestore";
 
 /**
- * 공통 레이아웃 — 디자인 초안(docs/디자인-웹페이지-초안.html) 헤더·푸터 기준.
+ * 공통 레이아웃 — 헤더·푸터. 색·규격 규칙은 MD/frontend/frontend.md 참고.
  *
  * **마이페이지는 로그인한 사람에게만 보입니다** — 비로그인 상태에서 눌러도
  * 「로그인이 필요합니다」만 나오므로, 메뉴에 두면 헛걸음이 됩니다.
