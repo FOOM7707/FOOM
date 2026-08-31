@@ -29,9 +29,9 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
-  /* 디자인 초안 토큰 매핑 (docs/디자인-웹페이지-초안.html)
+  /* 브랜드 토큰 매핑 (규칙: MD/frontend/frontend.md)
      --brand-primary(#1F5C43) → --primary, --brand-soft(#EAF3ED) → --secondary 로 이미 매핑됨.
-     아래는 초안에만 있던 신규 토큰 */
+     아래는 브랜드 전용 신규 토큰 */
   --color-cta: hsl(var(--cta));
   --color-cta-hover: hsl(var(--cta-hover));
   --color-header: hsl(var(--header));
