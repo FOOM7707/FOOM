@@ -385,6 +385,10 @@ function toRow(program: Candidate): Record<string, unknown> {
     scheduleDates: program.scheduleDates ?? [],
     // 목록 카드는 대표 사진 한 장만 씁니다(2-3 — 첫 장이 대표).
     imageUrls: ((program.imageUrls as string[] | undefined) ?? []).slice(0, 1),
+    // **목록이 실제로 쓰는 것은 이쪽입니다** — 긴 변 600px짜리 작은 판(20-6).
+    // 2026-09-03 이전에 올린 사진에는 없어서 빈 값이 갈 수 있고, 그때 화면은
+    // 위의 큰 사진으로 되돌아갑니다.
+    thumbUrls: ((program.thumbUrls as string[] | undefined) ?? []).slice(0, 1),
     location: {
       address: location.address ?? "",
       lat: location.lat ?? null,

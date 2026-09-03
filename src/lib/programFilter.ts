@@ -181,6 +181,8 @@ export interface SearchRow {
   ratingCount: number;
   scheduleDates: string[];
   imageUrls: string[];
+  /** (20-6) 목록 카드용 작은 사진. 비어 있을 수 있어 `cardImageUrl()`로 읽습니다 */
+  thumbUrls?: string[];
   location: { address: string; lat: number | null; lng: number | null };
 }
 

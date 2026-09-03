@@ -19,7 +19,8 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { firebaseStorage } from "@/lib/firebaseClient";
 import { ApiError, apiFetch } from "@/lib/api";
-import { ImageResizeError, formatBytes, resizeImage } from "@/lib/imageResize";
+import { ImageResizeError, formatBytes, prepareImage } from "@/lib/imageResize";
+import { makeFileId, thumbFileName } from "@/lib/pendingPhotos";
 
 /** 대표 사진 상한 — 서버(`MAX_PROGRAM_IMAGES`)와 같은 값이어야 합니다. */
 export const MAX_IMAGES = 5;
@@ -29,20 +30,17 @@ interface Props {
   /** 서버가 돌려준 현재 목록 */
   imageUrls: string[];
   imagePaths: string[];
+  /** (20-6) 목록용 작은 사진. 미리보기 타일에 씁니다 — 없으면 큰 사진을 씁니다 */
+  thumbUrls?: string[];
   /** 목록이 바뀌면 상위가 다시 불러옵니다 */
   onChanged: () => void | Promise<void>;
-}
-
-/** 파일 이름은 난수로 만듭니다 — 원본 이름에는 한글·공백·개인정보가 섞입니다(18-3). */
-function makeFileId(extension: string): string {
-  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-  return `${random}.${extension}`;
 }
 
 export default function ProgramImageUploader({
   programId,
   imageUrls,
   imagePaths,
+  thumbUrls,
   onChanged,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,21 +62,44 @@ export default function ProgramImageUploader({
 
     setBusy(true);
     try {
-      const uploaded: Array<{ path: string; url: string }> = [];
+      const uploaded: Array<{
+        path: string;
+        url: string;
+        thumbPath: string;
+        thumbUrl: string;
+      }> = [];
 
       for (let i = 0; i < picked.length; i += 1) {
         const file = picked[i];
         setProgress(`${i + 1}/${picked.length} 사진을 줄이는 중…`);
-        const resized = await resizeImage(file);
+        // 한 장에서 두 벌이 나옵니다 — 상세용 큰 것과 목록 카드용 작은 것(20-6).
+        const prepared = await prepareImage(file);
+        const totalBytes = prepared.full.blob.size + prepared.thumb.blob.size;
 
         setProgress(
-          `${i + 1}/${picked.length} 올리는 중… (${formatBytes(file.size)} → ${formatBytes(resized.blob.size)})`
+          `${i + 1}/${picked.length} 올리는 중… (${formatBytes(file.size)} → ${formatBytes(totalBytes)})`
         );
-        const path = `programs/${programId}/${makeFileId(resized.extension)}`;
-        const storageRef = ref(firebaseStorage, path);
-        await uploadBytes(storageRef, resized.blob, { contentType: resized.contentType });
-        const url = await getDownloadURL(storageRef);
-        uploaded.push({ path, url });
+        const fileId = makeFileId(prepared.full.extension);
+        const path = `programs/${programId}/${fileId}`;
+        const thumbPath = `programs/${programId}/${thumbFileName(fileId)}`;
+
+        // 큰 것을 먼저 올립니다 — 작은 것만 올라간 상태로 실패하면 상세 페이지에
+        // 쓸 사진이 없습니다. 반대 순서라면 목록이 원본으로 되돌아가기만 합니다.
+        const fullRef = ref(firebaseStorage, path);
+        await uploadBytes(fullRef, prepared.full.blob, {
+          contentType: prepared.full.contentType,
+        });
+        const thumbRef = ref(firebaseStorage, thumbPath);
+        await uploadBytes(thumbRef, prepared.thumb.blob, {
+          contentType: prepared.thumb.contentType,
+        });
+
+        uploaded.push({
+          path,
+          url: await getDownloadURL(fullRef),
+          thumbPath,
+          thumbUrl: await getDownloadURL(thumbRef),
+        });
       }
 
       // 기록은 서버가 합니다. 여기서 실패하면 파일만 남는데, 문서가 참조하지
@@ -159,8 +180,10 @@ export default function ProgramImageUploader({
         <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {imageUrls.map((url, i) => (
             <li key={imagePaths[i] ?? url} className="group relative overflow-hidden rounded-lg border">
+              {/* 미리보기는 작은 판으로 충분합니다(20-6) — 여기도 한 번에 다섯
+                  장이 뜨는 자리입니다. 없으면 큰 사진으로 되돌아갑니다. */}
               <img
-                src={url}
+                src={thumbUrls?.[i] || url}
                 alt={`프로그램 사진 ${i + 1}`}
                 loading="lazy"
                 className="aspect-[4/3] w-full object-cover"

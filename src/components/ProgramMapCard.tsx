@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Star, X } from "lucide-react";
 import type { Program } from "@/types/firestore";
 import { formatDistance } from "@/lib/geo";
+import { cardImageUrl } from "@/lib/cardImage";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,7 +32,9 @@ const SCHEDULE_LABEL: Record<Program["scheduleType"], string> = {
 };
 
 export default function ProgramMapCard({ program, distanceKm, onClose }: Props) {
-  const images = program.imageUrls ?? [];
+  // 지도 카드도 목록과 같은 크기라 **작은 판**을 씁니다(20-6).
+  // 없는 사진은 큰 것으로 되돌아갑니다.
+  const images = (program.imageUrls ?? []).map((_, i) => cardImageUrl(program, i) ?? "");
   const [index, setIndex] = useState(0);
 
   // 사진이 아직 한 장도 없는 프로그램이 많습니다(업로드 UI 미구현 — 18번).

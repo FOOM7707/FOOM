@@ -10,6 +10,7 @@
  * 규칙 자체는 `tests/rules/storage.test.ts`가 Storage 에뮬레이터로 검증합니다.
  */
 
+import { FieldValue } from "firebase-admin/firestore";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   MAX_PROGRAM_IMAGES,
@@ -516,5 +517,207 @@ describe("reorderProgramImages — 첫 장이 대표 사진", () => {
     await expect(
       reorderProgramImages(testDb, programId, providerUid, { paths: [a, a, a] })
     ).rejects.toMatchObject({ code: "invalid-argument" });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 목록 카드용 작은 사진 (20-6, 2026-09-03)
+ *
+ * 사진 한 장을 올리면 파일이 **둘** 올라갑니다 — 상세용 큰 것과 목록용 작은 것.
+ * 서버가 확인할 것은 큰 사진과 같습니다(경로 소유·주소 일치·실제 존재).
+ *
+ * **가장 중요한 것은 「자리가 밀리지 않는가」입니다.** 두 목록은 번호로 짝을
+ * 이루는데, 작은 판이 없는 옛 사진이 섞이면 목록 길이가 달라집니다. 그대로 두면
+ * 삭제·순서 변경에서 한 칸씩 밀려 **목록 카드에 엉뚱한 사진**이 뜹니다 —
+ * 에러가 나지 않고 「사진이 잘못 나오는」 고장이라 알아차리기 어렵습니다.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+describe("작은 사진(썸네일)", () => {
+  /** 큰 것과 작은 것을 한 쌍으로 만들어 줍니다 */
+  function pair(name: string) {
+    const path = `programs/${programId}/${name}.jpg`;
+    const thumbPath = `programs/${programId}/t_${name}.jpg`;
+    return {
+      path,
+      thumbPath,
+      input: { path, url: downloadUrl(path), thumbPath, thumbUrl: downloadUrl(thumbPath) },
+    };
+  }
+
+  it("큰 사진과 짝으로 저장된다", async () => {
+    const a = pair("a1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath]));
+
+    await addProgramImages(testDb, programId, providerUid, { images: [a.input] }, { bucket });
+
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("imagePaths")).toEqual([a.path]);
+    expect(snap.get("thumbPaths")).toEqual([a.thumbPath]);
+    expect(snap.get("thumbUrls")).toEqual([downloadUrl(a.thumbPath)]);
+  });
+
+  it("작은 사진을 안 보내도 등록된다 — 예전 화면을 쓰는 사람이 갑자기 실패하면 안 된다", async () => {
+    const a = pair("a1");
+    const { bucket } = fakeBucket(new Set([a.path]));
+
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [{ path: a.path, url: downloadUrl(a.path) }] },
+      { bucket }
+    );
+
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    // 자리는 채워둡니다 — 빈 문자열이 「작은 것이 없다」는 뜻입니다.
+    expect(snap.get("thumbPaths")).toEqual([""]);
+    expect(snap.get("thumbUrls")).toEqual([""]);
+  });
+
+  it("경로만 보내고 주소를 빠뜨리면 거부한다", async () => {
+    const a = pair("a1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath]));
+
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        { images: [{ path: a.path, url: downloadUrl(a.path), thumbPath: a.thumbPath }] },
+        { bucket }
+      )
+    ).rejects.toThrow();
+  });
+
+  it("남의 프로그램 폴더에 있는 작은 사진은 거부한다", async () => {
+    const a = pair("a1");
+    const stolen = `programs/someone-else/t_a1.jpg`;
+    const { bucket } = fakeBucket(new Set([a.path, stolen]));
+
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        {
+          images: [
+            { path: a.path, url: downloadUrl(a.path), thumbPath: stolen, thumbUrl: downloadUrl(stolen) },
+          ],
+        },
+        { bucket }
+      )
+    ).rejects.toThrow();
+  });
+
+  it("작은 사진 주소가 외부 서버면 거부한다 — 목록은 가장 많이 보이는 자리다", async () => {
+    const a = pair("a1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath]));
+
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        {
+          images: [
+            {
+              path: a.path,
+              url: downloadUrl(a.path),
+              thumbPath: a.thumbPath,
+              thumbUrl: "https://evil.example.com/t_a1.jpg",
+            },
+          ],
+        },
+        { bucket }
+      )
+    ).rejects.toThrow();
+  });
+
+  it("버킷에 없는 작은 사진은 거부한다 — 목록에 열리지 않는 주소가 남는다", async () => {
+    const a = pair("a1");
+    const { bucket } = fakeBucket(new Set([a.path])); // 작은 것만 빠진 상태
+
+    await expect(
+      addProgramImages(testDb, programId, providerUid, { images: [a.input] }, { bucket })
+    ).rejects.toThrow();
+  });
+
+  it("사진을 지우면 작은 사진 파일도 함께 지워진다", async () => {
+    const a = pair("a1");
+    const fake = fakeBucket(new Set([a.path, a.thumbPath]));
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [a.input] },
+      { bucket: fake.bucket }
+    );
+
+    await deleteProgramImage(
+      testDb,
+      programId,
+      providerUid,
+      { path: a.path },
+      { bucket: fake.bucket }
+    );
+
+    expect(fake.deleted).toContain(a.path);
+    expect(fake.deleted).toContain(a.thumbPath);
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("thumbPaths")).toEqual([]);
+    expect(snap.get("thumbUrls")).toEqual([]);
+  });
+
+  it("작은 사진이 있는 것과 없는 것이 섞여도 자리가 밀리지 않는다", async () => {
+    const a = pair("a1"); // 작은 것 없이 등록 (예전에 올린 사진)
+    const b = pair("b1"); // 작은 것과 함께 등록
+    const fake = fakeBucket(new Set([a.path, b.path, b.thumbPath]));
+
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [{ path: a.path, url: downloadUrl(a.path) }, b.input] },
+      { bucket: fake.bucket }
+    );
+
+    let snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("thumbPaths")).toEqual(["", b.thumbPath]);
+
+    // 순서를 뒤집으면 작은 사진도 같이 따라와야 합니다.
+    await reorderProgramImages(testDb, programId, providerUid, { paths: [b.path, a.path] });
+    snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("imagePaths")).toEqual([b.path, a.path]);
+    expect(snap.get("thumbPaths")).toEqual([b.thumbPath, ""]);
+
+    // 앞의 것을 지워도 남은 사진의 짝이 어긋나면 안 됩니다.
+    await deleteProgramImage(
+      testDb,
+      programId,
+      providerUid,
+      { path: b.path },
+      { bucket: fake.bucket }
+    );
+    snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("imagePaths")).toEqual([a.path]);
+    expect(snap.get("thumbPaths")).toEqual([""]);
+  });
+
+  it("작은 사진 목록이 아예 없던 옛 프로그램도 순서를 바꿀 수 있다", async () => {
+    // 2026-09-03 이전에 저장된 문서에는 thumbPaths 필드 자체가 없습니다.
+    const a = pair("a1");
+    const b = pair("b1");
+    await testDb.doc(`programs/${programId}`).update({
+      imagePaths: [a.path, b.path],
+      imageUrls: [downloadUrl(a.path), downloadUrl(b.path)],
+      thumbPaths: FieldValue.delete(),
+      thumbUrls: FieldValue.delete(),
+    });
+
+    await reorderProgramImages(testDb, programId, providerUid, { paths: [b.path, a.path] });
+
+    const snap = await testDb.doc(`programs/${programId}`).get();
+    expect(snap.get("imagePaths")).toEqual([b.path, a.path]);
+    expect(snap.get("thumbPaths")).toEqual(["", ""]);
   });
 });
