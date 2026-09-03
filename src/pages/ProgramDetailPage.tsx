@@ -298,19 +298,22 @@ export default function ProgramDetailPage() {
           왼쪽(2)은 읽는 내용, 오른쪽(1)은 신청에 필요한 것만 모아 따라다닙니다.
           **휴대폰에서는 한 줄로 쌓이고 하단 고정 버튼이 그대로 남습니다** — 좁은
           화면에는 오른쪽 칸이 없어 버튼이 사라지면 신청할 방법이 없어집니다. */}
-      {/* 사진은 가로 전체를 씁니다 — 3패널 배치(왼쪽 큰 세로 + 오른쪽 정사각형
-          2개)는 ProgramGallery 안에 있습니다. 아래 2:1 분할은 제목부터 시작합니다. */}
-      <ProgramGallery
-        imageUrls={program.imageUrls ?? []}
-        thumbUrls={program.thumbUrls}
-        title={program.title}
-        category={program.category}
-      />
-
-      <div className="mt-8 grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
-        {/* ── 왼쪽: 읽는 내용 ──────────────────────────────────────────── */}
+      {/* 사진은 **왼쪽 칸 너비만큼만** 씁니다 (2026-09-03) — 가로 전체를 쓰면
+          오른쪽 가격 카드 위까지 덮습니다. 그래서 갤러리를 왼쪽 칸(2fr) 안 맨
+          위에 넣어, 오른쪽 카드와 나란히 서고 아래 내용과 같은 폭으로 정렬되게
+          합니다. 3패널 배치(왼쪽 큰 세로 + 오른쪽 2칸)는 ProgramGallery 안에
+          있습니다. 휴대폰에서는 한 줄로 쌓이며 갤러리가 가로 전체를 씁니다. */}
+      <div className="grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
+        {/* ── 왼쪽: 사진 + 읽는 내용 ──────────────────────────────────── */}
         <div className="min-w-0">
-          <div className="border-b pb-8">
+          <ProgramGallery
+            imageUrls={program.imageUrls ?? []}
+            thumbUrls={program.thumbUrls}
+            title={program.title}
+            category={program.category}
+          />
+
+          <div className="mt-6 border-b pb-8">
             <span className="text-[13px] font-bold text-primary">{program.category}</span>
             <h1 className="mt-2 text-2xl font-extrabold leading-snug tracking-tight sm:text-3xl">
               {program.title}
