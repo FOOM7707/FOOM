@@ -101,15 +101,17 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
         )}
       </div>
 
-      {/* ── 넓은 화면: 큰 사진 1장 + 아래 나머지 (2026-09-03 개편) ─────────
-          사진 앨범이 왼쪽 칸(2fr)으로 들어가면서, 큰 사진 한 장 아래 나머지를
-          가로로 놓습니다(「1 + 2」). 예전 「왼쪽 큰 칸 + 오른쪽 위아래」는 앨범이
-          가로 전체를 쓸 때의 배치라, 좁아진 칸에서는 세로로 쌓는 편이 맞습니다.
-          한 장뿐이면 큰 사진만 씁니다 — 빈 칸을 회색으로 남기면 「사진을 덜 올린
-          프로그램」이 고장난 것처럼 보입니다.
-          **큰 칸은 원본, 아래 작은 칸은 작은 판을 받습니다**(20-6). */}
-      <div className="hidden flex-col gap-2 md:flex">
-        <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-muted">
+      {/* ── 넓은 화면: 3패널 — 왼쪽 큰 세로(60%) + 오른쪽 정사각형 2개 ─────
+          왼쪽 메인 패널이 가로 60%를 차지하며 세로로 큽니다. 오른쪽에는 같은
+          높이의 정사각형 두 칸을 위아래로 쌓습니다. 패널마다 둥근 모서리를 주고
+          사이를 흰 간격으로 띄웁니다.
+          정사각형의 한 변이 오른쪽 칸 너비라, 왼쪽 메인은 두 칸 + 간격만큼
+          높아져 자연히 세로로 깁니다(`row-span-2`).
+          한 장뿐이면 나누지 않고 가로 전체를 씁니다 — 빈 칸을 회색으로 남기면
+          「사진을 덜 올린 프로그램」이 고장난 것처럼 보입니다.
+          **큰 메인은 원본, 오른쪽 작은 칸은 작은 판을 받습니다**(20-6). */}
+      {tiles.length === 1 ? (
+        <div className="relative hidden aspect-[16/9] overflow-hidden rounded-2xl bg-muted md:block">
           <img
             src={imageUrls[0]}
             alt={`${title} 사진 1`}
@@ -122,32 +124,52 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
             {title}
           </p>
         </div>
-
-        {tiles.length > 1 && (
-          <div className={"grid gap-2 " + (tiles.length === 2 ? "grid-cols-1" : "grid-cols-2")}>
-            {tiles.slice(1).map((url, k) => {
-              const i = k + 1;
-              return (
-                <div key={url} className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-muted">
-                  <img
-                    // 작은 옆 칸은 작은 판을 받습니다(20-6). 없으면 큰 사진.
-                    src={cardImageUrl({ imageUrls, thumbUrls }, i) ?? url}
-                    alt={`${title} 사진 ${i + 1}`}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
-                  />
-                  {/* 마지막 칸에만 남은 장수를 알립니다 */}
-                  {overflow > 0 && i === tiles.length - 1 && (
-                    <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
-                      사진 {total}장
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+      ) : (
+        <div className="hidden grid-cols-[3fr_2fr] gap-2.5 md:grid">
+          {/* 왼쪽 메인 — 두 줄을 차지해 세로로 큼 */}
+          <div className="relative row-span-2 overflow-hidden rounded-2xl bg-muted">
+            <img
+              src={imageUrls[0]}
+              alt={`${title} 사진 1`}
+              loading="eager"
+              fetchPriority="high"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/60 to-transparent" />
+            <p className="absolute bottom-5 left-6 pr-8 text-2xl font-extrabold tracking-tight text-white drop-shadow">
+              {title}
+            </p>
           </div>
-        )}
-      </div>
+
+          {/* 오른쪽 — 정사각형 두 칸. 한 장뿐이면(사진 2장) 한 칸이 두 줄을 채웁니다. */}
+          {tiles.slice(1, 3).map((url, k) => {
+            const i = k + 1;
+            return (
+              <div
+                key={url}
+                className={
+                  "relative overflow-hidden rounded-2xl bg-muted" +
+                  (tiles.length === 2 ? " row-span-2" : " aspect-square")
+                }
+              >
+                <img
+                  // 오른쪽 작은 칸은 작은 판을 받습니다(20-6). 없으면 큰 사진.
+                  src={cardImageUrl({ imageUrls, thumbUrls }, i) ?? url}
+                  alt={`${title} 사진 ${i + 1}`}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
+                />
+                {/* 마지막 칸에만 남은 장수를 알립니다 */}
+                {overflow > 0 && i === tiles.length - 1 && (
+                  <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                    사진 {total}장
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
