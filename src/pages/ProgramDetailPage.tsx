@@ -83,6 +83,8 @@ interface DetailProgram {
   targetAgeMin: number | null;
   targetAgeMax: number | null;
   imageUrls: string[];
+  /** (20-6) 목록·옆칸용 작은 사진. 없으면 큰 사진으로 되돌아갑니다 */
+  thumbUrls?: string[];
   includes?: KeywordField;
   excludes?: KeywordField;
   preparations?: KeywordField;
@@ -296,12 +298,22 @@ export default function ProgramDetailPage() {
           왼쪽(2)은 읽는 내용, 오른쪽(1)은 신청에 필요한 것만 모아 따라다닙니다.
           **휴대폰에서는 한 줄로 쌓이고 하단 고정 버튼이 그대로 남습니다** — 좁은
           화면에는 오른쪽 칸이 없어 버튼이 사라지면 신청할 방법이 없어집니다. */}
-      {/* 사진은 가로 전체를 씁니다 — 아래 2:1 분할은 제목부터 시작합니다. */}
-      <ProgramGallery
-        imageUrls={program.imageUrls ?? []}
-        title={program.title}
-        category={program.category}
-      />
+      {/* 상단: 사진(왼쪽 2) + 나중에 채울 자리(오른쪽 1) (2026-09-03).
+          아래 내용 그리드와 **같은 2:1 비율**이라 사진과 가격 카드가 세로로
+          정렬됩니다. **오른쪽 위는 지금 비워둡니다** — 넣을 내용이 정해지면
+          여기에 채웁니다. 휴대폰(lg 미만)에서는 한 줄로 쌓이고 사진이 가로
+          전체를 쓰며, 빈 칸은 나타나지 않습니다(`hidden lg:block`). */}
+      <div className="grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
+        <div className="min-w-0">
+          <ProgramGallery
+            imageUrls={program.imageUrls ?? []}
+            thumbUrls={program.thumbUrls}
+            title={program.title}
+            category={program.category}
+          />
+        </div>
+        <div className="hidden lg:block" aria-hidden />
+      </div>
 
       <div className="mt-8 grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
         {/* ── 왼쪽: 읽는 내용 ──────────────────────────────────────────── */}
