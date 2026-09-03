@@ -101,17 +101,17 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
         )}
       </div>
 
-      {/* ── 넓은 화면: 3패널 — 왼쪽 큰 세로(60%) + 오른쪽 정사각형 2개 ─────
+      {/* ── 넓은 화면: 3패널 — 왼쪽 큰 세로(60%) + 오른쪽 2칸 ──────────────
           왼쪽 메인 패널이 가로 60%를 차지하며 세로로 큽니다. 오른쪽에는 같은
-          높이의 정사각형 두 칸을 위아래로 쌓습니다. 패널마다 둥근 모서리를 주고
-          사이를 흰 간격으로 띄웁니다.
-          정사각형의 한 변이 오른쪽 칸 너비라, 왼쪽 메인은 두 칸 + 간격만큼
-          높아져 자연히 세로로 깁니다(`row-span-2`).
+          높이의 두 칸을 위아래로 쌓습니다. 패널마다 둥근 모서리를 주고 사이를
+          흰 간격으로 띄웁니다.
+          **높이는 440px로 고정**합니다 — 정사각형으로 두면 오른쪽 40% 너비만큼
+          높아져 세로가 너무 길어집니다(전 버전과 같은 높이로 맞춤).
           한 장뿐이면 나누지 않고 가로 전체를 씁니다 — 빈 칸을 회색으로 남기면
           「사진을 덜 올린 프로그램」이 고장난 것처럼 보입니다.
           **큰 메인은 원본, 오른쪽 작은 칸은 작은 판을 받습니다**(20-6). */}
       {tiles.length === 1 ? (
-        <div className="relative hidden aspect-[16/9] overflow-hidden rounded-2xl bg-muted md:block">
+        <div className="relative hidden h-[440px] overflow-hidden rounded-2xl bg-muted md:block">
           <img
             src={imageUrls[0]}
             alt={`${title} 사진 1`}
@@ -125,7 +125,7 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
           </p>
         </div>
       ) : (
-        <div className="hidden grid-cols-[3fr_2fr] gap-2.5 md:grid">
+        <div className="hidden h-[440px] grid-cols-[3fr_2fr] grid-rows-2 gap-2.5 md:grid">
           {/* 왼쪽 메인 — 두 줄을 차지해 세로로 큼 */}
           <div className="relative row-span-2 overflow-hidden rounded-2xl bg-muted">
             <img
@@ -141,7 +141,7 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
             </p>
           </div>
 
-          {/* 오른쪽 — 정사각형 두 칸. 한 장뿐이면(사진 2장) 한 칸이 두 줄을 채웁니다. */}
+          {/* 오른쪽 — 두 칸. 사진 2장이면 한 칸이 두 줄을 채웁니다. */}
           {tiles.slice(1, 3).map((url, k) => {
             const i = k + 1;
             return (
@@ -149,7 +149,9 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
                 key={url}
                 className={
                   "relative overflow-hidden rounded-2xl bg-muted" +
-                  (tiles.length === 2 ? " row-span-2" : " aspect-square")
+                  // 2장이면 오른쪽 한 칸이 두 줄을 채웁니다. 3장 이상은 각 칸이
+                  // 고정 높이의 한 줄을 차지합니다(정사각형 대신 높이 고정 — 위 주석).
+                  (tiles.length === 2 ? " row-span-2" : "")
                 }
               >
                 <img
