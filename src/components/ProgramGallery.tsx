@@ -18,6 +18,7 @@
 
 import { useState } from "react";
 import { cardImageUrl } from "@/lib/cardImage";
+import Lightbox from "@/components/Lightbox";
 
 interface Props {
   imageUrls: string[];
@@ -37,6 +38,8 @@ interface Props {
 
 export default function ProgramGallery({ imageUrls, thumbUrls, title, category }: Props) {
   const [index, setIndex] = useState(0);
+  // 사진 크게 보기 — 누른 사진 번호. null이면 닫힌 상태입니다.
+  const [lightboxStart, setLightboxStart] = useState<number | null>(null);
 
   if (imageUrls.length === 0) {
     return (
@@ -61,6 +64,7 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
         <img
           src={imageUrls[index]}
           alt={`${title} 사진 ${index + 1}`}
+          onClick={() => setLightboxStart(index)}
           // 첫 장은 화면에 바로 보이므로 지연 로딩하지 않습니다 — 늦게 뜨면
           // 페이지가 비어 보입니다. 나머지는 넘길 때 받습니다.
           loading={index === 0 ? "eager" : "lazy"}
@@ -68,7 +72,7 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
           // 브라우저가 글꼴·스크립트보다 먼저 받기 시작합니다 — 안 붙이면 같은
           // 줄에 선 다른 요청과 순서를 다툽니다.
           fetchPriority={index === 0 ? "high" : "auto"}
-          className="aspect-[4/3] w-full object-cover"
+          className="aspect-[4/3] w-full cursor-zoom-in object-cover"
         />
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/60 to-transparent" />
@@ -111,7 +115,11 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
           「사진을 덜 올린 프로그램」이 고장난 것처럼 보입니다.
           **큰 메인은 원본, 오른쪽 작은 칸은 작은 판을 받습니다**(20-6). */}
       {tiles.length === 1 ? (
-        <div className="relative hidden h-[440px] overflow-hidden rounded-2xl bg-muted md:block">
+        <button
+          type="button"
+          onClick={() => setLightboxStart(0)}
+          className="relative hidden h-[440px] w-full cursor-zoom-in overflow-hidden rounded-2xl bg-muted md:block"
+        >
           <img
             src={imageUrls[0]}
             alt={`${title} 사진 1`}
@@ -123,11 +131,15 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
           <p className="absolute bottom-5 left-6 pr-8 text-2xl font-extrabold tracking-tight text-white drop-shadow">
             {title}
           </p>
-        </div>
+        </button>
       ) : (
         <div className="hidden h-[440px] grid-cols-[3fr_2fr] grid-rows-2 gap-2.5 md:grid">
           {/* 왼쪽 메인 — 두 줄을 차지해 세로로 큼 */}
-          <div className="relative row-span-2 overflow-hidden rounded-2xl bg-muted">
+          <button
+            type="button"
+            onClick={() => setLightboxStart(0)}
+            className="relative row-span-2 cursor-zoom-in overflow-hidden rounded-2xl bg-muted"
+          >
             <img
               src={imageUrls[0]}
               alt={`${title} 사진 1`}
@@ -139,16 +151,18 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
             <p className="absolute bottom-5 left-6 pr-8 text-2xl font-extrabold tracking-tight text-white drop-shadow">
               {title}
             </p>
-          </div>
+          </button>
 
           {/* 오른쪽 — 두 칸. 사진 2장이면 한 칸이 두 줄을 채웁니다. */}
           {tiles.slice(1, 3).map((url, k) => {
             const i = k + 1;
             return (
-              <div
+              <button
                 key={url}
+                type="button"
+                onClick={() => setLightboxStart(i)}
                 className={
-                  "relative overflow-hidden rounded-2xl bg-muted" +
+                  "relative cursor-zoom-in overflow-hidden rounded-2xl bg-muted" +
                   // 2장이면 오른쪽 한 칸이 두 줄을 채웁니다. 3장 이상은 각 칸이
                   // 고정 높이의 한 줄을 차지합니다(정사각형 대신 높이 고정 — 위 주석).
                   (tiles.length === 2 ? " row-span-2" : "")
@@ -161,16 +175,27 @@ export default function ProgramGallery({ imageUrls, thumbUrls, title, category }
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
                 />
-                {/* 마지막 칸에만 남은 장수를 알립니다 */}
+                {/* 마지막 칸에 가려진 사진이 있으면 「+N 더보기」로 알립니다 —
+                    눌러 열면 전체를 넘겨볼 수 있습니다. */}
                 {overflow > 0 && i === tiles.length - 1 && (
-                  <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
-                    사진 {total}장
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-lg font-bold text-white backdrop-blur-[1px]">
+                    +{overflow}장 더보기
                   </span>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>
+      )}
+
+      {/* 사진 크게 보기 — 아무 사진이나 누르면 열리고, 전체를 넘겨볼 수 있습니다. */}
+      {lightboxStart !== null && (
+        <Lightbox
+          images={imageUrls}
+          startIndex={lightboxStart}
+          title={title}
+          onClose={() => setLightboxStart(null)}
+        />
       )}
     </>
   );
