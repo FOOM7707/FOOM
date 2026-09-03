@@ -53,6 +53,10 @@ export default function ProgramGallery({ imageUrls, title, category }: Props) {
           // 첫 장은 화면에 바로 보이므로 지연 로딩하지 않습니다 — 늦게 뜨면
           // 페이지가 비어 보입니다. 나머지는 넘길 때 받습니다.
           loading={index === 0 ? "eager" : "lazy"}
+          // 이 화면에서 가장 큰 요소가 이 사진입니다(LCP). 「최우선」을 붙이면
+          // 브라우저가 글꼴·스크립트보다 먼저 받기 시작합니다 — 안 붙이면 같은
+          // 줄에 선 다른 요청과 순서를 다툽니다.
+          fetchPriority={index === 0 ? "high" : "auto"}
           className="aspect-[4/3] w-full object-cover"
         />
 
@@ -113,6 +117,7 @@ export default function ProgramGallery({ imageUrls, title, category }: Props) {
               src={url}
               alt={`${title} 사진 ${i + 1}`}
               loading={i === 0 ? "eager" : "lazy"}
+              fetchPriority={i === 0 ? "high" : "auto"}
               className="h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
             />
 

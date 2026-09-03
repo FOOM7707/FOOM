@@ -22,6 +22,22 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { firebaseStorage } from "@/lib/firebaseClient";
 import { prepareImage, type ResizedImage } from "@/lib/imageResize";
 
+/**
+ * 사진 파일의 캐시 지시문 — **1년, 변하지 않는 파일** (2026-09-03, 20-6).
+ *
+ * 이걸 안 붙이면 Firebase Storage는 `private, max-age=0`으로 내려보냅니다 —
+ * **같은 사람이 같은 사진을 다시 볼 때마다 처음부터 다시 받습니다.** 실서버에서
+ * 실제로 확인한 값입니다. 목록 사진을 작게 만든 것보다 효과가 클 수 있습니다.
+ *
+ * 1년이 안전한 이유: 파일 이름이 난수라 **같은 자리에 다른 사진이 올라오는 일이
+ * 없습니다.** 사진을 바꾸면 새 이름으로 올라가고 옛 주소는 문서에서 빠집니다.
+ * 같은 주소에 내용이 바뀌는 파일이라면 이 값을 쓰면 안 됩니다.
+ *
+ * **서버도 기록할 때 같은 값을 다시 씁니다**(`programImages.ts`) — 브라우저 쪽을
+ * 우회해 올린 파일도 같은 규칙을 받게 하려는 것입니다.
+ */
+export const IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export interface PendingPhoto {
   /** 저장 전에는 경로가 없으므로 이 값으로 가리킵니다 */
   id: string;
@@ -98,7 +114,10 @@ export interface UploadedPhoto {
 /** 파일 하나를 올리고 주소를 받아옵니다. */
 async function put(path: string, image: ResizedImage): Promise<string> {
   const storageRef = ref(firebaseStorage, path);
-  await uploadBytes(storageRef, image.blob, { contentType: image.contentType });
+  await uploadBytes(storageRef, image.blob, {
+    contentType: image.contentType,
+    cacheControl: IMAGE_CACHE_CONTROL,
+  });
   return getDownloadURL(storageRef);
 }
 

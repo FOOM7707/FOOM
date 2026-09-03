@@ -13,6 +13,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  IMAGE_CACHE_CONTROL,
   MAX_PROGRAM_IMAGES,
   addProgramImages,
   deleteProgramImage,
@@ -26,15 +27,21 @@ let providerUid: string;
 let otherUid: string;
 let seq = 0;
 
-/** 버킷 대역 — 존재하는 경로 집합과 삭제 기록만 갖고 있습니다. */
+/** 버킷 대역 — 존재하는 경로 집합과 삭제·메타데이터 기록만 갖고 있습니다. */
 function fakeBucket(existing: Set<string>) {
   const deleted: string[] = [];
+  const metadata = new Map<string, Record<string, unknown>>();
   return {
     deleted,
+    metadata,
     bucket: {
       file(path: string) {
         return {
           exists: async () => [existing.has(path)] as [boolean],
+          setMetadata: async (m: Record<string, unknown>) => {
+            if (!existing.has(path)) throw new Error("없는 파일");
+            metadata.set(path, { ...(metadata.get(path) ?? {}), ...m });
+          },
           delete: async () => {
             if (!existing.has(path)) throw new Error("없는 파일");
             existing.delete(path);
@@ -543,6 +550,23 @@ describe("작은 사진(썸네일)", () => {
       input: { path, url: downloadUrl(path), thumbPath, thumbUrl: downloadUrl(thumbPath) },
     };
   }
+
+  it("기록할 때 큰 사진·작은 사진 모두에 1년 캐시를 붙인다 — 안 붙으면 볼 때마다 다시 받는다", async () => {
+    const a = pair("a1");
+    const fake = fakeBucket(new Set([a.path, a.thumbPath]));
+
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [a.input] },
+      { bucket: fake.bucket }
+    );
+
+    expect(fake.metadata.get(a.path)?.cacheControl).toBe(IMAGE_CACHE_CONTROL);
+    expect(fake.metadata.get(a.thumbPath)?.cacheControl).toBe(IMAGE_CACHE_CONTROL);
+    expect(IMAGE_CACHE_CONTROL).toMatch(/max-age=31536000/);
+  });
 
   it("큰 사진과 짝으로 저장된다", async () => {
     const a = pair("a1");

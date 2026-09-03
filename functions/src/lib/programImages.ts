@@ -26,6 +26,18 @@ import { pendingEditPath } from "./programEdits";
 export const MAX_PROGRAM_IMAGES = 5;
 
 /**
+ * 사진 파일의 캐시 지시문 — **1년, 변하지 않는 파일** (2026-09-03, 20-6).
+ *
+ * 브라우저가 올릴 때도 같은 값을 붙이지만(`src/lib/pendingPhotos.ts`), **기록하는
+ * 순간 서버가 한 번 더 씁니다.** 브라우저를 거치지 않고 올린 파일이나 옛 화면에서
+ * 올린 파일도 같은 규칙을 받게 하려는 것입니다 — 안 붙으면 Storage 기본값
+ * `private, max-age=0`이 되어 **볼 때마다 처음부터 다시 받습니다.**
+ *
+ * 파일 이름이 난수라 같은 주소의 내용이 바뀌는 일이 없으므로 1년이 안전합니다.
+ */
+export const IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+/**
  * 주소가 향할 수 있는 호스트.
  *
  * 배포 환경의 다운로드 주소는 `firebasestorage.googleapis.com`이고,
@@ -198,6 +210,13 @@ export async function addProgramImages(
         "업로드가 완료되지 않은 사진입니다. 다시 시도해 주세요"
       );
     }
+    // 캐시 지시문을 서버가 확정합니다. 실패해도 등록은 막지 않습니다 —
+    // 캐시가 안 붙은 사진은 느릴 뿐 고장이 아니고, 등록을 막으면 글을 다 쓴
+    // 사람이 사진 때문에 저장을 못 합니다.
+    await bucket
+      .file(input.path)
+      .setMetadata({ cacheControl: IMAGE_CACHE_CONTROL })
+      .catch(() => undefined);
     if (program.imagePaths.includes(input.path)) {
       throw new AppError("invalid-argument", "이미 등록된 사진입니다");
     }
@@ -214,6 +233,10 @@ export async function addProgramImages(
           "업로드가 완료되지 않은 사진입니다. 다시 시도해 주세요"
         );
       }
+      await bucket
+        .file(input.thumbPath)
+        .setMetadata({ cacheControl: IMAGE_CACHE_CONTROL })
+        .catch(() => undefined);
     }
   }
 

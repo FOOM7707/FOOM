@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { firebaseStorage } from "@/lib/firebaseClient";
 import { ApiError, apiFetch } from "@/lib/api";
 import { ImageResizeError, formatBytes, prepareImage } from "@/lib/imageResize";
-import { makeFileId, thumbFileName } from "@/lib/pendingPhotos";
+import { IMAGE_CACHE_CONTROL, makeFileId, thumbFileName } from "@/lib/pendingPhotos";
 
 /** 대표 사진 상한 — 서버(`MAX_PROGRAM_IMAGES`)와 같은 값이어야 합니다. */
 export const MAX_IMAGES = 5;
@@ -86,12 +86,15 @@ export default function ProgramImageUploader({
         // 큰 것을 먼저 올립니다 — 작은 것만 올라간 상태로 실패하면 상세 페이지에
         // 쓸 사진이 없습니다. 반대 순서라면 목록이 원본으로 되돌아가기만 합니다.
         const fullRef = ref(firebaseStorage, path);
+        // 1년 캐시 — 이름이 난수라 같은 자리가 바뀌는 일이 없습니다(`pendingPhotos.ts`).
         await uploadBytes(fullRef, prepared.full.blob, {
           contentType: prepared.full.contentType,
+          cacheControl: IMAGE_CACHE_CONTROL,
         });
         const thumbRef = ref(firebaseStorage, thumbPath);
         await uploadBytes(thumbRef, prepared.thumb.blob, {
           contentType: prepared.thumb.contentType,
+          cacheControl: IMAGE_CACHE_CONTROL,
         });
 
         uploaded.push({

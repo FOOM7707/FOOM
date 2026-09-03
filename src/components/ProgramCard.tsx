@@ -16,9 +16,16 @@ interface Props {
   program: Program;
   /** 현재위치가 있을 때만 전달됩니다 (없으면 거리 표시 생략) */
   distanceKm?: number | null;
+  /**
+   * 화면을 열자마자 보이는 자리인가 (첫 줄 카드).
+   *
+   * 지연 로딩은 「스크롤해야 보이는 것」을 미루는 장치인데, 첫 줄까지 미루면
+   * 브라우저가 화면을 다 그린 뒤에야 사진을 요청해 **첫 줄이 가장 늦게** 뜹니다.
+   */
+  priority?: boolean;
 }
 
-export default function ProgramCard({ program, distanceKm }: Props) {
+export default function ProgramCard({ program, distanceKm, priority = false }: Props) {
   const photo = cardImageUrl(program);
 
   return (
@@ -35,7 +42,7 @@ export default function ProgramCard({ program, distanceKm }: Props) {
           <img
             src={photo}
             alt=""
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
             className="h-[120px] w-full bg-secondary object-cover"
           />
         ) : (
