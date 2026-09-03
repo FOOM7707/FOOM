@@ -50,7 +50,7 @@ export default function Lightbox({ images, startIndex, title, onClose }: Props) 
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-white/70 backdrop-blur-md"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -61,14 +61,14 @@ export default function Lightbox({ images, startIndex, title, onClose }: Props) 
         type="button"
         onClick={onClose}
         aria-label="닫기"
-        className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl text-white transition-colors hover:bg-white/20"
+        className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white text-2xl text-neutral-700 shadow-md ring-1 ring-black/5 transition-colors hover:bg-neutral-100"
       >
         ✕
       </button>
 
       {/* 몇 번째인지 */}
       {total > 1 && (
-        <span className="absolute left-1/2 top-6 -translate-x-1/2 rounded-full bg-white/10 px-3.5 py-1 text-sm font-medium text-white">
+        <span className="absolute left-1/2 top-6 -translate-x-1/2 rounded-full bg-white/90 px-3.5 py-1 text-sm font-medium text-neutral-600 shadow-sm ring-1 ring-black/5">
           {current + 1} / {total}
         </span>
       )}
@@ -78,7 +78,7 @@ export default function Lightbox({ images, startIndex, title, onClose }: Props) 
         src={images[current]}
         alt={`${title} 사진 ${current + 1}`}
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[88vh] max-w-[92vw] select-none rounded-lg object-contain"
+        className="max-h-[88vh] max-w-[92vw] select-none rounded-xl object-contain shadow-[0_24px_70px_rgba(0,0,0,0.28)]"
         draggable={false}
       />
 
@@ -92,7 +92,7 @@ export default function Lightbox({ images, startIndex, title, onClose }: Props) 
               go(-1);
             }}
             aria-label="이전 사진"
-            className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-3xl text-white transition-colors hover:bg-white/20 sm:left-6"
+            className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white text-3xl text-neutral-700 shadow-md ring-1 ring-black/5 transition-colors hover:bg-neutral-100 sm:left-6"
           >
             ‹
           </button>
@@ -103,7 +103,7 @@ export default function Lightbox({ images, startIndex, title, onClose }: Props) 
               go(1);
             }}
             aria-label="다음 사진"
-            className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-3xl text-white transition-colors hover:bg-white/20 sm:right-6"
+            className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white text-3xl text-neutral-700 shadow-md ring-1 ring-black/5 transition-colors hover:bg-neutral-100 sm:right-6"
           >
             ›
           </button>
