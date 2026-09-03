@@ -183,6 +183,8 @@ export default function ProgramDetailPage() {
   // 후자는 그 회차가 선택된 채 열립니다.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [preselectId, setPreselectId] = useState<string | null>(null);
+  // 지도의 「내 위치」로 받아둔 좌표 — 길찾기 출발지에 씁니다(2026-09-03).
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -272,43 +274,25 @@ export default function ProgramDetailPage() {
   const destLng = program.location.lng;
 
   /**
-   * 길찾기를 누른 **그 순간에만** 위치를 물어봅니다 (2026-09-03, B안).
+   * 길찾기 (2026-09-03 개정).
    *
-   * 방문 즉시 위치 권한 창을 띄우면 이탈이 늘어서(홈에 날씨를 안 넣은 것과 같은
-   * 이유), 길찾기를 누를 때만 물어봅니다. 허용하면 출발지가 채워진 채 카카오맵이
-   * 열리고, 거부하거나 위치를 못 받으면 지금처럼 목적지만 넘어갑니다(고장 안 남).
+   * **지도의 「내 위치」로 이미 받아둔 좌표를 그대로** 출발지에 넣습니다 — 누르는
+   * 순간 바로 열리므로 기다림도 빈 탭도 없습니다. 「내 위치」를 누르지 않았으면
+   * 좌표가 없어 지금처럼 목적지만 넘깁니다(즉시 열림).
    *
-   * **탭을 먼저 열어두고 나중에 주소를 넣습니다.** 위치 권한 창을 기다린 뒤
-   * `window.open`을 하면 「사용자가 직접 누른 동작」으로 안 쳐져 팝업 차단에
-   * 걸립니다 — 누른 즉시 빈 탭을 열고, 좌표를 받으면 그 탭을 이동시킵니다.
+   * **길찾기를 누를 때 위치를 새로 묻지 않습니다.** 그렇게 하면 권한이 없을 때
+   * 응답을 30초 가까이 기다리며 빈 탭(about:blank)이 떠 있었습니다. 위치는
+   * 「내 위치」 버튼이 이미 담당하고 있어, 그 좌표를 재사용하는 편이 빠르고
+   * 사용자에게도 「내가 눌러서 켠 위치」라 자연스럽습니다.
    *
    * ⚠️ 카카오의 `from/to` 링크는 PC 웹에서 출발지를 채우지만, **휴대폰 앱은
    * 자기 GPS를 우선해 무시할 수 있습니다** — 앱 사양이라 우리가 바꿀 수 없고,
    * 휴대폰은 실시간 GPS가 더 정확해 실사용엔 문제가 없습니다.
    */
-  function openDirections() {
-    const win = window.open("", "_blank");
-    const go = (url: string) => {
-      if (win) win.location.href = url;
-      else window.open(url, "_blank", "noopener");
-    };
-    if (!hasCoords || !navigator.geolocation) {
-      go(directionsUrl);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        go(
-          `https://map.kakao.com/link/from/${encodeURIComponent("내 위치")},${latitude},${longitude}` +
-            `/to/${encodeURIComponent(destName)},${destLat},${destLng}`
-        );
-      },
-      // 거부·시간초과·미지원 — 목적지만 넘깁니다(지금과 같은 동작).
-      () => go(directionsUrl),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
-  }
+  const directionsUrlWithOrigin = userLocation
+    ? `https://map.kakao.com/link/from/${encodeURIComponent("내 위치")},${userLocation.lat},${userLocation.lng}` +
+      `/to/${encodeURIComponent(destName)},${destLat},${destLng}`
+    : directionsUrl;
   const upcoming = program.schedules.filter((s) => new Date(s.startAt).getTime() > Date.now());
   const firstSchedule = upcoming[0];
   const introBlocks = program.introBlocks ?? [];
@@ -694,6 +678,8 @@ export default function ProgramDetailPage() {
                 lat: program.location.lat as number,
                 lng: program.location.lng as number,
               }}
+              userLocation={userLocation}
+              onLocate={setUserLocation}
               className="h-[380px] rounded-xl md:h-[480px]"
             />
           ) : (
@@ -725,10 +711,12 @@ export default function ProgramDetailPage() {
                 {copied ? "복사했습니다" : "주소 복사"}
               </Button>
               {/* 새 탭으로 엽니다 — 지금 보던 프로그램 화면을 잃지 않아야 합니다.
-                  위치를 허용하면 출발지가 자동으로 채워집니다(openDirections). */}
-              <Button size="sm" onClick={openDirections}>
-                <Navigation className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                길찾기
+                  「내 위치」를 눌러 좌표가 있으면 출발지가 채워집니다(directionsUrlWithOrigin). */}
+              <Button size="sm" asChild>
+                <a href={directionsUrlWithOrigin} target="_blank" rel="noreferrer noopener">
+                  <Navigation className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                  길찾기
+                </a>
               </Button>
             </div>
           </div>
