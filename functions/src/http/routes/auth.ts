@@ -74,10 +74,10 @@ function defaultUpsertDeps(): SocialUpsertDeps {
 const ALLOWED_KAKAO_REDIRECTS = [
   "http://localhost:5173/auth/kakao/callback",
   "https://foom.kr/auth/kakao/callback",
-  // Firebase Hosting 기본 주소. 도메인을 붙이기 전 확인 배포에 씁니다 —
-  // 두 주소가 모두 살아 있어야 어느 쪽으로 들어와도 로그인이 됩니다.
-  "https://foom-c1dfe.web.app/auth/kakao/callback",
-  "https://foom-c1dfe.firebaseapp.com/auth/kakao/callback",
+  // Firebase Hosting 기본 주소(회사 프로젝트 foom-4092d, 2026-09-04 복귀). 도메인 장애 시
+  // 확인용 우회 주소입니다 — 카카오 콘솔에도 같은 값이 등록돼 있어야 실제로 동작합니다.
+  // (.web.app 주소는 카카오가 도메인으로 인정하지 않아 firebaseapp.com만 둡니다.)
+  "https://foom-4092d.firebaseapp.com/auth/kakao/callback",
 ];
 
 function assertAllowedRedirect(value: unknown): string {
