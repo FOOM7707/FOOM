@@ -1,0 +1,4 @@
+# 비공개 테스트 배포 중입니다 — 검색엔진 수집을 전면 차단합니다.
+# 정식 오픈 때 이 파일의 Disallow 줄을 지우고 Sitemap을 넣으세요.
+User-agent: *
+Disallow: /

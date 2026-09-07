@@ -136,7 +136,17 @@ interface IntroBlockRow {
  * 승인 버튼을 누르게 되고, 「무엇을 보고 승인했는가」가 남지 않습니다.
  * 누르면 원본이 새 창에서 열립니다 — 썸네일로는 초점·화질을 판단할 수 없습니다.
  */
-function PhotoStrip({ urls }: { urls: string[] }) {
+/**
+ * 심사 화면의 사진 줄.
+ *
+ * **늘어놓는 것은 작은 판, 눌러서 여는 것은 원본입니다**(20-6, 2026-09-03).
+ * 관리자가 심사할 때는 사진을 크게 봐야 하지만, 목록에 늘어놓는 순간에는
+ * 112px짜리 자리에 1600px 사진이 대기 건수만큼 한꺼번에 뜹니다.
+ *
+ * `thumbUrls`가 없거나 짧으면 그 자리는 원본을 그대로 씁니다 — 옛 사진에는
+ * 작은 판이 없고, 없다고 빈 칸을 두면 심사할 사진이 사라집니다.
+ */
+function PhotoStrip({ urls, thumbUrls }: { urls: string[]; thumbUrls?: string[] }) {
   if (urls.length === 0) {
     return (
       <p className="text-[12.5px] text-muted-foreground">
@@ -150,7 +160,7 @@ function PhotoStrip({ urls }: { urls: string[] }) {
         <li key={url + i} className="relative">
           <a href={url} target="_blank" rel="noreferrer" title="원본 보기">
             <img
-              src={url}
+              src={thumbUrls?.[i] || url}
               alt=""
               loading="lazy"
               className="h-20 w-28 rounded-md border object-cover"
@@ -291,6 +301,8 @@ interface ProgramRow {
   minCapacity: number;
   description: string;
   imageUrls: string[];
+  /** (20-6) 목록용 작은 사진. 없을 수 있어 `imageUrls`로 되돌아갑니다 */
+  thumbUrls?: string[];
   location?: { address?: string };
   scheduleType?: string;
   includes?: KeywordValue;
@@ -684,7 +696,7 @@ function ProgramsTab() {
                   <div className="mt-4 flex flex-col gap-3.5 border-t pt-3.5">
                     <section>
                       <p className="mb-1.5 text-[12.5px] font-semibold">사진</p>
-                      <PhotoStrip urls={p.imageUrls ?? []} />
+                      <PhotoStrip urls={p.imageUrls ?? []} thumbUrls={p.thumbUrls} />
                     </section>
 
                     <div className="grid gap-3 sm:grid-cols-3">

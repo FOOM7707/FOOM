@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { cardImageUrl } from "@/lib/cardImage";
 import {
   Baby,
   Building,
@@ -360,12 +361,12 @@ export default function HomePage() {
                     <span className="absolute left-3 top-3 z-[2] rounded-full bg-foreground/75 px-2.5 py-1 text-[11.5px] font-semibold text-white backdrop-blur-sm">
                       {p.category}
                     </span>
-                    {/* 대표 사진은 imageUrls[0]입니다. 아직 썸네일이 없어 원본을 쓰므로
-                        지연 로딩합니다 — 게시 프로그램이 늘면 목록이 가장 비싼 화면이
-                        됩니다(20-6). */}
-                    {p.imageUrls?.[0] ? (
+                    {/* 대표 사진의 **작은 판**을 씁니다(20-6, 2026-09-03). 없으면 큰
+                        사진으로 되돌아갑니다. 지연 로딩도 그대로 둡니다 — 게시
+                        프로그램이 늘면 목록이 가장 비싼 화면입니다. */}
+                    {cardImageUrl(p) ? (
                       <img
-                        src={p.imageUrls[0]}
+                        src={cardImageUrl(p) as string}
                         alt=""
                         loading="lazy"
                         className="h-full w-full object-cover"

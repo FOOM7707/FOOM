@@ -129,6 +129,8 @@ interface LoadedProgram {
   imageUrls: string[];
   /** 사진 주소와 짝을 이루는 버킷 경로. 삭제·순서 변경에 씁니다(18-4) */
   imagePaths: string[];
+  /** (20-6) 목록용 작은 사진. 미리보기에 씁니다 */
+  thumbUrls?: string[];
   includes: KeywordField;
   excludes: KeywordField;
   preparations: KeywordField;
@@ -363,7 +365,14 @@ export default function ProgramRegisterPage() {
         await apiFetch(`/programs/${editingId}/images`, {
           method: "POST",
           requireAuth: true,
-          body: { images: uploaded.map(({ path, url }) => ({ path, url })) },
+          body: {
+            images: uploaded.map(({ path, url, thumbPath, thumbUrl }) => ({
+              path,
+              url,
+              thumbPath,
+              thumbUrl,
+            })),
+          },
         });
         // 미리보기는 더 필요 없습니다 — 서버가 준 주소를 씁니다
         made.forEach(releasePendingPhoto);
@@ -588,7 +597,14 @@ export default function ProgramRegisterPage() {
         await apiFetch(`/programs/${newId}/images`, {
           method: "POST",
           requireAuth: true,
-          body: { images: uploaded.map(({ path, url }) => ({ path, url })) },
+          body: {
+            images: uploaded.map(({ path, url, thumbPath, thumbUrl }) => ({
+              path,
+              url,
+              thumbPath,
+              thumbUrl,
+            })),
+          },
         });
 
         // 소개 블록이 가리키던 임시 경로를 실제 경로로 바꿔 연결합니다.
@@ -858,6 +874,7 @@ export default function ProgramRegisterPage() {
               programId={loaded.id}
               imageUrls={loaded.imageUrls ?? []}
               imagePaths={loaded.imagePaths ?? []}
+              thumbUrls={loaded.thumbUrls}
               onChanged={loadProgram}
             />
           ) : (

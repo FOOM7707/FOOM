@@ -26,6 +26,18 @@ import { pendingEditPath } from "./programEdits";
 export const MAX_PROGRAM_IMAGES = 5;
 
 /**
+ * 사진 파일의 캐시 지시문 — **1년, 변하지 않는 파일** (2026-09-03, 20-6).
+ *
+ * 브라우저가 올릴 때도 같은 값을 붙이지만(`src/lib/pendingPhotos.ts`), **기록하는
+ * 순간 서버가 한 번 더 씁니다.** 브라우저를 거치지 않고 올린 파일이나 옛 화면에서
+ * 올린 파일도 같은 규칙을 받게 하려는 것입니다 — 안 붙으면 Storage 기본값
+ * `private, max-age=0`이 되어 **볼 때마다 처음부터 다시 받습니다.**
+ *
+ * 파일 이름이 난수라 같은 주소의 내용이 바뀌는 일이 없으므로 1년이 안전합니다.
+ */
+export const IMAGE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+/**
  * 주소가 향할 수 있는 호스트.
  *
  * 배포 환경의 다운로드 주소는 `firebasestorage.googleapis.com`이고,
@@ -49,6 +61,14 @@ export interface ImageInput {
   path: string;
   /** 화면이 그대로 쓰는 다운로드 주소 */
   url: string;
+  /**
+   * 목록 카드용 작은 사진 (2026-09-03, 20-6). **선택입니다.**
+   *
+   * 필수로 하면 이미 배포된 예전 화면(브라우저가 캐시한 번들)에서 올리는 사람이
+   * 갑자기 실패합니다. 없으면 목록이 큰 사진으로 되돌아갈 뿐이라 고장이 아닙니다.
+   */
+  thumbPath?: string;
+  thumbUrl?: string;
 }
 
 function parseImageInputs(value: unknown): ImageInput[] {
@@ -62,7 +82,14 @@ function parseImageInputs(value: unknown): ImageInput[] {
     if (path === "" || url === "") {
       throw new AppError("invalid-argument", `${i + 1}번째 사진 정보가 올바르지 않습니다`);
     }
-    return { path, url };
+    const thumbPath = typeof row.thumbPath === "string" ? row.thumbPath.trim() : "";
+    const thumbUrl = typeof row.thumbUrl === "string" ? row.thumbUrl.trim() : "";
+    // 둘 중 하나만 오면 거부합니다 — 경로 없이 주소만 저장하면 나중에 그 파일을
+    // 지울 때 어느 객체인지 되짚을 수 없습니다(큰 사진과 같은 이유).
+    if ((thumbPath === "") !== (thumbUrl === "")) {
+      throw new AppError("invalid-argument", `${i + 1}번째 사진 정보가 올바르지 않습니다`);
+    }
+    return { path, url, thumbPath, thumbUrl };
   });
 }
 
@@ -107,6 +134,13 @@ interface IntroBlockRow {
   images: Array<{ path: string; url: string }>;
 }
 
+/** 짝이 맞도록 길이를 맞춰줍니다. 모자라면 빈 문자열, 넘치면 잘라냅니다. */
+function padTo(list: string[], length: number): string[] {
+  const out = list.slice(0, length);
+  while (out.length < length) out.push("");
+  return out;
+}
+
 async function loadOwnedProgram(
   db: Firestore,
   programId: string,
@@ -114,6 +148,8 @@ async function loadOwnedProgram(
 ): Promise<{
   imageUrls: string[];
   imagePaths: string[];
+  thumbUrls: string[];
+  thumbPaths: string[];
   status: string;
   introBlocks: IntroBlockRow[];
 }> {
@@ -122,9 +158,16 @@ async function loadOwnedProgram(
     // 남의 프로그램은 존재 여부도 알리지 않습니다.
     throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
   }
+  const imageUrls = (snap.get("imageUrls") as string[] | undefined) ?? [];
   return {
-    imageUrls: (snap.get("imageUrls") as string[] | undefined) ?? [],
+    imageUrls,
     imagePaths: (snap.get("imagePaths") as string[] | undefined) ?? [],
+    // **길이를 큰 사진에 맞춰 채웁니다.** 2026-09-03 이전에 올린 사진에는 작은 것이
+    // 없어서 목록이 짧습니다 — 그대로 두면 순서 바꾸기·삭제에서 자리가 밀려
+    // **엉뚱한 사진의 작은 판**이 붙습니다. 빈 문자열은 「작은 것이 없다」는 뜻이고,
+    // 화면은 그때 큰 사진으로 되돌아갑니다.
+    thumbUrls: padTo((snap.get("thumbUrls") as string[] | undefined) ?? [], imageUrls.length),
+    thumbPaths: padTo((snap.get("thumbPaths") as string[] | undefined) ?? [], imageUrls.length),
     status: snap.get("status") as string,
     introBlocks: (snap.get("introBlocks") as IntroBlockRow[] | undefined) ?? [],
   };
@@ -167,13 +210,40 @@ export async function addProgramImages(
         "업로드가 완료되지 않은 사진입니다. 다시 시도해 주세요"
       );
     }
+    // 캐시 지시문을 서버가 확정합니다. 실패해도 등록은 막지 않습니다 —
+    // 캐시가 안 붙은 사진은 느릴 뿐 고장이 아니고, 등록을 막으면 글을 다 쓴
+    // 사람이 사진 때문에 저장을 못 합니다.
+    await bucket
+      .file(input.path)
+      .setMetadata({ cacheControl: IMAGE_CACHE_CONTROL })
+      .catch(() => undefined);
     if (program.imagePaths.includes(input.path)) {
       throw new AppError("invalid-argument", "이미 등록된 사진입니다");
+    }
+
+    // 작은 사진도 같은 네 가지를 확인합니다 — 여기를 건너뛰면 목록 카드에
+    // 외부 주소를 심을 수 있고, 그 자리가 우리 화면에서 가장 많이 보입니다.
+    if (input.thumbPath) {
+      assertPathBelongsToProgram(input.thumbPath, programId);
+      assertUrlPointsToPath(input.thumbUrl as string, input.thumbPath);
+      const [thumbExists] = await bucket.file(input.thumbPath).exists();
+      if (!thumbExists) {
+        throw new AppError(
+          "failed-precondition",
+          "업로드가 완료되지 않은 사진입니다. 다시 시도해 주세요"
+        );
+      }
+      await bucket
+        .file(input.thumbPath)
+        .setMetadata({ cacheControl: IMAGE_CACHE_CONTROL })
+        .catch(() => undefined);
     }
   }
 
   const imageUrls = [...program.imageUrls, ...inputs.map((i) => i.url)];
   const imagePaths = [...program.imagePaths, ...inputs.map((i) => i.path)];
+  const thumbUrls = [...program.thumbUrls, ...inputs.map((i) => i.thumbUrl ?? "")];
+  const thumbPaths = [...program.thumbPaths, ...inputs.map((i) => i.thumbPath ?? "")];
 
   // 사진은 심사 대상이지만(v22) 여기서는 게시본에 바로 씁니다 —
   // 수정본 경로로 보내면 사진을 올려도 화면에 아무것도 안 나타나 고장으로 읽힙니다.
@@ -182,6 +252,8 @@ export async function addProgramImages(
   await db.doc(`programs/${programId}`).update({
     imageUrls,
     imagePaths,
+    thumbUrls,
+    thumbPaths,
     updatedAt: FieldValue.serverTimestamp(),
   });
 
@@ -218,6 +290,11 @@ export async function deleteProgramImage(
 
   const imagePaths = program.imagePaths.filter((_, i) => i !== index);
   const imageUrls = program.imageUrls.filter((_, i) => i !== index);
+  // 작은 사진은 큰 사진과 **같은 자리**를 씁니다(20-6). 여기서 함께 빼지 않으면
+  // 그 뒤 사진들의 작은 판이 한 칸씩 밀려 **목록에 엉뚱한 사진**이 뜹니다.
+  const removedThumbPath = program.thumbPaths[index] ?? "";
+  const thumbPaths = program.thumbPaths.filter((_, i) => i !== index);
+  const thumbUrls = program.thumbUrls.filter((_, i) => i !== index);
 
   // 소개 블록에서도 함께 뺍니다 (v29 — 연쇄 정리).
   //
@@ -242,6 +319,8 @@ export async function deleteProgramImage(
   await db.doc(`programs/${programId}`).update({
     imageUrls,
     imagePaths,
+    thumbUrls,
+    thumbPaths,
     introBlocks,
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -271,6 +350,13 @@ export async function deleteProgramImage(
     .file(path)
     .delete()
     .catch(() => undefined);
+  // 작은 사진 파일도 지웁니다. 안 지우면 아무도 참조하지 않는 파일이 쌓입니다(18-7).
+  if (removedThumbPath) {
+    await bucket
+      .file(removedThumbPath)
+      .delete()
+      .catch(() => undefined);
+  }
 
   return { imageUrls, detachedFrom };
 }
@@ -303,11 +389,18 @@ export async function reorderProgramImages(
     throw new AppError("invalid-argument", "등록된 사진 목록과 맞지 않습니다");
   }
 
-  const imageUrls = paths.map((p) => program.imageUrls[program.imagePaths.indexOf(p)]);
+  // 작은 사진도 **같은 순서로** 옮깁니다. 안 옮기면 대표 사진을 바꾼 순간
+  // 목록 카드에는 옛 대표의 작은 판이 남습니다.
+  const moved = paths.map((p) => program.imagePaths.indexOf(p));
+  const imageUrls = moved.map((i) => program.imageUrls[i]);
+  const thumbUrls = moved.map((i) => program.thumbUrls[i] ?? "");
+  const thumbPaths = moved.map((i) => program.thumbPaths[i] ?? "");
 
   await db.doc(`programs/${programId}`).update({
     imageUrls,
     imagePaths: paths,
+    thumbUrls,
+    thumbPaths,
     updatedAt: FieldValue.serverTimestamp(),
   });
 

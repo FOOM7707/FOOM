@@ -83,6 +83,8 @@ interface DetailProgram {
   targetAgeMin: number | null;
   targetAgeMax: number | null;
   imageUrls: string[];
+  /** (20-6) 목록·옆칸용 작은 사진. 없으면 큰 사진으로 되돌아갑니다 */
+  thumbUrls?: string[];
   includes?: KeywordField;
   excludes?: KeywordField;
   preparations?: KeywordField;
@@ -181,6 +183,8 @@ export default function ProgramDetailPage() {
   // 후자는 그 회차가 선택된 채 열립니다.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [preselectId, setPreselectId] = useState<string | null>(null);
+  // 지도의 「내 위치」로 받아둔 좌표 — 길찾기 출발지에 씁니다(2026-09-03).
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -262,6 +266,33 @@ export default function ProgramDetailPage() {
   const directionsUrl = hasCoords
     ? `https://map.kakao.com/link/to/${encodeURIComponent(program.title)},${program.location.lat},${program.location.lng}`
     : `https://map.kakao.com/link/search/${encodeURIComponent(program.location.address)}`;
+
+  // 목적지 값 — program이 non-null로 좁혀진 이 자리에서 뽑아야 클로저 안에서도
+  // 쓸 수 있습니다(nested 함수 안에서는 TS가 다시 null 가능으로 봅니다).
+  const destName = program.title;
+  const destLat = program.location.lat;
+  const destLng = program.location.lng;
+
+  /**
+   * 길찾기 (2026-09-03 개정).
+   *
+   * **지도의 「내 위치」로 이미 받아둔 좌표를 그대로** 출발지에 넣습니다 — 누르는
+   * 순간 바로 열리므로 기다림도 빈 탭도 없습니다. 「내 위치」를 누르지 않았으면
+   * 좌표가 없어 지금처럼 목적지만 넘깁니다(즉시 열림).
+   *
+   * **길찾기를 누를 때 위치를 새로 묻지 않습니다.** 그렇게 하면 권한이 없을 때
+   * 응답을 30초 가까이 기다리며 빈 탭(about:blank)이 떠 있었습니다. 위치는
+   * 「내 위치」 버튼이 이미 담당하고 있어, 그 좌표를 재사용하는 편이 빠르고
+   * 사용자에게도 「내가 눌러서 켠 위치」라 자연스럽습니다.
+   *
+   * ⚠️ 카카오의 `from/to` 링크는 PC 웹에서 출발지를 채우지만, **휴대폰 앱은
+   * 자기 GPS를 우선해 무시할 수 있습니다** — 앱 사양이라 우리가 바꿀 수 없고,
+   * 휴대폰은 실시간 GPS가 더 정확해 실사용엔 문제가 없습니다.
+   */
+  const directionsUrlWithOrigin = userLocation
+    ? `https://map.kakao.com/link/from/${encodeURIComponent("내 위치")},${userLocation.lat},${userLocation.lng}` +
+      `/to/${encodeURIComponent(destName)},${destLat},${destLng}`
+    : directionsUrl;
   const upcoming = program.schedules.filter((s) => new Date(s.startAt).getTime() > Date.now());
   const firstSchedule = upcoming[0];
   const introBlocks = program.introBlocks ?? [];
@@ -296,17 +327,22 @@ export default function ProgramDetailPage() {
           왼쪽(2)은 읽는 내용, 오른쪽(1)은 신청에 필요한 것만 모아 따라다닙니다.
           **휴대폰에서는 한 줄로 쌓이고 하단 고정 버튼이 그대로 남습니다** — 좁은
           화면에는 오른쪽 칸이 없어 버튼이 사라지면 신청할 방법이 없어집니다. */}
-      {/* 사진은 가로 전체를 씁니다 — 아래 2:1 분할은 제목부터 시작합니다. */}
-      <ProgramGallery
-        imageUrls={program.imageUrls ?? []}
-        title={program.title}
-        category={program.category}
-      />
-
-      <div className="mt-8 grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
-        {/* ── 왼쪽: 읽는 내용 ──────────────────────────────────────────── */}
+      {/* 사진은 **왼쪽 칸 너비만큼만** 씁니다 (2026-09-03) — 가로 전체를 쓰면
+          오른쪽 가격 카드 위까지 덮습니다. 그래서 갤러리를 왼쪽 칸(2fr) 안 맨
+          위에 넣어, 오른쪽 카드와 나란히 서고 아래 내용과 같은 폭으로 정렬되게
+          합니다. 3패널 배치(왼쪽 큰 세로 + 오른쪽 2칸)는 ProgramGallery 안에
+          있습니다. 휴대폰에서는 한 줄로 쌓이며 갤러리가 가로 전체를 씁니다. */}
+      <div className="grid items-start gap-10 lg:grid-cols-[2fr_1fr] lg:gap-12">
+        {/* ── 왼쪽: 사진 + 읽는 내용 ──────────────────────────────────── */}
         <div className="min-w-0">
-          <div className="border-b pb-8">
+          <ProgramGallery
+            imageUrls={program.imageUrls ?? []}
+            thumbUrls={program.thumbUrls}
+            title={program.title}
+            category={program.category}
+          />
+
+          <div className="mt-6 border-b pb-8">
             <span className="text-[13px] font-bold text-primary">{program.category}</span>
             <h1 className="mt-2 text-2xl font-extrabold leading-snug tracking-tight sm:text-3xl">
               {program.title}
@@ -642,6 +678,8 @@ export default function ProgramDetailPage() {
                 lat: program.location.lat as number,
                 lng: program.location.lng as number,
               }}
+              userLocation={userLocation}
+              onLocate={setUserLocation}
               className="h-[380px] rounded-xl md:h-[480px]"
             />
           ) : (
@@ -672,9 +710,10 @@ export default function ProgramDetailPage() {
               >
                 {copied ? "복사했습니다" : "주소 복사"}
               </Button>
-              {/* 새 탭으로 엽니다 — 지금 보던 프로그램 화면을 잃지 않아야 합니다. */}
+              {/* 새 탭으로 엽니다 — 지금 보던 프로그램 화면을 잃지 않아야 합니다.
+                  「내 위치」를 눌러 좌표가 있으면 출발지가 채워집니다(directionsUrlWithOrigin). */}
               <Button size="sm" asChild>
-                <a href={directionsUrl} target="_blank" rel="noreferrer noopener">
+                <a href={directionsUrlWithOrigin} target="_blank" rel="noreferrer noopener">
                   <Navigation className="h-4 w-4" strokeWidth={1.75} aria-hidden />
                   길찾기
                 </a>

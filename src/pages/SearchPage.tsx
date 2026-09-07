@@ -386,11 +386,14 @@ export default function SearchPage() {
         />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[18px]">
-          {filtered.map(({ program, distance }) => (
+          {filtered.map(({ program, distance }, i) => (
             <ProgramCard
               key={program.id}
               program={program as unknown as Program}
               distanceKm={distance}
+              // 첫 줄(넉 장)은 열자마자 보이는 자리라 지연 로딩을 풉니다.
+              // 그 아래는 스크롤해야 보이므로 그대로 미룹니다.
+              priority={i < 4}
             />
           ))}
           {!loading && filtered.length === 0 && (
