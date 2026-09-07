@@ -666,6 +666,96 @@ describe("작은 사진(썸네일)", () => {
     ).rejects.toThrow();
   });
 
+  /* 아래 셋은 「한 파일이 두 자리를 가리키는」 경우입니다 (2026-09-07, 9/4 점검 B-2).
+   * 통과시키면 나중에 한 장을 지울 때 그 파일이 삭제되어 **남은 사진이 깨집니다** —
+   * 에러가 아니라 목록의 깨진 이미지로만 드러납니다. */
+
+  it("작은 사진 경로가 이미 등록된 큰 사진과 같으면 거부한다 — 지우기 연쇄로 서로를 깨뜨린다", async () => {
+    const a = pair("a1");
+    const b = pair("b1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath, b.path]));
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [a.input] },
+      { bucket }
+    );
+
+    // b의 작은 판으로 「이미 등록된 a의 큰 사진」을 가리킴
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        {
+          images: [
+            { path: b.path, url: downloadUrl(b.path), thumbPath: a.path, thumbUrl: downloadUrl(a.path) },
+          ],
+        },
+        { bucket }
+      )
+    ).rejects.toThrow("이미 등록된 사진입니다");
+  });
+
+  it("작은 사진 경로가 이미 등록된 다른 사진의 작은 판과 같으면 거부한다", async () => {
+    const a = pair("a1");
+    const b = pair("b1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath, b.path]));
+    await addProgramImages(
+      testDb,
+      programId,
+      providerUid,
+      { images: [a.input] },
+      { bucket }
+    );
+
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        {
+          images: [
+            {
+              path: b.path,
+              url: downloadUrl(b.path),
+              thumbPath: a.thumbPath,
+              thumbUrl: downloadUrl(a.thumbPath),
+            },
+          ],
+        },
+        { bucket }
+      )
+    ).rejects.toThrow("이미 등록된 사진입니다");
+  });
+
+  it("같은 요청 안에서 두 사진이 같은 작은 판을 가리키면 거부한다", async () => {
+    const a = pair("a1");
+    const b = pair("b1");
+    const { bucket } = fakeBucket(new Set([a.path, a.thumbPath, b.path]));
+
+    await expect(
+      addProgramImages(
+        testDb,
+        programId,
+        providerUid,
+        {
+          images: [
+            a.input,
+            {
+              path: b.path,
+              url: downloadUrl(b.path),
+              thumbPath: a.thumbPath,
+              thumbUrl: downloadUrl(a.thumbPath),
+            },
+          ],
+        },
+        { bucket }
+      )
+    ).rejects.toThrow("이미 등록된 사진입니다");
+  });
+
   it("사진을 지우면 작은 사진 파일도 함께 지워진다", async () => {
     const a = pair("a1");
     const fake = fakeBucket(new Set([a.path, a.thumbPath]));
