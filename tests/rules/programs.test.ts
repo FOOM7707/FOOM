@@ -56,6 +56,41 @@ describe('programs — 허용목록 방식 수정 규칙 (v13)', () => {
     )
   })
 
+  /* 사진은 서버 경로(POST|PATCH|DELETE /programs/{id}/images)로만 바뀝니다 —
+   * MD/backend/backend.md 절대 규칙. 2026-09-07(9/4 점검 B-1)에 허용목록에서
+   * imageUrls를 빼면서 못박은 케이스 3종입니다. 열려 있으면 외부 서버 주소를
+   * 사진으로 심을 수 있고, 짝을 이루는 네 목록의 자리가 어긋납니다. */
+
+  it('사진 목록(imageUrls)은 draft 라도 클라이언트가 직접 못 씀', async () => {
+    const db = as(UID.providerA)
+    await assertDenied(
+      updateDoc(doc(db, 'programs', ID.programDraft), {
+        imageUrls: ['https://evil.example.com/x.jpg'],
+      }),
+    )
+  })
+
+  it('사진 저장 위치(imagePaths·thumbUrls·thumbPaths)도 직접 못 씀', async () => {
+    const db = as(UID.providerA)
+    await assertDenied(
+      updateDoc(doc(db, 'programs', ID.programDraft), {
+        imagePaths: [`programs/${ID.programDraft}/x.jpg`],
+        thumbUrls: ['https://evil.example.com/t_x.jpg'],
+        thumbPaths: [`programs/${ID.programDraft}/t_x.jpg`],
+      }),
+    )
+  })
+
+  it('허용된 필드와 사진을 함께 보내도 수정 전체가 거부됨', async () => {
+    const db = as(UID.providerA)
+    await assertDenied(
+      updateDoc(doc(db, 'programs', ID.programDraft), {
+        title: '제목만 고치는 척',
+        imageUrls: ['https://evil.example.com/x.jpg'],
+      }),
+    )
+  })
+
   it('케이스 18 — targetAgeMin > targetAgeMax 로 저장', async () => {
     const db = as(UID.providerA)
     await assertDenied(

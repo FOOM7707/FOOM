@@ -198,6 +198,17 @@ export async function addProgramImages(
     );
   }
 
+  // **한 파일이 두 자리를 가리키게 두지 않습니다** (2026-09-07, 9/4 점검 B-2).
+  // 큰 사진·작은 사진·이미 등록된 것·같은 요청의 다른 항목을 **한 묶음**으로 봅니다.
+  // 겹친 상태로 통과하면 나중에 한 장을 지울 때 그 파일이 삭제되어 **남은 사진이
+  // 깨집니다** — 에러가 아니라 목록의 깨진 이미지로만 드러나서, 보고를 받기 전에는
+  // 알 수 없습니다(사진 목록 네 개가 짝을 이룬다는 전제와 같은 위험 유형).
+  // 빈 문자열은 「작은 판이 없다」는 뜻이므로 겹침 판정에서 제외합니다.
+  const usedPaths = new Set<string>([
+    ...program.imagePaths,
+    ...program.thumbPaths.filter((path) => path !== ""),
+  ]);
+
   for (const input of inputs) {
     assertPathBelongsToProgram(input.path, programId);
     assertUrlPointsToPath(input.url, input.path);
@@ -217,15 +228,20 @@ export async function addProgramImages(
       .file(input.path)
       .setMetadata({ cacheControl: IMAGE_CACHE_CONTROL })
       .catch(() => undefined);
-    if (program.imagePaths.includes(input.path)) {
+    if (usedPaths.has(input.path)) {
       throw new AppError("invalid-argument", "이미 등록된 사진입니다");
     }
+    usedPaths.add(input.path);
 
     // 작은 사진도 같은 네 가지를 확인합니다 — 여기를 건너뛰면 목록 카드에
     // 외부 주소를 심을 수 있고, 그 자리가 우리 화면에서 가장 많이 보입니다.
     if (input.thumbPath) {
       assertPathBelongsToProgram(input.thumbPath, programId);
       assertUrlPointsToPath(input.thumbUrl as string, input.thumbPath);
+      if (usedPaths.has(input.thumbPath)) {
+        throw new AppError("invalid-argument", "이미 등록된 사진입니다");
+      }
+      usedPaths.add(input.thumbPath);
       const [thumbExists] = await bucket.file(input.thumbPath).exists();
       if (!thumbExists) {
         throw new AppError(

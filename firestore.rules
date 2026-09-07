@@ -92,13 +92,22 @@ service cloud.firestore {
       // scheduleDates를 심어 회차가 0건인데 달력에 뜨게 만들 수 있었습니다.
       // 필드를 추가할 때 목록에 넣는 걸 잊으면 "저장이 안 되는 버그"로
       // 드러나므로, 잊었을 때 보안 사고가 되는 금지목록보다 안전합니다.
+      //
+      // (2026-09-07) imageUrls를 목록에서 뺐습니다 — 9/4 점검 B-1.
+      // 사진은 POST|PATCH|DELETE /programs/{id}/images 세 경로로만 바뀝니다
+      // (MD/backend/backend.md 절대 규칙). 이 목록에 남아 있어서 draft 문서의
+      // 사진 주소를 브라우저가 직접 쓸 수 있었고, 그러면 ① 외부 서버 주소를
+      // 사진으로 심을 수 있고 ② 짝을 이루는 네 목록(imageUrls·imagePaths·
+      // thumbUrls·thumbPaths) 중 하나만 바뀌어 **자리가 어긋납니다** —
+      // 에러 없이 "목록에 엉뚱한 사진이 뜨는" 형태로만 드러납니다.
+      // 등록·수정 화면은 이미 서버를 거치므로 이 경로를 쓰는 정상 기능은 없습니다.
       allow update: if isSelf(resource.data.providerId)
         && resource.data.status == 'draft'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['title', 'description', 'category', 'qualificationType',
                        'location', 'price', 'capacity', 'minCapacity',
                        'scheduleType', 'availableFrom', 'availableUntil',
-                       'imageUrls', 'barrierFree',
+                       'barrierFree',
                        'targetAgeMin', 'targetAgeMax',
                        'walkingDistanceM', 'rainAlternative', 'updatedAt'])
         // (v13 정정) 값 검증은 반드시 get(키, 기본값)으로 씁니다.
