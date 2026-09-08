@@ -12,6 +12,7 @@ import {
   getProgram,
   listPrograms,
   parseProgramInput,
+  removeProgram,
   submitProgramForReview,
 } from "../src/lib/programs";
 import { parseScheduleInputs } from "../src/lib/schedules";
@@ -400,5 +401,180 @@ describe("grantProvider (임시 경로)", () => {
     await expect(grantProvider({ uid }, { db: testDb })).rejects.toMatchObject({
       code: "failed-precondition",
     });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 프로그램 정리 — 지우기 / 내리기 (2026-09-08 신규)
+ *
+ * **가르는 기준은 상태가 아니라 `publishedAt`입니다.** `hidden`은 「반려된 것」과
+ * 「내려간 것」 두 가지를 함께 뜻해서 상태만으로는 지워도 되는지 알 수 없습니다.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+describe("removeProgram — 지우기 / 내리기", () => {
+  /** 지난 시각은 회차 등록이 거부하므로 앞으로의 날짜를 씁니다. */
+  function futureDate(): string {
+    return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
+  /** 파일이 실제로 지워지는지 보려고 버킷을 흉내냅니다. */
+  function fakeBucket(existing: Set<string>) {
+    const deleted: string[] = [];
+    return {
+      deleted,
+      bucket: {
+        file(path: string) {
+          return {
+            delete: async () => {
+              if (!existing.has(path)) throw new Error("없는 파일");
+              existing.delete(path);
+              deleted.push(path);
+            },
+          };
+        },
+      } as never,
+    };
+  }
+
+  it("게시된 적 없으면 문서까지 지운다 — 하위 회차와 사진 파일도 함께", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "single" })),
+      parseScheduleInputs(
+        [{ date: futureDate(), startTime: "10:00", endTime: "12:00", capacity: 12 }],
+        { scheduleType: "single", programCapacity: 12 }
+      )
+    );
+    const big = `programs/${id}/a.jpg`;
+    const small = `programs/${id}/t_a.jpg`;
+    await testDb.doc(`programs/${id}`).update({
+      imagePaths: [big],
+      thumbPaths: [small],
+    });
+    const fake = fakeBucket(new Set([big, small]));
+
+    const result = await removeProgram(testDb, id, providerUid, { bucket: fake.bucket });
+
+    expect(result.action).toBe("deleted");
+    expect(result.deletedFiles).toBe(2);
+    expect(fake.deleted).toEqual(expect.arrayContaining([big, small]));
+    expect((await testDb.doc(`programs/${id}`).get()).exists).toBe(false);
+    // 부모를 지워도 하위 문서는 남습니다 — 남으면 주인 없는 회차가 됩니다.
+    expect((await testDb.collection(`programs/${id}/schedules`).get()).empty).toBe(true);
+  });
+
+  it("게시됐던 프로그램은 지우지 않고 내린다 — 예약·후기가 가리킬 근거를 남긴다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "single" })),
+      parseScheduleInputs(
+        [{ date: futureDate(), startTime: "10:00", endTime: "12:00", capacity: 12 }],
+        { scheduleType: "single", programCapacity: 12 }
+      )
+    );
+    await testDb.doc(`programs/${id}`).update({
+      status: "published",
+      publishedAt: new Date(),
+    });
+    const fake = fakeBucket(new Set());
+
+    const result = await removeProgram(testDb, id, providerUid, { bucket: fake.bucket });
+
+    expect(result.action).toBe("hidden");
+    expect(result.deletedFiles).toBe(0);
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.exists).toBe(true);
+    expect(snap.get("status")).toBe("hidden");
+    // 사진 파일은 그대로 둡니다 — 되돌릴 수 있어야 합니다.
+    expect(fake.deleted).toEqual([]);
+  });
+
+  it("내릴 때 회차의 상태 사본도 함께 바꾼다 — 안 바꾸면 검색에 계속 잡힌다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "single" })),
+      parseScheduleInputs(
+        [{ date: futureDate(), startTime: "10:00", endTime: "12:00", capacity: 12 }],
+        { scheduleType: "single", programCapacity: 12 }
+      )
+    );
+    await testDb.doc(`programs/${id}`).update({
+      status: "published",
+      publishedAt: new Date(),
+    });
+    const schedules = await testDb.collection(`programs/${id}/schedules`).get();
+    await Promise.all(
+      schedules.docs.map((d) => d.ref.update({ programStatus: "published" }))
+    );
+
+    await removeProgram(testDb, id, providerUid);
+
+    const after = await testDb.collection(`programs/${id}/schedules`).get();
+    expect(after.docs.map((d) => d.get("programStatus"))).toEqual(["hidden"]);
+  });
+
+  it("이미 내려간 프로그램은 거부한다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput())
+    );
+    await testDb.doc(`programs/${id}`).update({
+      status: "hidden",
+      publishedAt: new Date(),
+    });
+
+    await expect(removeProgram(testDb, id, providerUid)).rejects.toThrow(
+      "이미 내려간 프로그램입니다"
+    );
+  });
+
+  it("반려된 프로그램(hidden이지만 게시된 적 없음)은 완전히 지운다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput())
+    );
+    // 반려는 hidden으로 남지만 publishedAt이 없습니다 — 손님이 본 적 없습니다.
+    await testDb.doc(`programs/${id}`).update({ status: "hidden" });
+
+    const result = await removeProgram(testDb, id, providerUid);
+
+    expect(result.action).toBe("deleted");
+    expect((await testDb.doc(`programs/${id}`).get()).exists).toBe(false);
+  });
+
+  it("남의 프로그램은 존재 여부도 알리지 않는다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput())
+    );
+    const other = await makeUser("provider");
+
+    await expect(removeProgram(testDb, id, other)).rejects.toThrow(
+      "프로그램을 찾을 수 없습니다"
+    );
+    expect((await testDb.doc(`programs/${id}`).get()).exists).toBe(true);
+  });
+
+  it("예약이 있으면 지우지 않는다 — 지금은 생길 수 없지만 조용히 사라지는 것이 최악이다", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput())
+    );
+    await testDb.collection("bookings").add({
+      programId: id,
+      consumerId: "someone",
+      status: "confirmed",
+    });
+
+    await expect(removeProgram(testDb, id, providerUid)).rejects.toThrow(
+      "예약이 있는 프로그램은 삭제할 수 없습니다"
+    );
   });
 });

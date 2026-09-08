@@ -10,7 +10,8 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
-import { getPendingEdit, savePendingEdit } from "./programEdits";
+import { discardPendingEdit, getPendingEdit, savePendingEdit } from "./programEdits";
+import { deleteAllProgramFiles, type Deps as ProgramImageDeps } from "./programImages";
 import {
   DEFAULT_INTRO_LAYOUT,
   INTRO_LAYOUTS,
@@ -481,6 +482,14 @@ export async function listPrograms(
   const snap = await query.get();
   return snap.docs.map((d) => {
     const data = d.data() as Record<string, unknown>;
+    if (options.mine) {
+      // **「지우기」와 「내리기」 중 무엇이 일어날지 화면이 미리 알려주려면 필요합니다**
+      // (2026-09-08). `status`만으로는 알 수 없습니다 — `hidden`이 「반려된 것」과
+      // 「내려간 것」 두 가지를 함께 뜻하기 때문입니다(removeProgram 참고).
+      // `publishedAt`을 그대로 내려보내지 않는 이유는 시각 형식이 화면마다 다르게
+      // 해석될 수 있어서입니다. 필요한 것은 시각이 아니라 예/아니오 하나입니다.
+      data.everPublished = data.publishedAt != null;
+    }
     if (!options.mine) {
       // 상세(getProgram)와 같은 기준입니다 — 심사·수정 승인 사유와 처리한
       // 관리자 uid는 소유자·관리자 전용입니다. 수정본이 반려되면
@@ -696,4 +705,115 @@ export async function updateProgram(
     pendingEdit: false,
     changedFields: [],
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 프로그램 정리 — 지우기 / 내리기 (2026-09-08 신규)
+ *
+ * **그전에는 공급자가 자기 프로그램을 치울 방법이 전혀 없었습니다.** 화면에도
+ * 버튼이 없었고 서버에도 경로가 없어서, 잘못 만든 프로그램이 영구히 남았습니다.
+ *
+ * **「지우기」와 「내리기」를 상태가 아니라 `publishedAt`으로 가릅니다.**
+ *   · 손님에게 보인 적 없음(`publishedAt == null`) → **완전 삭제**
+ *   · 한 번이라도 보인 적 있음                      → **내리기(`hidden`)**
+ *
+ * 상태값(`draft`/`pending_review`/`hidden`)으로 가르지 않는 이유가 있습니다.
+ * `hidden`은 **반려된 것**(게시된 적 없음)과 **내려간 것**(게시됐던 것) 두 가지를
+ * 함께 뜻해서, 상태만 보면 지워도 되는지 알 수 없습니다. `publishedAt`은 최초
+ * 게시 때 한 번만 채워지고 이후 바뀌지 않으므로(2-3) 「손님이 볼 수 있었는가」를
+ * 정확히 가릅니다.
+ *
+ * **게시됐던 것을 지우지 않는 이유** — 앞으로 예약·후기·정산이 그 프로그램을
+ * 가리킵니다. 문서를 없애면 「이 예약이 무슨 프로그램이었는지」를 되짚을 근거가
+ * 사라집니다. 회차 삭제를 「예약이 있으면 거부」로 만든 것과 같은 판단입니다(2-4).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface RemoveProgramResult {
+  /** `deleted` = 문서까지 지움 · `hidden` = 손님에게만 안 보이게 내림 */
+  action: "deleted" | "hidden";
+  /** 실제로 지운 사진 파일 수 (`hidden`이면 0) */
+  deletedFiles: number;
+}
+
+export async function removeProgram(
+  db: Firestore,
+  id: string,
+  uid: string,
+  deps: ProgramImageDeps = {}
+): Promise<RemoveProgramResult> {
+  const ref = db.doc(`programs/${id}`);
+  const snap = await ref.get();
+
+  // 남의 프로그램은 존재 여부도 알리지 않습니다.
+  if (!snap.exists || snap.get("providerId") !== uid) {
+    throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+  }
+
+  const status = snap.get("status") as string;
+  const everPublished = snap.get("publishedAt") != null;
+
+  // ── 게시됐던 프로그램 — 내립니다 ──────────────────────────────────────────
+  if (everPublished) {
+    if (status === "hidden") {
+      throw new AppError("failed-precondition", "이미 내려간 프로그램입니다");
+    }
+
+    await ref.update({ status: "hidden", updatedAt: FieldValue.serverTimestamp() });
+
+    // 회차에 심어둔 상태 사본을 함께 맞춥니다. 빠뜨리면 프로그램은 내려갔는데
+    // 사본이 published로 남아 **검색에 계속 잡힙니다**(2-4).
+    const schedules = await ref.collection("schedules").get();
+    if (!schedules.empty) {
+      const batch = db.batch();
+      schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: "hidden" }));
+      await batch.commit();
+    }
+
+    // 승인 대기 중인 수정본은 함께 버립니다 — 관리자가 숨길 때와 같은 처리입니다.
+    // 남겨두면 내려간 프로그램의 수정본이 심사 대기열에 계속 떠 있게 됩니다(v23).
+    await discardPendingEdit(db, id);
+
+    return { action: "hidden", deletedFiles: 0 };
+  }
+
+  // ── 게시된 적 없는 프로그램 — 완전히 지웁니다 ────────────────────────────
+  //
+  // 예약 검사는 논리적으로는 필요 없습니다(게시된 적이 없으면 손님이 볼 수도
+  // 없었으니 예약이 생길 수 없습니다). 그래도 확인하는 이유는, 이 전제가 언젠가
+  // 깨졌을 때 **조용히 예약 기록이 사라지는 것**이 최악이기 때문입니다.
+  const booked = await db
+    .collection("bookings")
+    .where("programId", "==", id)
+    .limit(1)
+    .get();
+  if (!booked.empty) {
+    throw new AppError(
+      "failed-precondition",
+      "예약이 있는 프로그램은 삭제할 수 없습니다. 문의해 주세요"
+    );
+  }
+
+  const imagePaths = (snap.get("imagePaths") as string[] | undefined) ?? [];
+  const thumbPaths = (snap.get("thumbPaths") as string[] | undefined) ?? [];
+
+  // 하위 회차를 먼저 지웁니다. 부모 문서를 지워도 하위 문서는 남기 때문에
+  // (Firestore는 연쇄 삭제를 하지 않습니다) 순서를 바꾸면 **주인 없는 회차**가
+  // 남고, 그 회차의 `programStatus` 사본이 검색에 잡힐 수 있습니다.
+  const schedules = await ref.collection("schedules").get();
+  if (!schedules.empty) {
+    const batch = db.batch();
+    schedules.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  // 수정본(하위 문서)도 같은 이유로 먼저 지웁니다.
+  await discardPendingEdit(db, id);
+
+  await ref.delete();
+
+  // 파일은 문서를 지운 **뒤에** 지웁니다. 반대로 하면 파일 삭제만 성공하고 문서가
+  // 남았을 때 깨진 이미지가 화면에 뜹니다 — 사진 한 장 지우기와 같은 순서입니다.
+  const deletedFiles = await deleteAllProgramFiles([...imagePaths, ...thumbPaths], deps);
+
+  return { action: "deleted", deletedFiles };
 }

@@ -124,7 +124,7 @@ export function assertUrlPointsToPath(url: string, path: string): void {
   }
 }
 
-interface Deps {
+export interface Deps {
   bucket?: ReturnType<typeof defaultBucket>;
 }
 
@@ -375,6 +375,44 @@ export async function deleteProgramImage(
   }
 
   return { imageUrls, detachedFrom };
+}
+
+/**
+ * 프로그램에 딸린 사진 파일을 **전부** 지웁니다 — 프로그램 자체를 지울 때만 씁니다.
+ *
+ * 문서만 지우면 버킷에 파일이 그대로 남습니다. 미참조 파일을 찾아내는 수단이 아직
+ * 없어서(18-7) 한 번 남으면 **아무도 다시 찾지 못하고 요금만 나갑니다.** 큰 사진과
+ * 작은 사진이 같은 자리로 짝을 이루므로(20-6) 두 목록을 함께 넘겨야 합니다.
+ *
+ * **한 장이 실패해도 나머지를 계속 지우고 성공 개수만 돌려줍니다.** 파일 삭제
+ * 실패로 프로그램 삭제를 되돌리면 사람은 「지워지지 않는 프로그램」을 보게 되고
+ * 원인도 알 수 없습니다 — 남은 파일은 아무도 참조하지 않는 상태라 나중에 정리할
+ * 수 있지만, 지워지지 않는 프로그램은 손을 쓸 방법이 없습니다.
+ */
+export async function deleteAllProgramFiles(
+  paths: string[],
+  deps: Deps = {}
+): Promise<number> {
+  // 빈 문자열은 「작은 판이 없다」는 뜻이고, 같은 파일이 두 목록에 들어 있을 수도
+  // 있어 한 번만 지웁니다.
+  const targets = [...new Set(paths.filter((p) => typeof p === "string" && p !== ""))];
+
+  // **지울 것이 없으면 버킷을 아예 건드리지 않습니다.** 사진을 한 장도 올리지 않은
+  // 프로그램이 흔한데, 그때 버킷을 여는 것은 불필요할 뿐 아니라 저장소가 설정되지
+  // 않은 환경에서 「사진도 없는 프로그램이 삭제되지 않는」 실패가 됩니다.
+  if (targets.length === 0) return 0;
+
+  const bucket = deps.bucket ?? defaultBucket();
+  let deleted = 0;
+  for (const path of targets) {
+    const ok = await bucket
+      .file(path)
+      .delete()
+      .then(() => true)
+      .catch(() => false);
+    if (ok) deleted += 1;
+  }
+  return deleted;
 }
 
 /**

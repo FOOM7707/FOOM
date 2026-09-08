@@ -9,6 +9,7 @@
  * Firestore 논리합 30개 제한이고(17-1), **옮겼으므로 이제 이쪽이 기준입니다.**
  */
 
+import { FieldValue } from "firebase-admin/firestore";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   PERIOD_MAX_DAYS,
@@ -20,6 +21,7 @@ import {
 } from "../src/lib/programSearch";
 import { createDraftProgram, parseProgramInput } from "../src/lib/programs";
 import { grantProvider } from "../src/lib/providerGrant";
+import { kstDateString } from "../src/lib/schedules";
 import { testDb } from "./helpers";
 
 let providerUid: string;
@@ -58,7 +60,14 @@ function body(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** 검색 대상이 되도록 게시 상태로 만들어 둡니다. */
+/**
+ * 검색 대상이 되도록 게시 상태로 만들어 둡니다.
+ *
+ * **진행할 날짜를 하나 넣습니다**(2026-09-08 — 만료 판정 추가). 회차가 0건인
+ * 프로그램은 심사를 통과할 수 없으므로(v21) 게시 상태인데 날짜가 없는 문서는
+ * 현실에 존재하지 않습니다. 날짜를 안 넣으면 만료로 판정돼 전부 걸러집니다.
+ * 날짜를 직접 지정하는 테스트는 `patch`로 덮어씁니다.
+ */
 async function makePublished(
   overrides: Record<string, unknown> = {},
   patch: Record<string, unknown> = {}
@@ -67,6 +76,7 @@ async function makePublished(
   await testDb.doc(`programs/${id}`).update({
     status: "published",
     publishedAt: new Date(),
+    scheduleDates: [kstDateString(new Date(Date.now() + 24 * 60 * 60 * 1000))],
     ...patch,
   });
   return id;
@@ -528,5 +538,82 @@ describe("searchPrograms — 지역 이름으로 좁히기", () => {
     expect(hongcheon?.count).toBeGreaterThan(0);
     // 시도 이름은 지역 목록에 들어가지 않습니다.
     expect(res.districts.some((d) => d.name.endsWith("특별시"))).toBe(false);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 만료 — 진행할 날짜가 없으면 검색에서 뺍니다 (2026-09-08 신규)
+ *
+ * 심사 요청 때는 회차 0건을 거부하지만(v21), **시간이 흘러 0건이 되는 것은 아무도
+ * 막지 않았습니다.** 손님이 들어가면 고를 날짜가 없는 프로그램을 봅니다.
+ *
+ * **상태(`status`)는 건드리지 않습니다.** 검색에서만 빼므로 날짜를 하나 추가하면
+ * 그 자리에서 돌아옵니다 — 자동으로 내려버리면 공급자가 모르는 사이 게시가
+ * 끊기는데, 알려줄 방법이 아직 없습니다.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+describe("만료 — 진행할 날짜가 없는 프로그램", () => {
+  const today = kstDateString(new Date());
+  const yesterday = kstDateString(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+  it("지난 날짜만 남았으면 검색에 안 나온다", async () => {
+    const id = await makePublished(
+      { title: "지난 프로그램" },
+      { scheduleDates: [yesterday] }
+    );
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).not.toContain(id);
+  });
+
+  it("요약이 빈 배열이어도 안 나온다 — 회차를 전부 지운 경우", async () => {
+    const id = await makePublished({ title: "회차 없음" }, { scheduleDates: [] });
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).not.toContain(id);
+  });
+
+  it("오늘 날짜가 있으면 나온다 — 당일 프로그램을 미리 지우지 않는다", async () => {
+    const id = await makePublished({ title: "오늘 프로그램" }, { scheduleDates: [today] });
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).toContain(id);
+  });
+
+  it("지난 날짜와 앞으로의 날짜가 섞여 있으면 나온다", async () => {
+    const id = await makePublished(
+      { title: "일부만 지남" },
+      { scheduleDates: [yesterday, "2030-05-01"] }
+    );
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).toContain(id);
+  });
+
+  it("요약 필드가 아예 없으면 숨기지 않는다 — 잘못 숨기는 쪽이 더 나쁘다", async () => {
+    const id = await makePublished({ title: "옛 문서" });
+    await testDb.doc(`programs/${id}`).update({ scheduleDates: FieldValue.delete() });
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).toContain(id);
+  });
+
+  it("상시모집은 문의 가능 기간이 지나면 안 나온다 — 회차가 아니라 기한으로 본다", async () => {
+    const id = await makePublished(
+      { title: "상시모집 만료", scheduleType: "open", availableUntil: yesterday },
+      { scheduleDates: [] }
+    );
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).not.toContain(id);
+  });
+
+  it("상시모집에 기한이 없으면 회차가 0건이어도 나온다", async () => {
+    const id = await makePublished(
+      { title: "상시모집 무기한", scheduleType: "open", availableUntil: null },
+      { scheduleDates: [] }
+    );
+    const { programs } = await searchPrograms(testDb, defaults());
+    expect(programs.map((p) => p.id)).toContain(id);
+  });
+
+  it("today는 요청에서 받지 않는다 — 지난 날짜를 보내 만료된 것을 되살릴 수 없다", () => {
+    const f = defaults({ today: "2000-01-01" });
+    expect(f.today).not.toBe("2000-01-01");
+    expect(f.today).toBe(today);
   });
 });
