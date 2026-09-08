@@ -22,11 +22,18 @@ interface Props {
   icon?: LucideIcon;
   children: ReactNode;
   className?: string;
+  /**
+   * 제출할 때 빠진 항목으로 화면을 옮기는 데 씁니다(2026-09-08).
+   * 브라우저가 챙기는 칸은 알아서 그 자리로 가지만, 직접 만든 칸은
+   * 어디를 고쳐야 하는지 알려줄 방법이 이것뿐입니다.
+   */
+  id?: string;
 }
 
-export default function FormCard({ title, desc, icon: Icon, children, className }: Props) {
+export default function FormCard({ title, desc, icon: Icon, children, className, id }: Props) {
   return (
     <section
+      id={id}
       className={cn(
         "rounded-2xl border bg-card p-6 shadow-[0_4px_12px_rgba(0,0,0,0.03)] sm:px-8 sm:py-7",
         className

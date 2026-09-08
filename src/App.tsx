@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import ScrollToTop from "./components/ScrollToTop";
 import HomePage from "./pages/HomePage";
 import SearchPage from "./pages/SearchPage";
 import ProgramDetailPage from "./pages/ProgramDetailPage";
@@ -21,6 +22,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        {/* 화면을 옮기면 맨 위에서 시작합니다. 라우터 안이어야 주소를 볼 수 있습니다. */}
+        <ScrollToTop />
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />

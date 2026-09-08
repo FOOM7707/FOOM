@@ -303,7 +303,7 @@ export default function ProviderApplyPage() {
           <h1 className="break-keep text-[44px] font-black leading-[1.1] tracking-[-2px] md:text-[72px] md:tracking-[-3px]">
             좋아하는 숲에서,
             <br />
-            걱정 없이 하세요.
+            걱정 없이 시작하세요.
           </h1>
           {/* 문장마다 줄을 나눕니다 — 두 문장이 이어져 흐르면서
               「잇습니다.」 바로 뒤에 다음 문장이 붙어 읽혔습니다. */}
