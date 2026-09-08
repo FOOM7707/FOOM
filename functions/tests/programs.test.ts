@@ -578,3 +578,95 @@ describe("removeProgram — 지우기 / 내리기", () => {
     );
   });
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 내려간 프로그램을 누가 볼 수 있는가 (2026-09-08)
+ *
+ * **내리기는 「새 예약을 받지 않겠다」이지 「이미 한 약속을 무르겠다」가 아닙니다.**
+ * 예약한 손님이 자기가 무엇을 예약했는지 못 보면, 분쟁이 생겼을 때 손님 쪽에
+ * 근거가 남지 않습니다. 약속을 무르려면 취소 절차(전액 환불 + 경고 누적)를
+ * 거쳐야 합니다(2-5).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+describe("getProgram — 내려간 프로그램의 열람", () => {
+  async function makeHidden(): Promise<string> {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput())
+    );
+    await testDb.doc(`programs/${id}`).update({
+      status: "hidden",
+      publishedAt: new Date(),
+    });
+    return id;
+  }
+
+  it("예약한 손님은 내려간 뒤에도 볼 수 있다", async () => {
+    const id = await makeHidden();
+    await testDb.collection("bookings").add({
+      programId: id,
+      consumerId: consumerUid,
+      status: "confirmed",
+    });
+
+    const program = await getProgram(testDb, id, { uid: consumerUid });
+    expect(program.id).toBe(id);
+    expect(program.status).toBe("hidden");
+  });
+
+  it("취소된 예약이어도 볼 수 있다 — 무엇을 예약했었는지는 남아야 한다", async () => {
+    const id = await makeHidden();
+    await testDb.collection("bookings").add({
+      programId: id,
+      consumerId: consumerUid,
+      status: "cancelled_by_provider",
+    });
+
+    await expect(getProgram(testDb, id, { uid: consumerUid })).resolves.toBeTruthy();
+  });
+
+  it("예약한 적 없는 사람에게는 존재 여부도 알리지 않는다", async () => {
+    const id = await makeHidden();
+    const stranger = await makeUser("consumer");
+
+    await expect(getProgram(testDb, id, { uid: stranger })).rejects.toThrow(
+      "프로그램을 찾을 수 없습니다"
+    );
+  });
+
+  it("비로그인은 볼 수 없다", async () => {
+    const id = await makeHidden();
+    await expect(getProgram(testDb, id, {})).rejects.toThrow(
+      "프로그램을 찾을 수 없습니다"
+    );
+  });
+
+  it("남의 예약으로는 볼 수 없다 — 예약자 본인만", async () => {
+    const id = await makeHidden();
+    await testDb.collection("bookings").add({
+      programId: id,
+      consumerId: consumerUid,
+      status: "confirmed",
+    });
+    const stranger = await makeUser("consumer");
+
+    await expect(getProgram(testDb, id, { uid: stranger })).rejects.toThrow(
+      "프로그램을 찾을 수 없습니다"
+    );
+  });
+
+  it("다른 프로그램의 예약으로는 볼 수 없다", async () => {
+    const id = await makeHidden();
+    const another = await makeHidden();
+    await testDb.collection("bookings").add({
+      programId: another,
+      consumerId: consumerUid,
+      status: "confirmed",
+    });
+
+    await expect(getProgram(testDb, id, { uid: consumerUid })).rejects.toThrow(
+      "프로그램을 찾을 수 없습니다"
+    );
+  });
+});

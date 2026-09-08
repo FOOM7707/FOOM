@@ -410,6 +410,27 @@ export interface ProgramReadOptions {
   isAdmin?: boolean;
 }
 
+/**
+ * 이 사람이 이 프로그램을 예약한 적이 있는가.
+ *
+ * **상태를 따지지 않습니다.** 취소된 예약이든 이미 다녀온 예약이든, 「내가 무엇을
+ * 예약했는지」는 나중에도 볼 수 있어야 합니다 — 분쟁이 생겼을 때 손님 쪽에 근거가
+ * 남지 않으면 플랫폼 말만 믿어야 하는 구조가 됩니다.
+ */
+async function hasBookingForProgram(
+  db: Firestore,
+  programId: string,
+  uid: string
+): Promise<boolean> {
+  const snap = await db
+    .collection("bookings")
+    .where("programId", "==", programId)
+    .where("consumerId", "==", uid)
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
 export async function getProgram(
   db: Firestore,
   id: string,
@@ -424,9 +445,26 @@ export async function getProgram(
   const isOwner = options.uid != null && data.providerId === options.uid;
 
   if (data.status !== "published" && !isOwner && !options.isAdmin) {
-    // 존재 여부 자체를 알려주지 않습니다 — 심사 중인 프로그램의 존재가
-    // 노출되면 반려 사유(reviewNote)를 추측할 단서가 됩니다.
-    throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+    // **예약한 사람은 볼 수 있어야 합니다** (2026-09-08).
+    //
+    // 공급자가 게시물을 내릴 수 있게 되면서(removeProgram) `hidden`의 뜻이 하나
+    // 늘었습니다 — 그전에는 「관리자가 숨김」과 「반려」뿐이라 손님이 볼 이유가
+    // 없었지만, 이제는 **예약을 받아둔 채로 내려간 프로그램**이 있을 수 있습니다.
+    // 그대로 막으면 **돈을 낸 사람이 자기가 무엇을 예약했는지 못 봅니다.**
+    //
+    // 내리기는 「새 예약을 받지 않겠다」는 뜻이지 **이미 한 약속을 무르는 것이
+    // 아닙니다**(에어비앤비도 같은 구분 — unlist는 기존 예약을 그대로 둡니다).
+    // 약속을 무르려면 취소 절차를 거쳐야 하고, 거기엔 환불과 페널티가 붙습니다(2-5).
+    //
+    // **게시 중일 때는 이 조회를 하지 않습니다.** 상세는 가장 많이 열리는 화면이라
+    // 모든 방문에 읽기를 하나 더 붙이면 비용이 방문 수에 비례해 늘어납니다.
+    const hasBooking =
+      options.uid != null && (await hasBookingForProgram(db, id, options.uid));
+    if (!hasBooking) {
+      // 존재 여부 자체를 알려주지 않습니다 — 심사 중인 프로그램의 존재가
+      // 노출되면 반려 사유(reviewNote)를 추측할 단서가 됩니다.
+      throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+    }
   }
 
   // 반려 사유는 소유자와 관리자에게만 내려보냅니다.
@@ -753,6 +791,16 @@ export async function removeProgram(
   const everPublished = snap.get("publishedAt") != null;
 
   // ── 게시됐던 프로그램 — 내립니다 ──────────────────────────────────────────
+  //
+  // **예약이 있어도 내릴 수 있습니다.** 「더 이상 새 예약을 받지 않겠다」는 것은
+  // 정당한 요구이고(은퇴·이사·건강), 예약 하나 때문에 영원히 못 내리게 하면
+  // 공급자가 잠적하는 쪽을 택하게 됩니다.
+  //
+  // **다만 내리기는 이미 한 약속을 무르는 것이 아닙니다.** 기존 예약은 그대로
+  // 살아 있고, 예약자는 상세를 계속 볼 수 있으며(getProgram), 진행일이 오면
+  // 진행해야 합니다. 약속을 무르려면 취소 절차를 거쳐야 하고 거기엔 전액 환불과
+  // 경고 누적이 붙습니다(2-5). 에어비앤비도 같은 구분입니다 — 비활성화는 언제든
+  // 되지만 **기존 호스팅 의무를 면제하지 않고**, 삭제는 예약이 다 끝나야 됩니다.
   if (everPublished) {
     if (status === "hidden") {
       throw new AppError("failed-precondition", "이미 내려간 프로그램입니다");
