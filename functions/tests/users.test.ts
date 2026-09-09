@@ -15,7 +15,7 @@ import { testDb } from "./helpers";
 
 let seq = 0;
 
-async function makeUser(): Promise<string> {
+async function makeUser(overrides: Record<string, unknown> = {}): Promise<string> {
   seq += 1;
   const uid = `me-user-${Date.now()}-${seq}`;
   await testDb.doc(`users/${uid}`).set({
@@ -24,9 +24,11 @@ async function makeUser(): Promise<string> {
     name: "이용자1234",
     email: "someone@example.com",
     phone: "+821012345678",
+    // 출처 없는 옛 문서(2026-09-09 이전) 모양이 기본입니다 — 직접 입력처럼 다뤄져야 합니다.
     profileImageUrl: null,
     status: "active",
     identityVerifiedAt: null,
+    ...overrides,
   });
   return uid;
 }
@@ -66,6 +68,20 @@ describe("getMe", () => {
     const me = await getMe(testDb, uid);
     expect(me.provider?.approvalStatus).toBe("rejected");
     expect(me.provider?.approvalNote).toBe("자격증을 다시 올려주세요");
+  });
+
+  it("연락처 출처를 함께 내려준다 — 화면이 잠글지 말지를 이 값으로 가른다", async () => {
+    const naver = await makeUser({ phoneSource: "naver" });
+    expect((await getMe(testDb, naver)).phoneSource).toBe("naver");
+
+    const manual = await makeUser({ phoneSource: "manual" });
+    expect((await getMe(testDb, manual)).phoneSource).toBe("manual");
+
+    // 출처가 없는 옛 문서와 목록 밖의 값은 null — 화면이 모르는 값을 만나지 않게
+    const legacy = await makeUser();
+    expect((await getMe(testDb, legacy)).phoneSource).toBeNull();
+    const weird = await makeUser({ phoneSource: "carrier-pigeon" });
+    expect((await getMe(testDb, weird)).phoneSource).toBeNull();
   });
 
   it("정산 계좌는 응답에 넣지 않는다", async () => {
@@ -164,45 +180,80 @@ describe("updateMe", () => {
     expect(doc.get("status")).toBe("active");
   });
 
-  it("연락처를 바꾸면 번호 선점이 새 번호로 옮겨간다 (2-14)", async () => {
-    const uid = await makeUser();
-    const before = e164(PHONE.before);
+  it("직접 입력한 번호는 저장되지만 phoneIndex를 선점하지 않는다 (2-14, 2026-09-09)", async () => {
+    const uid = await makeUser({ phone: null, phoneSource: null });
     const after = e164(PHONE.after);
-    await testDb.doc(`users/${uid}`).update({ phone: before });
-    await testDb.doc(`phoneIndex/${before}`).set({ uid, createdAt: new Date() });
 
     const me = await updateMe(testDb, uid, parseUpdateMeInput({ phone: PHONE.after }));
     expect(me.phone).toBe(after);
+    expect(me.phoneSource).toBe("manual");
 
-    // 새 번호는 선점되고, 예전 번호는 풀립니다 — 안 풀면 그 번호를 실제로
-    // 쓰는 사람이 못 쓰고 본인도 되돌릴 수 없습니다.
-    expect((await testDb.doc(`phoneIndex/${after}`).get()).get("uid")).toBe(uid);
+    // 인증 안 된 번호는 선점하지 않습니다 — 선점하면 남의 번호를 먼저 등록해
+    // 실소유자를 막는 길(스쿼팅)이 열립니다.
+    expect((await testDb.doc(`phoneIndex/${after}`).get()).exists).toBe(false);
+  });
+
+  it("예전 번호에 남아 있던 우리 선점은 풀어준다 (2026-09-09 이전에 여기서 선점한 것)", async () => {
+    const uid = await makeUser();
+    const before = e164(PHONE.before);
+    await testDb.doc(`users/${uid}`).update({ phone: before });
+    await testDb.doc(`phoneIndex/${before}`).set({ uid, createdAt: new Date() });
+
+    await updateMe(testDb, uid, parseUpdateMeInput({ phone: PHONE.after }));
+
+    // 안 풀면 그 번호를 실제로 쓰는 사람이 못 쓰고 본인도 되돌릴 수 없습니다.
     expect((await testDb.doc(`phoneIndex/${before}`).get()).exists).toBe(false);
   });
 
-  it("남이 쓰는 번호는 거부한다 — 조용히 안 바꾸면 고장으로 읽힌다", async () => {
+  it("남이 쓰는 번호를 넣어도 응답이 같다 — 거부하면 그 번호 주인이 회원인지 새어 나간다", async () => {
     const owner = await makeUser();
-    const other = await makeUser();
+    const other = await makeUser({ phone: null });
     const taken = e164(PHONE.takenByOther);
     await testDb.doc(`phoneIndex/${taken}`).set({ uid: owner, createdAt: new Date() });
 
-    await expect(
-      updateMe(testDb, other, parseUpdateMeInput({ phone: PHONE.takenByOther }))
-    ).rejects.toMatchObject({ code: "failed-precondition" });
+    // 8/28 보안검사 B-1: 예전에는 여기서 failed-precondition으로 갈라 열거가 됐습니다.
+    const me = await updateMe(testDb, other, parseUpdateMeInput({ phone: PHONE.takenByOther }));
+    expect(me.phone).toBe(taken);
+    expect(me.phoneSource).toBe("manual");
 
-    // 거부됐으므로 남의 선점도 그대로여야 합니다.
+    // 남의 선점은 건드리지 않습니다 — 중복 판별은 인증된 번호(선점)만 봅니다.
     expect((await testDb.doc(`phoneIndex/${taken}`).get()).get("uid")).toBe(owner);
   });
 
-  it("내가 선점해 둔 번호로는 바꿀 수 있다 — 내 것에 내가 막히면 안 된다", async () => {
-    const uid = await makeUser();
-    const mine = e164(PHONE.claimedByMe);
-    // 저장된 번호와 선점해 둔 번호가 어긋난 상태(가입 중간에 끊긴 계정 등).
-    await testDb.doc(`users/${uid}`).update({ phone: null });
-    await testDb.doc(`phoneIndex/${mine}`).set({ uid, createdAt: new Date() });
+  it("소셜이 준 번호는 여기서 바꿀 수 없다 — 그 서비스에서 바꾸고 재로그인", async () => {
+    const uid = await makeUser({ phone: e164(PHONE.claimedByMe), phoneSource: "naver" });
 
-    const me = await updateMe(testDb, uid, parseUpdateMeInput({ phone: PHONE.claimedByMe }));
-    expect(me.phone).toBe(mine);
+    await expect(
+      updateMe(testDb, uid, parseUpdateMeInput({ phone: PHONE.after }))
+    ).rejects.toMatchObject({ code: "failed-precondition", message: /네이버/ });
+
+    // 이름만 고치는 것은 그대로 됩니다 — 잠긴 것은 번호뿐입니다.
+    const me = await updateMe(testDb, uid, parseUpdateMeInput({ name: "김숲사랑" }));
+    expect(me.name).toBe("김숲사랑");
+    expect(me.phone).toBe(e164(PHONE.claimedByMe));
+    expect(me.phoneSource).toBe("naver");
+  });
+
+  it("잠긴 번호를 같은 값으로 되보내는 것은 거부하지 않는다 — 화면이 값을 그대로 넘겨도 안전", async () => {
+    const mine = e164(PHONE.claimedByMe);
+    const uid = await makeUser({ phone: mine, phoneSource: "kakao" });
+
+    const me = await updateMe(
+      testDb,
+      uid,
+      parseUpdateMeInput({ name: "홍길동", phone: PHONE.claimedByMe })
+    );
+    expect(me.name).toBe("홍길동");
+    expect(me.phoneSource).toBe("kakao");
+  });
+
+  it("출처가 없는 옛 문서의 번호는 직접 입력처럼 다뤄 고칠 수 있다", async () => {
+    // 2026-09-09 이전 가입자. 소셜이 번호를 주는 다음 로그인 때 출처가 채워집니다.
+    const uid = await makeUser({ phone: e164(PHONE.before) });
+
+    const me = await updateMe(testDb, uid, parseUpdateMeInput({ phone: PHONE.after }));
+    expect(me.phone).toBe(e164(PHONE.after));
+    expect(me.phoneSource).toBe("manual");
   });
 
   it("가입 문서가 없으면 failed-precondition", async () => {

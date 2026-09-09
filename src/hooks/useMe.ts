@@ -24,6 +24,12 @@ export interface Me {
   name: string | null;
   email: string | null;
   phone: string | null;
+  /**
+   * 연락처가 어디서 왔는가(2-14). `naver`/`kakao`면 소셜이 준 번호라 마이페이지에서
+   * 잠기고, `manual`이면 직접 입력한 번호라 고칠 수 있습니다. `null`은 번호 없음 또는
+   * 출처를 적기 전(2026-09-09 이전)의 옛 문서 — 옛 문서는 `manual`처럼 다룹니다.
+   */
+  phoneSource: "naver" | "kakao" | "manual" | null;
   /** 소셜 프로필 사진. 「추가」 동의 항목이라 없을 수 있습니다(2-1) */
   profileImageUrl: string | null;
   /** `kakao` / `naver` — 가입 경로는 소셜 2종뿐입니다(2-1) */
