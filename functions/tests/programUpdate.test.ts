@@ -209,6 +209,44 @@ describe("updateProgram — 상태 전환", () => {
     );
   });
 
+  it("공급자가 내린 프로그램에서 즉시 반영 항목만 고치면 내려간 채로 남는다 — 다시 올리기 대상", async () => {
+    // (2026-09-09) 내린 채 우천 대체만 바꿨는데 심사로 넘기면 「내리기 = 재심사」가 되어
+    // 재사용이 성립하지 않습니다. 게시된 적 있고 스스로 내린 것만 이 예외를 받습니다.
+    const id = await makeProgram("hidden");
+    await testDb.doc(`programs/${id}`).update({ publishedAt: new Date(), hiddenBy: "provider" });
+
+    const result = await updateProgram(
+      testDb,
+      id,
+      providerUid,
+      validInput({ rainAlternative: "indoor" })
+    );
+    expect(result.status).toBe("hidden");
+    expect(result.sentToReview).toBe(false);
+  });
+
+  it("공급자가 내린 프로그램에서 심사 대상을 고치면 심사로 간다 — 내린 채 갈아치우기 차단", async () => {
+    const id = await makeProgram("hidden");
+    await testDb.doc(`programs/${id}`).update({ publishedAt: new Date(), hiddenBy: "provider" });
+
+    const result = await updateProgram(testDb, id, providerUid, validInput({ price: 99000 }));
+    expect(result.status).toBe("pending_review");
+    expect(result.sentToReview).toBe(true);
+  });
+
+  it("관리자가 내린 프로그램은 즉시 반영 항목만 고쳐도 심사로 간다(페널티)", async () => {
+    const id = await makeProgram("hidden");
+    await testDb.doc(`programs/${id}`).update({ publishedAt: new Date(), hiddenBy: "admin" });
+
+    const result = await updateProgram(
+      testDb,
+      id,
+      providerUid,
+      validInput({ rainAlternative: "indoor" })
+    );
+    expect(result.status).toBe("pending_review");
+  });
+
   it("심사 중인 프로그램은 고쳐도 심사 중으로 남는다", async () => {
     const id = await makeProgram("pending_review");
     const result = await updateProgram(testDb, id, providerUid, validInput({ price: 40000 }));

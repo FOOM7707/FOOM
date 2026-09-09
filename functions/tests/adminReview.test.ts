@@ -291,6 +291,9 @@ describe("프로그램 심사", () => {
     expect(snap.get("status")).toBe("hidden");
     expect(snap.get("reviewNote")).toBe("가격 근거를 설명에 추가해 주세요");
     expect(snap.get("publishedAt")).toBeNull();
+    // (2026-09-09) 반려는 관리자가 내린 것 — 「다시 올리기」가 심사 없이 되살리지 못하게
+    // 공급자가 스스로 내린 것과 갈라 적습니다.
+    expect(snap.get("hiddenBy")).toBe("admin");
   });
 
   it("주소에서 시도를 못 뽑으면 게시하지 않는다", async () => {

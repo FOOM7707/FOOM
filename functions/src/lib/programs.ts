@@ -10,7 +10,12 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { deriveProgramFields } from "./programDerived";
-import { discardPendingEdit, getPendingEdit, savePendingEdit } from "./programEdits";
+import {
+  discardPendingEdit,
+  getPendingEdit,
+  needsRereview,
+  savePendingEdit,
+} from "./programEdits";
 import { deleteAllProgramFiles, type Deps as ProgramImageDeps } from "./programImages";
 import {
   DEFAULT_INTRO_LAYOUT,
@@ -591,6 +596,20 @@ export async function submitProgramForReview(
 export { changedReviewFields, needsRereview, NON_REVIEW_FIELDS } from "./programEdits";
 
 /**
+ * 공급자가 **스스로** 내린 프로그램인가 (2026-09-09).
+ *
+ * `hiddenBy`가 `provider`이거나, 값이 없는데 게시된 적은 있는 옛 문서(2026-09-09 이전에
+ * 내린 것 — 그때는 관리자가 게시 중인 프로그램을 내리는 경로가 없었으므로 공급자가 내린
+ * 것입니다). 반려(`publishedAt` 없음)와 관리자 숨김(`hiddenBy='admin'`)은 아닙니다.
+ */
+export function isSelfHidden(doc: Record<string, unknown>): boolean {
+  if (doc.status !== "hidden") return false;
+  if (doc.hiddenBy === "admin") return false;
+  if (doc.hiddenBy === "provider") return true;
+  return doc.publishedAt != null;
+}
+
+/**
  * 일정 방식 변경 가능 여부.
  *
  * 이미 등록된 날짜가 있는데 방식을 바꾸면 그 날짜들이 의미를 잃습니다 —
@@ -693,11 +712,18 @@ export async function updateProgram(
 
   // 상태 전환 규칙 (게시 중이 아닌 경우 — 게시본이 없으니 바로 반영합니다)
   // - draft            : 아직 심사 전이라 그대로 draft
-  // - hidden(반려)     : 수정 자체가 재제출이므로 항상 pending_review
   // - pending_review   : 이미 심사 대기 중이라 그대로
+  // - hidden           : 누가 내렸는지에 따라 갈립니다(2026-09-09, 2-3 `hiddenBy`)
+  //     · 반려(게시된 적 없음)·관리자 숨김 → 수정 자체가 재제출이므로 pending_review
+  //     · 공급자가 스스로 내린 것 → 즉시 반영 항목만 고쳤으면 **hidden 그대로**
+  //       (「다시 올리기」로 심사 없이 되살릴 수 있어야 재사용이 성립합니다 — 날짜와
+  //       우천 대체 같은 것만 바꿨는데 심사로 넘기면 내리기가 곧 재심사가 됩니다).
+  //       심사 대상 항목을 고쳤으면 pending_review — 승인받은 내용을 내린 채 갈아치우고
+  //       되살리는 우회를 막습니다.
   let nextStatus = currentStatus;
   if (currentStatus === "hidden") {
-    nextStatus = "pending_review";
+    const selfHidden = isSelfHidden(before);
+    nextStatus = selfHidden && !needsRereview(before, input) ? "hidden" : "pending_review";
   }
 
   const patch: Record<string, unknown> = {
@@ -806,7 +832,15 @@ export async function removeProgram(
       throw new AppError("failed-precondition", "이미 내려간 프로그램입니다");
     }
 
-    await ref.update({ status: "hidden", updatedAt: FieldValue.serverTimestamp() });
+    // `hiddenBy` — **누가 내렸는가**(2026-09-09, 2-3). 공급자가 스스로 내린 것은
+    // 「다시 올리기」로 심사 없이 되살릴 수 있고, 관리자가 내린 것은 고쳐서 심사를
+    // 받아야 합니다(페널티). 이 값이 없으면 둘을 가를 수 없어 페널티가 성립하지 않습니다.
+    await ref.update({
+      status: "hidden",
+      hiddenBy: "provider",
+      hiddenAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
     // 회차에 심어둔 상태 사본을 함께 맞춥니다. 빠뜨리면 프로그램은 내려갔는데
     // 사본이 published로 남아 **검색에 계속 잡힙니다**(2-4).
@@ -864,4 +898,74 @@ export async function removeProgram(
   const deletedFiles = await deleteAllProgramFiles([...imagePaths, ...thumbPaths], deps);
 
   return { action: "deleted", deletedFiles };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 다시 올리기 (2026-09-09 신규 — 결정 대기 ⑧ 확정)
+ *
+ * 내려간 프로그램을 **심사 없이** 게시로 되돌립니다. 프로그램은 「틀」이고 날짜는
+ * 따로 붙으므로(2-4), 같은 프로그램을 다음 시즌에 다시 여는 것이 원래 의도된
+ * 사용법입니다 — 시즌마다 새 프로그램을 만들면 관리자가 같은 내용을 다시 심사하고,
+ * 후기·평점이 0부터 시작하고, 사진이 두 벌 쌓입니다. 재사용이 그 셋을 전부 없앱니다.
+ *
+ * **되살릴 수 있는 것은 공급자가 스스로 내린 것만입니다**(`isSelfHidden`).
+ *   · 반려(게시된 적 없음)         → 고쳐서 심사 요청(`PATCH` → pending_review)
+ *   · 관리자가 내린 것(`hiddenBy='admin'`) → 같음. 관리자가 사유를 적어 내린 것을
+ *     손도 안 대고 되살리는 핑퐁을 막는 것이 이 구분의 이유입니다(페널티).
+ *
+ * 내려간 채로 심사 대상 항목을 고치면 `updateProgram`이 이미 pending_review로 보냈으므로
+ * 여기 도달하는 `hidden`은 「내린 뒤 날짜·즉시 반영 항목만 바뀐 것」뿐입니다 — 승인받은
+ * 내용 그대로라 심사 없이 되살려도 관리자가 확인한 전제가 깨지지 않습니다.
+ *
+ * `publishedAt`은 **건드리지 않습니다** — 최초 게시 시각이고 신규순 정렬 기준입니다(2-3).
+ * 되살릴 때마다 갱신하면 옛 프로그램이 「새로 올라온 것」으로 정렬됩니다.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export async function relistProgram(
+  db: Firestore,
+  id: string,
+  uid: string
+): Promise<{ status: "published" }> {
+  const ref = db.doc(`programs/${id}`);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.get("providerId") !== uid) {
+      throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+    }
+    const doc = snap.data() as Record<string, unknown>;
+
+    if (doc.status === "published") {
+      throw new AppError("failed-precondition", "이미 게시 중인 프로그램입니다");
+    }
+    if (doc.status !== "hidden") {
+      throw new AppError("failed-precondition", "내려간 프로그램만 다시 올릴 수 있습니다");
+    }
+    if (!isSelfHidden(doc)) {
+      throw new AppError(
+        "failed-precondition",
+        doc.publishedAt == null
+          ? "반려된 프로그램은 내용을 고친 뒤 심사를 요청해 주세요"
+          : "관리자가 내린 프로그램은 내용을 고친 뒤 심사를 요청해 주세요"
+      );
+    }
+
+    tx.update(ref, {
+      status: "published",
+      hiddenBy: FieldValue.delete(),
+      hiddenAt: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  // 회차에 심어둔 상태 사본을 함께 맞춥니다 — 내릴 때와 반대 방향입니다. 빠뜨리면
+  // 프로그램은 게시 중인데 회차가 hidden으로 남아 날짜별 회차 검색에서 빠집니다(2-4).
+  const schedules = await ref.collection("schedules").get();
+  if (!schedules.empty) {
+    const batch = db.batch();
+    schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: "published" }));
+    await batch.commit();
+  }
+
+  return { status: "published" };
 }

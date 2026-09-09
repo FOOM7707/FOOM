@@ -324,6 +324,71 @@ describe("회차 추가·삭제", () => {
     return id;
   }
 
+  /**
+   * 지난 회차를 직접 심습니다 — 등록 경로는 지난 시각을 거부하므로(2-4) 시간이 흘러
+   * 지난 회차가 남아 있는 상태는 이렇게만 만들 수 있습니다.
+   */
+  async function seedPastSchedules(programId: string, count: number): Promise<void> {
+    const batch = testDb.batch();
+    for (let i = 1; i <= count; i += 1) {
+      const startAt = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      batch.set(testDb.collection(`programs/${programId}/schedules`).doc(), {
+        programId,
+        programStatus: "draft",
+        type: "series",
+        startAt,
+        endAt: null,
+        remainingSlots: 12,
+        totalSlots: 12,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+    await batch.commit();
+  }
+
+  it("1회성은 지난 날짜가 있어도 새 날짜를 하나 넣을 수 있다 — 프로그램은 재사용하는 틀 (2026-09-09)", async () => {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      programInput({ scheduleType: "single" }),
+      []
+    );
+    await seedPastSchedules(id, 1);
+
+    const result = await addSchedules(testDb, id, providerUid, {
+      schedules: [row(daysFromNow(20))],
+    });
+    expect(result.added).toBe(1);
+    expect((await listSchedules(testDb, id)).length).toBe(2);
+  });
+
+  it("1회성에 앞으로 진행할 날짜가 이미 있으면 하나 더는 거부한다", async () => {
+    const inputs = parseScheduleInputs([row(daysFromNow(10))], {
+      scheduleType: "single",
+      programCapacity: 12,
+    });
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      programInput({ scheduleType: "single" }),
+      inputs
+    );
+    await expect(
+      addSchedules(testDb, id, providerUid, { schedules: [row(daysFromNow(20))] })
+    ).rejects.toThrow(/1회성/);
+  });
+
+  it("회차 상한은 앞으로 진행할 회차만 센다 — 지난 회차가 쌓여도 새 날짜를 열 수 있다", async () => {
+    const id = await makeProgram([]);
+    await seedPastSchedules(id, MAX_SCHEDULES_PER_PROGRAM);
+
+    const result = await addSchedules(testDb, id, providerUid, {
+      schedules: [row(daysFromNow(20))],
+    });
+    expect(result.added).toBe(1);
+  });
+
   it("추가하면 회차 번호가 날짜순으로 다시 매겨진다", async () => {
     const id = await makeProgram([20, 30]);
     // 두 회차 사이에 끼워 넣습니다.

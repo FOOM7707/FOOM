@@ -332,6 +332,15 @@ export async function reviewProgram(
       reviewNote: input.note,
       updatedAt: FieldValue.serverTimestamp(),
     };
+    // 반려는 **관리자가 내린 것**입니다(2026-09-09, 2-3 `hiddenBy`). 공급자가 스스로
+    // 내린 것과 갈라야 「다시 올리기」가 반려를 심사 없이 되살리지 못합니다.
+    if (!approved) {
+      patch.hiddenBy = "admin";
+      patch.hiddenAt = FieldValue.serverTimestamp();
+    } else {
+      patch.hiddenBy = FieldValue.delete();
+      patch.hiddenAt = FieldValue.delete();
+    }
 
     if (approved) {
       // 파생 필드 재산출 — 등록 이후 주소·연령·거리가 바뀌었을 수 있고,

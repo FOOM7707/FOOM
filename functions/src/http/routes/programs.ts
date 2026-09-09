@@ -13,6 +13,7 @@ import {
   getProgram,
   listPrograms,
   parseProgramInput,
+  relistProgram,
   removeProgram,
   submitProgramForReview,
   updateProgram,
@@ -107,6 +108,17 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
     authenticate,
     asyncHandler(async (req, res) => {
       const result = await removeProgram(db(), String(req.params.id), req.auth!.uid);
+      res.json(result);
+    })
+  );
+
+  // 다시 올리기 — 소유자만. 공급자가 스스로 내린 프로그램을 **심사 없이** 되살립니다
+  // (2026-09-09). 반려·관리자 숨김은 거부하고 「고쳐서 심사 요청」으로 안내합니다.
+  router.post(
+    "/:id/relist",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await relistProgram(db(), String(req.params.id), req.auth!.uid);
       res.json(result);
     })
   );

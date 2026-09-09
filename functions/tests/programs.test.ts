@@ -12,6 +12,7 @@ import {
   getProgram,
   listPrograms,
   parseProgramInput,
+  relistProgram,
   removeProgram,
   submitProgramForReview,
 } from "../src/lib/programs";
@@ -587,6 +588,99 @@ describe("removeProgram — 지우기 / 내리기", () => {
  * 근거가 남지 않습니다. 약속을 무르려면 취소 절차(전액 환불 + 경고 누적)를
  * 거쳐야 합니다(2-5).
  * ──────────────────────────────────────────────────────────────────────── */
+
+describe("relistProgram — 다시 올리기 (2026-09-09)", () => {
+  function futureDate(): string {
+    return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
+  /** 게시됐다가 내려간 프로그램. `hiddenBy`는 호출자가 정합니다(옛 문서는 undefined). */
+  async function makeHidden(hiddenBy?: "provider" | "admin"): Promise<string> {
+    const { id } = await createDraftProgram(
+      testDb,
+      providerUid,
+      parseProgramInput(validInput({ scheduleType: "single" })),
+      parseScheduleInputs(
+        [{ date: futureDate(), startTime: "10:00", endTime: "12:00", capacity: 12 }],
+        { scheduleType: "single", programCapacity: 12 }
+      )
+    );
+    const publishedAt = new Date("2026-08-01T00:00:00Z");
+    await testDb.doc(`programs/${id}`).update({
+      status: "hidden",
+      publishedAt,
+      ...(hiddenBy ? { hiddenBy } : {}),
+    });
+    const schedules = await testDb.collection(`programs/${id}/schedules`).get();
+    const batch = testDb.batch();
+    schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: "hidden" }));
+    await batch.commit();
+    return id;
+  }
+
+  it("공급자가 내린 프로그램은 심사 없이 게시로 돌아간다 — 회차 사본도 함께", async () => {
+    const id = await makeHidden("provider");
+    const before = (await testDb.doc(`programs/${id}`).get()).get("publishedAt");
+
+    const result = await relistProgram(testDb, id, providerUid);
+    expect(result.status).toBe("published");
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("status")).toBe("published");
+    // 최초 게시 시각은 그대로 — 되살릴 때마다 갱신하면 옛 프로그램이 신규순 맨 위에 옵니다.
+    expect(snap.get("publishedAt").toMillis()).toBe(before.toMillis());
+    expect(snap.get("hiddenBy")).toBeUndefined();
+
+    const schedules = await testDb.collection(`programs/${id}/schedules`).get();
+    expect(schedules.docs.map((d) => d.get("programStatus"))).toEqual(["published"]);
+  });
+
+  it("내리기로 내린 프로그램에는 hiddenBy=provider가 찍힌다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(validInput()));
+    await testDb.doc(`programs/${id}`).update({ status: "published", publishedAt: new Date() });
+
+    await removeProgram(testDb, id, providerUid);
+    expect((await testDb.doc(`programs/${id}`).get()).get("hiddenBy")).toBe("provider");
+  });
+
+  it("hiddenBy가 없는 옛 문서(2026-09-09 이전에 내린 것)도 되살릴 수 있다", async () => {
+    // 그때는 관리자가 게시 중인 프로그램을 내리는 경로가 없었으므로 공급자가 내린 것입니다.
+    const id = await makeHidden(undefined);
+    await expect(relistProgram(testDb, id, providerUid)).resolves.toEqual({ status: "published" });
+  });
+
+  it("관리자가 내린 프로그램은 거부한다 — 고쳐서 심사를 받아야 한다(페널티)", async () => {
+    const id = await makeHidden("admin");
+    await expect(relistProgram(testDb, id, providerUid)).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: /관리자/,
+    });
+    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("hidden");
+  });
+
+  it("반려된 프로그램(게시된 적 없음)은 거부한다 — 심사 요청 경로를 쓴다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(validInput()));
+    await testDb.doc(`programs/${id}`).update({ status: "hidden", hiddenBy: "admin" });
+    await expect(relistProgram(testDb, id, providerUid)).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: /반려/,
+    });
+  });
+
+  it("게시 중이거나 작성 중인 것은 거부한다", async () => {
+    const { id } = await createDraftProgram(testDb, providerUid, parseProgramInput(validInput()));
+    await expect(relistProgram(testDb, id, providerUid)).rejects.toThrow(/내려간 프로그램만/);
+
+    await testDb.doc(`programs/${id}`).update({ status: "published", publishedAt: new Date() });
+    await expect(relistProgram(testDb, id, providerUid)).rejects.toThrow(/이미 게시 중/);
+  });
+
+  it("남의 프로그램은 존재 여부도 알리지 않는다", async () => {
+    const id = await makeHidden("provider");
+    const other = await makeUser("provider");
+    await expect(relistProgram(testDb, id, other)).rejects.toThrow("프로그램을 찾을 수 없습니다");
+  });
+});
 
 describe("getProgram — 내려간 프로그램의 열람", () => {
   async function makeHidden(): Promise<string> {
