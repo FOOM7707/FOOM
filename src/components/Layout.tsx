@@ -3,6 +3,7 @@ import { TreePine, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LoginDialog from "./LoginDialog";
 import MobileTabBar from "./MobileTabBar";
+import Toast from "./Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { CATEGORIES } from "@/types/firestore";
 
@@ -57,6 +58,8 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* 화면 이동과 함께 넘어온 안내(로그아웃 등)를 어느 화면에서든 팝업으로 띄웁니다 */}
+      <Toast />
       {/* 1. 헤더 — 로고 / 네비 / 로그인 + 전문가로 활동하기 */}
       <header className="sticky top-0 z-50 h-[60px] w-full border-b border-border bg-header/95 backdrop-blur">
         <div className="flex h-full w-full items-center justify-between gap-4 px-5 min-[769px]:px-10">
