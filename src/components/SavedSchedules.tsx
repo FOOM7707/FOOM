@@ -50,7 +50,7 @@ export default function SavedSchedules({ scheduleType, schedules, onDelete, busy
   if (schedules.length === 0) {
     return (
       <p className="rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
-        저장된 진행 날짜가 없습니다. 날짜를 하나 이상 넣어야 심사를 요청할 수 있습니다.
+        저장된 진행 날짜가 없습니다. 날짜를 하나 이상 넣어야 게시할 수 있습니다.
       </p>
     );
   }

@@ -16,8 +16,12 @@
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
-import { deriveProgramFields } from "./programDerived";
-import { discardPendingEdit } from "./programEdits";
+import { discardPendingEdit, latestProgramHistory } from "./programEdits";
+import {
+  autoPublishAwaitingPrograms,
+  buildPublishPatch,
+  syncScheduleStatus,
+} from "./programPublish";
 
 export type ReviewDecision = "approved" | "rejected";
 
@@ -210,7 +214,13 @@ export async function reviewProvider(
   db: Firestore,
   uid: string,
   input: ReviewInput
-): Promise<{ uid: string; approvalStatus: string; verified: boolean }> {
+): Promise<{
+  uid: string;
+  approvalStatus: string;
+  verified: boolean;
+  /** 승인과 함께 자동 게시된 프로그램 id (⑨) */
+  publishedPrograms: string[];
+}> {
   const publicRef = db.doc(`providerProfiles/${uid}`);
   const privateRef = db.doc(`providerProfiles/${uid}/private/profile`);
 
@@ -250,7 +260,17 @@ export async function reviewProvider(
   });
   await batch.commit();
 
-  return { uid, approvalStatus: approved ? "approved" : "rejected", verified: approved };
+  // (⑨, 2026-09-09) 자격 승인 순간, 이 공급자가 「게시하기」를 눌러 승인을 기다리던
+  // 프로그램을 자동으로 엽니다 — 승인 메일을 받고 들어와 다시 버튼을 눌러야 하면
+  // 「승인됐다는데 왜 안 보이지」가 됩니다. 실패한 건은 대기 상태로 남습니다(programPublish.ts).
+  const publishedPrograms = approved ? await autoPublishAwaitingPrograms(db, uid) : [];
+
+  return {
+    uid,
+    approvalStatus: approved ? "approved" : "rejected",
+    verified: approved,
+    publishedPrograms,
+  };
 }
 
 // ── 프로그램 심사 ──────────────────────────────────────────────────────────
@@ -337,54 +357,21 @@ export async function reviewProgram(
     if (!approved) {
       patch.hiddenBy = "admin";
       patch.hiddenAt = FieldValue.serverTimestamp();
+      patch.pendingReason = FieldValue.delete();
     } else {
-      patch.hiddenBy = FieldValue.delete();
-      patch.hiddenAt = FieldValue.delete();
-    }
-
-    if (approved) {
-      // 파생 필드 재산출 — 등록 이후 주소·연령·거리가 바뀌었을 수 있고,
-      // 산출 기준표 자체가 바뀌었을 수도 있습니다(2-3, 17-7).
-      const location = (snap.get("location") ?? {}) as Record<string, unknown>;
-      try {
-        Object.assign(
-          patch,
-          deriveProgramFields({
-            category: (snap.get("category") as string) ?? "",
-            address: (location.address as string) ?? "",
-            targetAgeMin: (snap.get("targetAgeMin") as number) ?? null,
-            targetAgeMax: (snap.get("targetAgeMax") as number) ?? null,
-            walkingDistanceM: (snap.get("walkingDistanceM") as number) ?? null,
-          })
-        );
-      } catch (err) {
-        throw new AppError(
-          "invalid-argument",
-          err instanceof Error ? err.message : "파생 필드를 계산하지 못했습니다"
-        );
-      }
-
-      // 신규순 정렬의 기준 필드. **최초 게시 시각이므로 덮어쓰지 않습니다** —
-      // 재심사를 거칠 때마다 갱신하면 오래된 프로그램이 계속 신규로 올라옵니다(2-3).
-      if (snap.get("publishedAt") == null) {
-        patch.publishedAt = FieldValue.serverTimestamp();
-      }
+      // 파생 필드 재산출 + publishedAt 최초 1회 + hiddenBy·pendingReason 정리 —
+      // 게시하기·자동 게시와 **같은 patch**를 씁니다(programPublish.ts). 세 경로가 각자
+      // 계산하면 한 곳만 고쳐져 「승인으로 게시되면 지역 코드가 갱신되는데 게시하기로는
+      // 안 되는」 상태가 생깁니다.
+      Object.assign(patch, buildPublishPatch(snap));
     }
 
     tx.update(ref, patch);
   });
 
-  // 하위 회차의 비정규화 상태값 갱신 (2-4, 6-1).
-  // collectionGroup 규칙이 이 값만 보므로 빠뜨리면 게시해도 검색에 안 잡힙니다.
-  // 트랜잭션 밖에서 처리하는 이유: 회차가 수십~수백 건일 수 있어 트랜잭션의
-  // 문서 수 제한에 걸릴 수 있고, 이 값은 프로그램 상태의 사본이라 잠깐 늦어도
-  // 결과가 달라지지 않습니다.
-  const schedules = await ref.collection("schedules").get();
-  if (!schedules.empty) {
-    const batch = db.batch();
-    schedules.docs.forEach((d) => batch.update(d.ref, { programStatus: nextStatus }));
-    await batch.commit();
-  }
+  // 하위 회차의 비정규화 상태값 갱신 (2-4, 6-1). collectionGroup 규칙이 이 값만
+  // 보므로 빠뜨리면 게시해도 검색에 안 잡힙니다.
+  await syncScheduleStatus(db, id, nextStatus);
 
   // 숨김(반려) 처리 시 승인 대기 중인 수정본을 버립니다(v23).
   // 남겨두면 나중에 이 프로그램을 되살릴 때 게시본과 수정본 중 어느 쪽이
@@ -397,4 +384,124 @@ export async function reviewProgram(
   //   지연을 없앱니다(5번). 집계 배치가 아직 없어 지금은 호출할 대상이 없습니다.
 
   return { id, status: nextStatus };
+}
+
+// ── 사후 감시 (⑨, 2026-09-09) ──────────────────────────────────────────────
+//
+// 내용 심사를 없앴으므로 관리자의 일은 「승인」에서 「감시하다가 이상하면 숨기기」로
+// 바뀝니다. 관리자는 **내용을 고치지 않습니다** — 내용의 책임은 공급자에게 있어야 하고
+// (표시·광고 책임), 관리자가 손대기 시작하면 「누가 이 문구를 썼나」가 흐려집니다.
+
+export interface HideProgramInput {
+  adminUid: string;
+  /** 필수. 공급자 카드에 그대로 보이는 값 — 비면 무엇을 고칠지 알 수 없어 재제출이 불가능해집니다 */
+  note: string;
+}
+
+export function parseHideInput(body: unknown, adminUid: string): HideProgramInput {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const note = typeof b.note === "string" ? b.note.trim() : "";
+  if (!note) {
+    throw new AppError("invalid-argument", "숨기는 사유를 적어 주세요 — 공급자에게 그대로 보입니다");
+  }
+  if (note.length > 500) {
+    throw new AppError("invalid-argument", "사유는 500자까지 쓸 수 있습니다");
+  }
+  return { adminUid, note };
+}
+
+/**
+ * 관리자 숨기기 (`POST /admin/programs/{id}/hide`).
+ *
+ * 게시 중인 프로그램을 그 자리에서 비공개로 내립니다. `hiddenBy='admin'`이 페널티의 근거입니다 —
+ * 공급자가 스스로 내린 것은 「다시 올리기」로 즉시 되살리지만, 관리자가 내린 것은 **고쳐 저장하면
+ * 심사 대기(`pendingReason='admin'`)로 가고 관리자가 승인해야** 돌아옵니다(`updateProgram`).
+ * 예약자는 내려간 프로그램의 상세를 계속 봅니다(`getProgram` — 내리기는 약속을 무르는 것이 아님).
+ */
+export async function hideProgram(
+  db: Firestore,
+  id: string,
+  input: HideProgramInput
+): Promise<{ id: string; status: "hidden" }> {
+  const ref = db.doc(`programs/${id}`);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new AppError("not-found", "프로그램을 찾을 수 없습니다");
+    if (snap.get("status") !== "published") {
+      throw new AppError("failed-precondition", "게시 중인 프로그램만 숨길 수 있습니다");
+    }
+    tx.update(ref, {
+      status: "hidden",
+      hiddenBy: "admin",
+      hiddenAt: FieldValue.serverTimestamp(),
+      reviewedBy: input.adminUid,
+      reviewedAt: FieldValue.serverTimestamp(),
+      reviewNote: input.note,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await syncScheduleStatus(db, id, "hidden");
+  await discardPendingEdit(db, id);
+  return { id, status: "hidden" };
+}
+
+export interface ActivityRow extends Record<string, unknown> {
+  id: string;
+  providerDisplayName: string | null;
+  /** 가장 최근 변경 기록(게시 중 수정). 없으면 null — 게시 뒤 손대지 않은 프로그램 */
+  lastChange: {
+    changedAt: unknown;
+    fields: string[];
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  } | null;
+}
+
+/**
+ * 최근 게시·변경 목록 (`GET /admin/programs/activity`) — 관리자 감시 화면의 데이터.
+ *
+ * `updatedAt` 내림차순 하나로 읽습니다(단일 필드 자동 색인). 상태로 걸러내는 것은 메모리에서
+ * 합니다 — `status` 등호 + 정렬은 복합 인덱스를 요구하고, 감시 대상은 많아야 수십 건입니다(7번).
+ * 작성 중(draft)은 손님이 볼 수 없으므로 뺍니다.
+ */
+export async function listRecentActivity(
+  db: Firestore,
+  options: { limit?: number } = {}
+): Promise<{ programs: ActivityRow[]; truncated: boolean }> {
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const snap = await db.collection("programs").orderBy("updatedAt", "desc").limit(limit).get();
+
+  const docs = snap.docs.filter((d) => d.get("status") !== "draft");
+  const providerIds = [...new Set(docs.map((d) => d.get("providerId") as string))];
+  const profiles = new Map<string, string | null>();
+  await Promise.all(
+    providerIds.map(async (pid) => {
+      if (!pid) return;
+      const p = await db.doc(`providerProfiles/${pid}`).get();
+      profiles.set(pid, p.exists ? ((p.get("displayName") as string) ?? null) : null);
+    })
+  );
+
+  const programs = await Promise.all(
+    docs.map(async (d): Promise<ActivityRow> => {
+      const history = await latestProgramHistory(db, d.id);
+      return {
+        id: d.id,
+        ...(d.data() as Record<string, unknown>),
+        providerDisplayName: profiles.get(d.get("providerId") as string) ?? null,
+        lastChange: history
+          ? {
+              changedAt: history.changedAt,
+              fields: history.fields,
+              before: history.before,
+              after: history.after,
+            }
+          : null,
+      };
+    })
+  );
+
+  return { programs, truncated: snap.size === limit };
 }

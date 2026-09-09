@@ -182,6 +182,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // (⑨, 2026-09-09) 변경 기록 — 게시 중 수정이 바로 반영되므로 「무엇이 바뀌었나」를
+    // 여기 남기고 관리자가 사후에 봅니다. 소유자·관리자만 읽고, 쓰기는 서버 전용 —
+    // 클라이언트가 쓸 수 있으면 기록을 지우거나 위조해 사후 검수가 성립하지 않습니다.
+    match /programs/{programId}/history/{docId} {
+      allow read: if isSelf(programOf(programId).providerId) || isAdmin();
+      allow write: if false;
+    }
+
     match /programs/{programId}/scheduleTemplates/{templateId} {
       allow read: if isSelf(programOf(programId).providerId) || isAdmin();
       allow write: if false;       // 캐스케이딩 정책 우회 방지

@@ -14,18 +14,16 @@ import express, { type Router } from "express";
 import type { Firestore } from "firebase-admin/firestore";
 import { configStatus } from "../../config/secrets";
 import {
+  hideProgram,
   listProgramsForReview,
   listProvidersForReview,
+  listRecentActivity,
+  parseHideInput,
   parseReviewInput,
   reviewProgram,
   reviewProvider,
   startProviderReview,
 } from "../../lib/adminReview";
-import {
-  approvePendingEdit,
-  listPendingEdits,
-  rejectPendingEdit,
-} from "../../lib/programEdits";
 import { db as defaultDb } from "../../lib/firebase";
 import { asyncHandler, authenticate, requireAdmin } from "../middleware";
 
@@ -102,14 +100,13 @@ export function buildAdminRouter(overrides: AdminRouteDeps = {}): Router {
     })
   );
 
-  // ── 프로그램 수정 승인 (v23) ─────────────────────────────────────────────
-  // 게시 중인 프로그램의 수정본은 게시본을 내리지 않고 여기서 처리합니다.
-  // 「전 → 후」 비교를 서버가 만들어 내려보냅니다 — 화면에서 게시본과 수정본을
-  // 각각 불러 맞춰보게 하면 두 요청 사이에 값이 바뀌었을 때 잘못 보여줍니다.
+  // ── 사후 감시 (⑨, 2026-09-09) ───────────────────────────────────────────
+  // 내용 심사가 없어졌으므로 관리자는 「최근 게시·변경」을 보다가 이상하면 사유를 적어
+  // 숨깁니다. 수정 승인(v23의 program-edits · review-edit)은 이 결정으로 없어졌습니다.
   router.get(
-    "/program-edits",
+    "/programs/activity",
     asyncHandler(async (req, res) => {
-      const result = await listPendingEdits(db(), {
+      const result = await listRecentActivity(db(), {
         limit: Number(req.query.limit) || undefined,
       });
       res.json(result);
@@ -117,14 +114,10 @@ export function buildAdminRouter(overrides: AdminRouteDeps = {}): Router {
   );
 
   router.post(
-    "/programs/:id/review-edit",
+    "/programs/:id/hide",
     asyncHandler(async (req, res) => {
-      const input = parseReviewInput(req.body, req.auth!.uid);
-      const id = String(req.params.id);
-      const result =
-        input.decision === "approved"
-          ? await approvePendingEdit(db(), id, input.adminUid)
-          : await rejectPendingEdit(db(), id, input.adminUid, input.note!);
+      const input = parseHideInput(req.body, req.auth!.uid);
+      const result = await hideProgram(db(), String(req.params.id), input);
       res.json(result);
     })
   );

@@ -14,7 +14,7 @@ import {
   parseProgramInput,
   relistProgram,
   removeProgram,
-  submitProgramForReview,
+  publishProgram,
 } from "../src/lib/programs";
 import { parseScheduleInputs } from "../src/lib/schedules";
 import { grantProvider } from "../src/lib/providerGrant";
@@ -63,7 +63,7 @@ function validInput(overrides: Record<string, unknown> = {}) {
  * 심사 요청이 가능한 프로그램 — 회차가 1건 이상 있어야 합니다(2-4).
  * 날짜가 없으면 게시돼도 예약할 수 없어 서버가 심사 요청을 거부합니다.
  */
-async function makeSubmittableProgram(): Promise<string> {
+async function makeSubmittableProgram(owner: string = providerUid): Promise<string> {
   const date = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
@@ -72,7 +72,7 @@ async function makeSubmittableProgram(): Promise<string> {
     [{ date, startTime: "10:00", endTime: "12:00", capacity: 12 }],
     { scheduleType: "series", programCapacity: input.capacity }
   );
-  const { id } = await createDraftProgram(testDb, providerUid, input, schedules);
+  const { id } = await createDraftProgram(testDb, owner, input, schedules);
   return id;
 }
 
@@ -325,56 +325,94 @@ describe("listPrograms", () => {
   });
 });
 
-describe("submitProgramForReview", () => {
-  it("draft를 pending_review로 바꾼다", async () => {
-    const id = await makeSubmittableProgram();
-    await submitProgramForReview(testDb, id, providerUid);
-    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+describe("publishProgram — 게시하기 (⑨, 내용 심사 없음)", () => {
+  /** 자격 승인된 전문가로 만듭니다 — 승인 전에는 「자격 승인 대기」로 갑니다(권고안). */
+  async function approveProvider(uid: string): Promise<void> {
+    await testDb.doc(`providerProfiles/${uid}/private/profile`).update({ approvalStatus: "approved" });
+  }
+
+  it("자격 승인된 전문가의 draft는 그 자리에서 published가 된다 — 관리자 승인 없음", async () => {
+    const uid = await makeUser("provider");
+    await approveProvider(uid);
+    const id = await makeSubmittableProgram(uid);
+
+    const result = await publishProgram(testDb, id, uid);
+    expect(result).toEqual({ status: "published", pendingReason: null });
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("status")).toBe("published");
+    expect(snap.get("publishedAt")).toBeTruthy();
+    // 파생 필드도 이 자리에서 계산됩니다(승인 경로와 같은 patch).
+    expect(snap.get("sido")).toBe("gangwon");
+    const schedules = await testDb.collection(`programs/${id}/schedules`).get();
+    expect(schedules.docs.map((d) => d.get("programStatus"))).toEqual(["published"]);
   });
 
-  it("남의 프로그램은 심사 요청할 수 없다", async () => {
+  it("자격 승인 전이면 「자격 승인 대기」로 두고 공개하지 않는다 — 무자격자 프로그램이 팔리면 안 된다", async () => {
+    // providerUid는 grant-provider 임시 경로로 만든 계정이라 approvalStatus=pending입니다.
     const id = await makeSubmittableProgram();
-    await expect(submitProgramForReview(testDb, id, consumerUid)).rejects.toMatchObject({
+    const result = await publishProgram(testDb, id, providerUid);
+    expect(result).toEqual({ status: "pending_review", pendingReason: "qualification" });
+    expect((await testDb.doc(`programs/${id}`).get()).get("publishedAt") ?? null).toBeNull();
+  });
+
+  it("자격 승인 대기 중인 것은 다시 눌러도 같은 상태다(승인되면 자동 게시)", async () => {
+    const id = await makeSubmittableProgram();
+    await publishProgram(testDb, id, providerUid);
+    await expect(publishProgram(testDb, id, providerUid)).resolves.toEqual({
+      status: "pending_review",
+      pendingReason: "qualification",
+    });
+  });
+
+  it("남의 프로그램은 게시할 수 없다 — 존재 여부도 알리지 않는다", async () => {
+    const id = await makeSubmittableProgram();
+    await expect(publishProgram(testDb, id, consumerUid)).rejects.toMatchObject({
       code: "not-found",
     });
   });
 
-  it("이미 심사 중이면 다시 요청할 수 없다", async () => {
-    const id = await makeSubmittableProgram();
-    await submitProgramForReview(testDb, id, providerUid);
-    await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
-      code: "failed-precondition",
-    });
+  it("이미 게시 중이면 거부한다", async () => {
+    const uid = await makeUser("provider");
+    await approveProvider(uid);
+    const id = await makeSubmittableProgram(uid);
+    await publishProgram(testDb, id, uid);
+    await expect(publishProgram(testDb, id, uid)).rejects.toThrow(/이미 게시 중/);
   });
 
-  it("회차가 없으면 심사를 요청할 수 없다 — 게시돼도 예약할 날짜가 없다", async () => {
+  it("회차가 없으면 게시할 수 없다 — 게시돼도 예약할 날짜가 없다", async () => {
+    const uid = await makeUser("provider");
+    await approveProvider(uid);
     const { id } = await createDraftProgram(
       testDb,
-      providerUid,
+      uid,
       parseProgramInput(validInput({ scheduleType: "series" }))
     );
-    await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
+    await expect(publishProgram(testDb, id, uid)).rejects.toMatchObject({
       code: "failed-precondition",
     });
   });
 
-  it("상시모집은 회차가 없어도 심사를 요청할 수 있다", async () => {
+  it("상시모집은 회차가 없어도 게시할 수 있다", async () => {
+    const uid = await makeUser("provider");
+    await approveProvider(uid);
     const { id } = await createDraftProgram(
       testDb,
-      providerUid,
+      uid,
       parseProgramInput(validInput({ scheduleType: "open" }))
     );
-    await submitProgramForReview(testDb, id, providerUid);
-    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+    await expect(publishProgram(testDb, id, uid)).resolves.toMatchObject({ status: "published" });
   });
 
-  it("매주 반복은 회차를 만들 경로가 없어 심사 요청이 막힌다 (준비 중)", async () => {
+  it("매주 반복은 회차를 만들 경로가 없어 게시가 막힌다 (준비 중)", async () => {
+    const uid = await makeUser("provider");
+    await approveProvider(uid);
     const { id } = await createDraftProgram(
       testDb,
-      providerUid,
+      uid,
       parseProgramInput(validInput({ scheduleType: "weekly" }))
     );
-    await expect(submitProgramForReview(testDb, id, providerUid)).rejects.toMatchObject({
+    await expect(publishProgram(testDb, id, uid)).rejects.toMatchObject({
       code: "failed-precondition",
     });
   });

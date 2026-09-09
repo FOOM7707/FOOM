@@ -15,11 +15,10 @@ import {
   parseProgramInput,
   relistProgram,
   removeProgram,
-  submitProgramForReview,
+  publishProgram,
   updateProgram,
 } from "../../lib/programs";
 import { AppError } from "../../lib/errors";
-import { cancelPendingEdit } from "../../lib/programEdits";
 import { parseSearchQuery, searchPrograms } from "../../lib/programSearch";
 import {
   addProgramImages,
@@ -170,16 +169,6 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
     })
   );
 
-  // 수정본 취소 — 소유자만. 승인 대기 중인 수정 내용을 스스로 버립니다(v23).
-  router.delete(
-    "/:id/pending-edit",
-    authenticate,
-    asyncHandler(async (req, res) => {
-      const result = await cancelPendingEdit(db(), String(req.params.id), req.auth!.uid);
-      res.json(result);
-    })
-  );
-
   // 회차 추가 — 소유자만. 등록 뒤에 날짜를 더 여는 경로입니다(2-4).
   router.post(
     "/:id/schedules",
@@ -210,15 +199,16 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
     })
   );
 
-  // 심사 요청 — 소유자만. 이 경로가 draft→pending_review의 유일한 통로입니다.
-  router.post(
-    "/:id/submit-for-review",
-    authenticate,
-    asyncHandler(async (req, res) => {
-      await submitProgramForReview(db(), String(req.params.id), req.auth!.uid);
-      res.json({ status: "pending_review" });
-    })
-  );
+  // 게시하기 — 소유자만. 내용 심사 없이 바로 게시합니다(⑨, 2026-09-09). 자격 승인 전이면
+  // 「자격 승인 대기」로 두고 승인 순간 자동 게시. 보안규칙상 소유자는 status를 직접 못
+  // 쓰므로 이 경로가 유일한 전환 통로입니다.
+  const publish = asyncHandler(async (req, res) => {
+    const result = await publishProgram(db(), String(req.params.id), req.auth!.uid);
+    res.json(result);
+  });
+  router.post("/:id/publish", authenticate, publish);
+  // 옛 이름 — 배포 직후 옛 화면을 캐시하고 있는 브라우저가 부릅니다. 같은 일을 합니다.
+  router.post("/:id/submit-for-review", authenticate, publish);
 
   // 상세
   router.get(

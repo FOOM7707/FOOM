@@ -13,18 +13,21 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
+// (⑨, 2026-09-09) 프로그램은 심사 없이 바로 게시됩니다. 관리자의 일은 「승인」에서
+// 「감시하다가 이상하면 사유를 적어 숨기기」로 바뀌었습니다. 수정 승인 탭은 없어졌습니다.
 const TASKS = [
-  { title: "전문가 심사", body: "자격 서류를 확인하고 승인·반려합니다." },
-  { title: "프로그램 심사", body: "내용·가격을 확인하고 게시합니다." },
-  { title: "수정 승인", body: "게시 중인 프로그램의 수정 요청을 「전 → 후」로 비교합니다." },
+  { title: "전문가 심사", body: "자격 서류를 확인하고 승인·반려합니다. 승인되면 그 전문가가 올려둔 프로그램이 자동으로 게시됩니다." },
+  { title: "프로그램 관리", body: "게시 중인 프로그램을 보고, 문제가 있으면 사유를 적어 숨깁니다. 숨긴 것을 전문가가 고쳐 올리면 여기서 승인합니다." },
+  { title: "최근 변경", body: "새로 게시됐거나 내용이 바뀐 프로그램을 「전 → 후」로 확인합니다." },
 ];
 
 export default function AdminSection() {
   return (
     <div>
       <p className="text-sm leading-relaxed text-muted-foreground">
-        심사 화면에서 아래 세 가지를 처리합니다. 정산 관리는 예약·결제가 붙은 뒤에
-        열립니다.
+        관리자 화면에서 아래 세 가지를 처리합니다. 정산 관리는 예약·결제가 붙은 뒤에
+        열립니다. 관리자는 프로그램 내용을 직접 고치지 않습니다 — 내용의 책임은 전문가에게
+        있습니다.
       </p>
 
       <ul className="mt-5 flex flex-col gap-2.5">
@@ -40,7 +43,7 @@ export default function AdminSection() {
 
       <div className="mt-6">
         <Button asChild size="sm">
-          <Link to="/admin">심사 화면 열기</Link>
+          <Link to="/admin">관리자 화면 열기</Link>
         </Button>
       </div>
     </div>

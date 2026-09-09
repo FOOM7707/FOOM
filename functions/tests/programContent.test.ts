@@ -17,7 +17,7 @@ import {
   parseProgramContent,
 } from "../src/lib/programContent";
 import { createDraftProgram, parseProgramInput, updateProgram } from "../src/lib/programs";
-import { getPendingEdit } from "../src/lib/programEdits";
+import { latestProgramHistory } from "../src/lib/programEdits";
 import { parseReviewInput, reviewProgram } from "../src/lib/adminReview";
 import { grantProvider } from "../src/lib/providerGrant";
 import { kstDateString, parseScheduleInputs } from "../src/lib/schedules";
@@ -451,7 +451,7 @@ describe("게시 중인 프로그램의 소개 수정은 심사를 거친다", (
     return id;
   }
 
-  it("소개 글을 고치면 수정 승인 대기로 간다 — 손님이 이걸 믿고 결제한다", async () => {
+  it("소개 글을 고치면 바로 반영되고 변경 기록에 남는다 (⑨ — 수정 승인 폐기)", async () => {
     const id = await makePublished();
     const result = await updateProgram(
       testDb,
@@ -460,14 +460,14 @@ describe("게시 중인 프로그램의 소개 수정은 심사를 거친다", (
       parseProgramInput(baseBody({ introBlocks: [{ heading: "새 소개", body: "새 설명." }] }))
     );
 
-    expect(result.pendingEdit).toBe(true);
+    expect(result.status).toBe("published");
     expect(result.changedFields).toContain("introBlocks");
-    // 게시본은 그대로입니다.
-    expect((await testDb.doc(`programs/${id}`).get()).get("introBlocks")).toEqual([]);
-    expect((await getPendingEdit(testDb, id))!.introBlocks).toHaveLength(1);
+    expect((await testDb.doc(`programs/${id}`).get()).get("introBlocks")).toHaveLength(1);
+    const history = await latestProgramHistory(testDb, id);
+    expect(history!.fields).toContain("introBlocks");
   });
 
-  it("포함 사항을 고치면 수정 승인 대기로 간다", async () => {
+  it("포함 사항을 고치면 바로 반영된다", async () => {
     const id = await makePublished();
     const result = await updateProgram(
       testDb,
@@ -476,7 +476,11 @@ describe("게시 중인 프로그램의 소개 수정은 심사를 거친다", (
       parseProgramInput(baseBody({ includes: { keys: ["insurance"] } }))
     );
 
-    expect(result.pendingEdit).toBe(true);
+    expect(result.status).toBe("published");
     expect(result.changedFields).toContain("includes");
+    expect((await testDb.doc(`programs/${id}`).get()).get("includes")).toEqual({
+      keys: ["insurance"],
+      custom: [],
+    });
   });
 });

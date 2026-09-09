@@ -347,7 +347,7 @@ export default function HomePage() {
           <p className="rounded-2xl border bg-card px-6 py-12 text-center text-[14px] leading-relaxed text-muted-foreground">
             아직 게시된 프로그램이 없습니다.
             <br />
-            전문가가 프로그램을 올리고 심사를 통과하면 여기에 나타납니다.
+            전문가가 프로그램을 게시하면 여기에 나타납니다.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">

@@ -135,6 +135,41 @@ describe('programs — 허용목록 방식 수정 규칙 (v13)', () => {
   })
 })
 
+describe('history — 게시 중 수정의 변경 기록 (⑨, 2026-09-09)', () => {
+  beforeEach(seedAll)
+
+  it('소유자는 자기 프로그램의 변경 기록을 읽는다', async () => {
+    const db = as(UID.providerA)
+    await assertSucceeds(getDoc(doc(db, 'programs', ID.programPublished, 'history', 'h1')))
+  })
+
+  it('관리자는 읽는다 — 사후 감시의 데이터', async () => {
+    const db = asAdmin()
+    await assertSucceeds(getDoc(doc(db, 'programs', ID.programPublished, 'history', 'h1')))
+  })
+
+  it('소비자·비로그인·다른 공급자는 읽지 못한다', async () => {
+    await assertDenied(
+      getDoc(doc(as(UID.consumer1), 'programs', ID.programPublished, 'history', 'h1')),
+    )
+    await assertDenied(getDoc(doc(unauth(), 'programs', ID.programPublished, 'history', 'h1')))
+    await assertDenied(
+      getDoc(doc(as(UID.providerB), 'programs', ID.programPublished, 'history', 'h1')),
+    )
+  })
+
+  it('소유자도 기록을 쓰거나 지우지 못한다 — 위조하면 사후 검수가 성립하지 않는다', async () => {
+    const db = as(UID.providerA)
+    await assertDenied(
+      setDoc(doc(db, 'programs', ID.programPublished, 'history', 'h1'), {
+        fields: ['price'],
+        before: { price: 1 },
+        after: { price: 2 },
+      }),
+    )
+  })
+})
+
 describe('pendingEdit — 승인 대기 중인 수정본 (v23)', () => {
   beforeEach(seedAll)
 

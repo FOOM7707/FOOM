@@ -118,7 +118,7 @@ const RAIN_LABEL: Record<string, string> = {
  */
 const STATUS_NOTICE: Record<string, string> = {
   draft: "작성 중인 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
-  pending_review: "심사 중인 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
+  pending_review: "게시를 기다리는 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
   hidden:
     "지금은 새로운 예약을 받지 않는 프로그램입니다. 이미 하신 예약은 그대로 유효합니다.",
 };

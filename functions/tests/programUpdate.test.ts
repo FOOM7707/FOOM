@@ -166,20 +166,20 @@ describe("updateProgram — 상태 전환", () => {
     expect(result.sentToReview).toBe(false);
   });
 
-  it("게시 중인 프로그램의 제목을 고치면 게시본은 그대로 두고 수정본이 대기한다", async () => {
-    // v23에서 바뀐 동작입니다. v22까지는 게시가 내려가 승인까지 검색에서
-    // 사라졌는데, 그러면 전문가가 오타조차 고치지 않게 됩니다.
-    // 수정본 흐름 자체는 programEdits.test.ts가 자세히 덮습니다.
+  it("게시 중인 프로그램의 제목을 고치면 바로 반영되고 게시 상태가 유지된다 (⑨)", async () => {
+    // v22까지는 게시가 내려가 승인까지 검색에서 사라졌고, v23~v37은 수정본을 따로
+    // 보관해 승인 시 교체했습니다. ⑨(2026-09-09)에서 내용 심사를 없애 바로 반영됩니다 —
+    // 대신 변경 기록이 남습니다(programEdits.test.ts).
     const id = await makeProgram("published");
     const result = await updateProgram(testDb, id, providerUid, validInput({ title: "바꿔치기" }));
 
     expect(result.status).toBe("published");
     expect(result.sentToReview).toBe(false);
-    expect(result.pendingEdit).toBe(true);
+    expect(result.changedFields).toEqual(["title"]);
 
     const snap = await testDb.doc(`programs/${id}`).get();
     expect(snap.get("status")).toBe("published");
-    expect(snap.get("title")).toBe("가을 숲길 걷기"); // 게시본 그대로
+    expect(snap.get("title")).toBe("바꿔치기");
   });
 
   it("게시 중이어도 배리어프리만 고치면 게시 상태를 유지한다", async () => {
@@ -225,16 +225,18 @@ describe("updateProgram — 상태 전환", () => {
     expect(result.sentToReview).toBe(false);
   });
 
-  it("공급자가 내린 프로그램에서 심사 대상을 고치면 심사로 간다 — 내린 채 갈아치우기 차단", async () => {
+  it("공급자가 내린 프로그램은 심사 대상을 고쳐도 내려간 채로 남는다 — 내용 심사가 없다(⑨)", async () => {
+    // 오전(⑧)에는 「심사 대상을 고치면 심사로」였는데, 같은 날 ⑨(내용 심사 폐기)로
+    // 바뀌었습니다. 스스로 내린 것은 무엇을 고쳐도 「다시 올리기」로 즉시 되살립니다.
     const id = await makeProgram("hidden");
     await testDb.doc(`programs/${id}`).update({ publishedAt: new Date(), hiddenBy: "provider" });
 
     const result = await updateProgram(testDb, id, providerUid, validInput({ price: 99000 }));
-    expect(result.status).toBe("pending_review");
-    expect(result.sentToReview).toBe(true);
+    expect(result.status).toBe("hidden");
+    expect(result.sentToReview).toBe(false);
   });
 
-  it("관리자가 내린 프로그램은 즉시 반영 항목만 고쳐도 심사로 간다(페널티)", async () => {
+  it("관리자가 내린 프로그램은 무엇을 고쳐도 심사로 간다(페널티) — 이유가 admin으로 남는다", async () => {
     const id = await makeProgram("hidden");
     await testDb.doc(`programs/${id}`).update({ publishedAt: new Date(), hiddenBy: "admin" });
 
@@ -245,6 +247,7 @@ describe("updateProgram — 상태 전환", () => {
       validInput({ rainAlternative: "indoor" })
     );
     expect(result.status).toBe("pending_review");
+    expect((await testDb.doc(`programs/${id}`).get()).get("pendingReason")).toBe("admin");
   });
 
   it("심사 중인 프로그램은 고쳐도 심사 중으로 남는다", async () => {
