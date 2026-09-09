@@ -22,6 +22,7 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useLogout } from "@/hooks/useLogout";
 import { useMe, type Me } from "@/hooks/useMe";
 import { cn } from "@/lib/utils";
 import ProfileSection from "./my/ProfileSection";
@@ -81,7 +82,9 @@ function buildMenu(me: Me, isAdmin: boolean): MenuItem[] {
 }
 
 export default function MyPage() {
-  const { user, loading: authLoading, isAdmin, logout } = useAuth();
+  const { user, loading: authLoading, isAdmin } = useAuth();
+  // 로그아웃은 홈으로 보내고 안내 문구를 띄웁니다 — 헤더 버튼과 같은 동작(useLogout).
+  const logout = useLogout();
   const { me, loading, error, reload } = useMe();
   const [params, setParams] = useSearchParams();
 

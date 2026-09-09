@@ -425,10 +425,18 @@ export async function addSchedules(
   const program = await loadOwnedProgram(db, programId, uid);
   const existing = await listSchedules(db, programId);
 
+  // **개수 상한과 「1회성은 하나」 규칙은 앞으로 진행할 회차만 셉니다**(2026-09-09).
+  // 프로그램은 재사용하는 틀이라(2-4) 지난 회차가 해마다 쌓입니다 — 지난 것까지
+  // 세면 매주 여는 프로그램이 1년 만에 상한에 닿고, 1회성은 한 번 끝난 뒤 새 날짜를
+  // 영영 못 넣습니다. 지난 회차는 지울 수도 없으므로(예약·정산 근거) 세지 않는 것이
+  // 유일한 길입니다.
+  const upcomingCount = existing.filter((row) => new Date(row.startAt).getTime() > now.getTime())
+    .length;
+
   const inputs = parseScheduleInputs((body as Record<string, unknown>)?.schedules, {
     scheduleType: program.scheduleType,
     programCapacity: program.capacity,
-    existingCount: existing.length,
+    existingCount: upcomingCount,
     now,
   });
 

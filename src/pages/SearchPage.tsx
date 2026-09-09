@@ -404,7 +404,7 @@ export default function SearchPage() {
                     filters.categories.length > 0 ||
                     keyword.trim() !== ""
                   ? "선택한 조건으로는 프로그램이 없습니다 — 카테고리나 지역을 넓혀보세요."
-                  : "아직 게시된 프로그램이 없습니다. 심사를 통과한 프로그램이 여기 나타납니다."}
+                  : "아직 게시된 프로그램이 없습니다. 전문가가 게시한 프로그램이 여기 나타납니다."}
             </p>
           )}
         </div>

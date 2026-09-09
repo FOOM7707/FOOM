@@ -11,14 +11,22 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  hideProgram,
   listProgramsForReview,
   listProvidersForReview,
+  listRecentActivity,
+  parseHideInput,
   parseReviewInput,
   reviewProgram,
   reviewProvider,
   startProviderReview,
 } from "../src/lib/adminReview";
-import { createDraftProgram, parseProgramInput, submitProgramForReview } from "../src/lib/programs";
+import {
+  createDraftProgram,
+  parseProgramInput,
+  publishProgram,
+  updateProgram,
+} from "../src/lib/programs";
 import { kstDateString, parseScheduleInputs } from "../src/lib/schedules";
 import { grantProvider } from "../src/lib/providerGrant";
 import { testDb } from "./helpers";
@@ -78,7 +86,9 @@ async function makePendingProgram(
     { scheduleType: input.scheduleType, programCapacity: input.capacity }
   );
   const { id } = await createDraftProgram(testDb, providerUid, input, schedules);
-  await submitProgramForReview(testDb, id, providerUid);
+  // (⑨) 자격 승인 전 계정이라 「게시하기」가 자격 승인 대기(pending_review)로 둡니다 —
+  // 관리자 심사 테스트는 그 상태에서 시작합니다.
+  await publishProgram(testDb, id, providerUid);
   return id;
 }
 
@@ -291,6 +301,9 @@ describe("프로그램 심사", () => {
     expect(snap.get("status")).toBe("hidden");
     expect(snap.get("reviewNote")).toBe("가격 근거를 설명에 추가해 주세요");
     expect(snap.get("publishedAt")).toBeNull();
+    // (2026-09-09) 반려는 관리자가 내린 것 — 「다시 올리기」가 심사 없이 되살리지 못하게
+    // 공급자가 스스로 내린 것과 갈라 적습니다.
+    expect(snap.get("hiddenBy")).toBe("admin");
   });
 
   it("주소에서 시도를 못 뽑으면 게시하지 않는다", async () => {
@@ -356,5 +369,129 @@ describe("심사 착수 (v23) — 진행 표시", () => {
     await expect(
       startProviderReview(testDb, "없는계정", ADMIN_UID)
     ).rejects.toMatchObject({ code: "not-found" });
+  });
+});
+
+// ── ⑨ 사후 감시 (2026-09-09) ────────────────────────────────────────────────
+
+describe("hideProgram — 관리자 숨기기", () => {
+  let providerUid: string;
+  beforeAll(async () => {
+    providerUid = await makeProvider();
+  });
+
+  async function makePublishedProgram(): Promise<string> {
+    const id = await makePendingProgram(providerUid);
+    await reviewProgram(testDb, id, parseReviewInput({ decision: "approved" }, ADMIN_UID));
+    return id;
+  }
+
+  it("사유는 필수 — 공급자 카드에 그대로 보인다", () => {
+    expect(() => parseHideInput({}, ADMIN_UID)).toThrow(/사유/);
+    expect(() => parseHideInput({ note: "   " }, ADMIN_UID)).toThrow(/사유/);
+    expect(parseHideInput({ note: " 사진이 프로그램과 무관합니다 " }, ADMIN_UID)).toEqual({
+      adminUid: ADMIN_UID,
+      note: "사진이 프로그램과 무관합니다",
+    });
+  });
+
+  it("게시 중인 프로그램을 그 자리에서 내리고 hiddenBy=admin·사유·처리자를 남긴다", async () => {
+    const id = await makePublishedProgram();
+    const result = await hideProgram(testDb, id, parseHideInput({ note: "가격 표기 오류" }, ADMIN_UID));
+    expect(result.status).toBe("hidden");
+
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("status")).toBe("hidden");
+    expect(snap.get("hiddenBy")).toBe("admin");
+    expect(snap.get("reviewNote")).toBe("가격 표기 오류");
+    expect(snap.get("reviewedBy")).toBe(ADMIN_UID);
+    // 최초 게시 시각은 남습니다 — 「게시된 적 있음」이 삭제 금지의 기준입니다.
+    expect(snap.get("publishedAt")).toBeTruthy();
+    const schedules = await testDb.collection(`programs/${id}/schedules`).get();
+    expect(schedules.docs.map((d) => d.get("programStatus"))).toEqual(["hidden"]);
+  });
+
+  it("관리자가 숨긴 것을 공급자가 고치면 심사 대기(admin)로 가고, 승인해야 돌아온다 — 페널티", async () => {
+    const id = await makePublishedProgram();
+    await hideProgram(testDb, id, parseHideInput({ note: "설명을 보완해 주세요" }, ADMIN_UID));
+
+    const edited = await updateProgram(
+      testDb,
+      id,
+      providerUid,
+      validInput({ description: "설명을 보완했습니다." })
+    );
+    expect(edited.status).toBe("pending_review");
+    expect((await testDb.doc(`programs/${id}`).get()).get("pendingReason")).toBe("admin");
+
+    await reviewProgram(testDb, id, parseReviewInput({ decision: "approved" }, ADMIN_UID));
+    const snap = await testDb.doc(`programs/${id}`).get();
+    expect(snap.get("status")).toBe("published");
+    expect(snap.get("hiddenBy")).toBeUndefined();
+    expect(snap.get("pendingReason")).toBeUndefined();
+  });
+
+  it("게시 중이 아닌 것은 숨길 수 없다", async () => {
+    const id = await makePendingProgram(providerUid);
+    await expect(
+      hideProgram(testDb, id, parseHideInput({ note: "x" }, ADMIN_UID))
+    ).rejects.toMatchObject({ code: "failed-precondition" });
+  });
+});
+
+describe("reviewProvider 승인 → 자격 승인 대기 프로그램 자동 게시 (⑨)", () => {
+  it("승인 순간 그 공급자의 대기 프로그램이 전부 published가 된다", async () => {
+    const uid = await makeProvider();
+    const a = await makePendingProgram(uid);
+    const b = await makePendingProgram(uid, { title: "두 번째" });
+    expect((await testDb.doc(`programs/${a}`).get()).get("pendingReason")).toBe("qualification");
+
+    const result = await reviewProvider(testDb, uid, {
+      decision: "approved",
+      note: null,
+      adminUid: ADMIN_UID,
+    });
+    expect(result.publishedPrograms.sort()).toEqual([a, b].sort());
+
+    for (const id of [a, b]) {
+      const snap = await testDb.doc(`programs/${id}`).get();
+      expect(snap.get("status")).toBe("published");
+      expect(snap.get("publishedAt")).toBeTruthy();
+      expect(snap.get("pendingReason")).toBeUndefined();
+    }
+  });
+
+  it("반려하면 대기 프로그램은 그대로 대기다", async () => {
+    const uid = await makeProvider();
+    const id = await makePendingProgram(uid);
+    const result = await reviewProvider(testDb, uid, {
+      decision: "rejected",
+      note: "자격증을 다시 올려주세요",
+      adminUid: ADMIN_UID,
+    });
+    expect(result.publishedPrograms).toEqual([]);
+    expect((await testDb.doc(`programs/${id}`).get()).get("status")).toBe("pending_review");
+  });
+});
+
+describe("listRecentActivity — 최근 게시·변경", () => {
+  let providerUid: string;
+  beforeAll(async () => {
+    providerUid = await makeProvider();
+  });
+
+  it("게시 중 수정이 「전 → 후」로 딸려 온다, 작성 중은 빠진다", async () => {
+    const id = await makePendingProgram(providerUid);
+    await reviewProgram(testDb, id, parseReviewInput({ decision: "approved" }, ADMIN_UID));
+    await updateProgram(testDb, id, providerUid, validInput({ price: 41000 }));
+    const draft = await createDraftProgram(testDb, providerUid, validInput({ title: "작성 중" }));
+
+    const { programs } = await listRecentActivity(testDb, { limit: 100 });
+    const row = programs.find((p) => p.id === id);
+    expect(row).toBeTruthy();
+    expect(row!.lastChange?.fields).toEqual(["price"]);
+    expect(row!.lastChange?.after).toEqual({ price: 41000 });
+    expect(row!.providerDisplayName).toBeTruthy();
+    expect(programs.some((p) => p.id === draft.id)).toBe(false);
   });
 });

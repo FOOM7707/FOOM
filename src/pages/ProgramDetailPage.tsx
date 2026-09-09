@@ -118,7 +118,7 @@ const RAIN_LABEL: Record<string, string> = {
  */
 const STATUS_NOTICE: Record<string, string> = {
   draft: "작성 중인 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
-  pending_review: "심사 중인 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
+  pending_review: "게시를 기다리는 프로그램입니다. 아직 손님에게는 보이지 않습니다.",
   hidden:
     "지금은 새로운 예약을 받지 않는 프로그램입니다. 이미 하신 예약은 그대로 유효합니다.",
 };
@@ -328,6 +328,18 @@ export default function ProgramDetailPage() {
           {STATUS_NOTICE[program.status]}
         </p>
       )}
+
+      {/* 일정 종료(2026-09-09) — 게시 중인데 앞으로 진행할 날짜가 없는 프로그램.
+          검색에서는 이미 빠져 있지만(2026-09-08) 공유된 링크로는 들어옵니다. 페이지는
+          그대로 두고 상태만 말해줍니다 — 지우거나 내리면 그 링크가 죽고, 전문가가 날짜를
+          하나 넣으면 이 문구가 사라지며 심사 없이 바로 돌아옵니다. */}
+      {program.status === "published" &&
+        program.scheduleType !== "open" &&
+        upcoming.length === 0 && (
+          <p className="mb-5 rounded-lg bg-secondary px-4 py-3 text-[13px] font-medium text-secondary-foreground">
+            지금은 모집하지 않는 프로그램입니다. 새 일정이 열리면 이 페이지에서 볼 수 있습니다.
+          </p>
+        )}
 
       <Link to="/search" className="mb-4 inline-block text-sm text-muted-foreground">
         ← 프로그램 찾기

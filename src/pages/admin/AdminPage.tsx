@@ -20,12 +20,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { ApiError, apiFetch } from "@/lib/api";
 
-type Tab = "providers" | "programs" | "edits";
+// (⑨, 2026-09-09) 프로그램은 심사 없이 바로 게시됩니다. 관리자의 일은 「승인」에서
+// 「감시하다가 이상하면 사유를 적어 숨기기」로 바뀌었고, 수정 승인 탭(v23)은 없어졌습니다.
+type Tab = "providers" | "programs" | "activity";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "providers", label: "전문가 심사" },
-  { key: "programs", label: "프로그램 심사" },
-  { key: "edits", label: "수정 승인" },
+  { key: "programs", label: "프로그램 관리" },
+  { key: "activity", label: "최근 변경" },
 ];
 
 /** 항목 이름 → 사람이 읽는 이름. 서버는 필드 이름으로만 알려줍니다. */
@@ -309,6 +311,13 @@ interface ProgramRow {
   excludes?: KeywordValue;
   preparations?: KeywordValue;
   introBlocks?: IntroBlockRow[];
+  /** 게시 대기의 이유(⑨) — `qualification`은 자동 게시라 처리할 것이 없고, `admin`만 승인/반려 */
+  pendingReason?: "qualification" | "admin" | null;
+  /** 누가 내렸는가 */
+  hiddenBy?: "provider" | "admin" | null;
+  /** 관리자가 내리거나 반려한 사유 */
+  reviewNote?: string | null;
+  publishedAt?: unknown;
 }
 
 const DIFFICULTY_LABEL: Record<string, string> = {
@@ -365,6 +374,41 @@ function DecisionBox({
         >
           반려
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 숨기기 (⑨). 사유는 필수 — 공급자 카드에 그대로 보이고, 비면 무엇을 고칠지 알 수 없어
+ * 재제출이 불가능해집니다. 관리자는 내용을 고치지 않습니다: 내용의 책임은 공급자에게 있고,
+ * 관리자가 손대면 「누가 이 문구를 썼나」가 흐려집니다.
+ */
+function HideBox({ busy, onHide }: { busy: boolean; onHide: (note: string) => void }) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        placeholder="숨기는 사유 (필수 — 공급자에게 그대로 보입니다)"
+        className="text-[13px]"
+      />
+      <div className="mt-2 flex items-center gap-3">
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={busy || note.trim().length === 0}
+          title={note.trim().length === 0 ? "사유를 입력해 주세요" : undefined}
+          onClick={() => onHide(note)}
+        >
+          숨기기
+        </Button>
+        <span className="text-[12px] text-muted-foreground">
+          그 자리에서 손님에게 안 보입니다. 공급자가 고쳐 올리면 「프로그램 관리 → 관리자 확인 대기」에서
+          승인합니다.
+        </span>
       </div>
     </div>
   );
@@ -583,7 +627,8 @@ function ProvidersTab() {
 }
 
 function ProgramsTab() {
-  const [status, setStatus] = useState("pending_review");
+  // 기본은 「게시 중」 — ⑨에서 관리자의 일은 승인이 아니라 게시 중인 것을 보고 숨기는 것입니다.
+  const [status, setStatus] = useState("published");
   const { items, truncated, loading, error, reload, setError } = useReviewList<ProgramRow>(
     "/admin/programs",
     status
@@ -607,18 +652,44 @@ function ProgramsTab() {
     }
   }
 
+  async function hide(id: string, note: string) {
+    if (!window.confirm("이 프로그램을 숨길까요?\n\n그 자리에서 손님에게 안 보이고, 공급자는 사유를 보고 고쳐 승인을 받아야 다시 올릴 수 있습니다.")) {
+      return;
+    }
+    setBusyId(id);
+    setError(null);
+    try {
+      await apiFetch(`/admin/programs/${id}/hide`, {
+        method: "POST",
+        body: { note },
+        requireAuth: true,
+      });
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "숨기지 못했습니다");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div>
+      <p className="mb-4 rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
+        프로그램은 <strong>심사 없이 바로 게시됩니다.</strong> 여기서는 게시 중인 것을 보고, 문제가
+        있으면 사유를 적어 숨깁니다. 「관리자 확인 대기」에는 관리자가 숨긴 것을 공급자가 고쳐 올린
+        프로그램만 들어옵니다 — 자격 승인을 기다리는 프로그램은 승인되는 순간 자동으로 게시되므로
+        처리할 것이 없습니다.
+      </p>
       <div className="mb-4 flex items-center gap-2">
         <span className="text-[13px] font-semibold text-muted-foreground">상태</span>
         <Select
-          className="h-9 w-36"
+          className="h-9 w-44"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
         >
-          <option value="pending_review">심사 대기</option>
           <option value="published">게시 중</option>
-          <option value="hidden">반려·숨김</option>
+          <option value="pending_review">관리자 확인 대기</option>
+          <option value="hidden">내려감·반려</option>
           <option value="draft">작성 중</option>
         </Select>
       </div>
@@ -720,11 +791,42 @@ function ProgramsTab() {
                     </section>
                   </div>
 
-                  <DecisionBox
-                    busy={busyId === p.id}
-                    approveLabel="게시 승인"
-                    onDecide={(decision, note) => void decide(p.id, decision, note)}
-                  />
+                  {/* 상태별로 관리자가 할 일이 다릅니다(⑨).
+                      · 게시 중 → 숨기기(사유 필수)
+                      · 관리자 확인 대기(admin) → 승인/반려
+                      · 자격 승인 대기(qualification) → 할 일 없음(자동 게시)
+                      · 내려감·반려 → 사유만 보임 */}
+                  {p.status === "published" && (
+                    <HideBox busy={busyId === p.id} onHide={(note) => void hide(p.id, note)} />
+                  )}
+                  {p.status === "pending_review" &&
+                    (p.pendingReason === "qualification" ? (
+                      <p className="mt-3 border-t border-border pt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+                        자격 승인을 기다리는 프로그램입니다 — 전문가 심사에서 이 공급자를 승인하면
+                        자동으로 게시됩니다. 여기서 처리할 것은 없습니다.
+                      </p>
+                    ) : (
+                      <DecisionBox
+                        busy={busyId === p.id}
+                        approveLabel="다시 게시 승인"
+                        onDecide={(decision, note) => void decide(p.id, decision, note)}
+                      />
+                    ))}
+                  {p.status === "hidden" && (
+                    <p className="mt-3 border-t border-border pt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+                      {p.hiddenBy === "admin"
+                        ? p.publishedAt
+                          ? "관리자가 숨긴 프로그램입니다."
+                          : "반려된 프로그램입니다."
+                        : "공급자가 스스로 내린 프로그램입니다 — 공급자가 「다시 올리기」로 되살릴 수 있습니다."}
+                      {p.reviewNote && (
+                        <>
+                          {" "}
+                          사유: <b>{p.reviewNote}</b>
+                        </>
+                      )}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </li>
@@ -735,25 +837,51 @@ function ProgramsTab() {
   );
 }
 
-interface PendingEditRow {
+interface ActivityRow {
   id: string;
   title: string;
-  providerId: string;
-  changedFields: string[];
-  diff: Array<{ field: string; before: unknown; after: unknown }>;
+  status: string;
+  providerDisplayName: string | null;
+  publishedAt?: unknown;
+  updatedAt?: unknown;
+  /** 가장 최근 변경 기록. 없으면 게시 뒤 손대지 않은 프로그램 */
+  lastChange: {
+    changedAt: unknown;
+    fields: string[];
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  } | null;
 }
 
+/** Firestore Timestamp가 JSON으로 오면 `{ _seconds }` 모양입니다. 화면용 날짜로 바꿉니다. */
+function formatWhen(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const sec = (value as { _seconds?: number; seconds?: number })._seconds ??
+    (value as { seconds?: number }).seconds;
+  if (typeof sec !== "number") return "";
+  return new Date(sec * 1000).toLocaleString("ko-KR", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  published: "게시 중",
+  pending_review: "게시 대기",
+  hidden: "내려감",
+};
+
 /**
- * 수정 승인 (v23).
+ * 최근 변경 (⑨, 2026-09-09) — 사후 감시 화면.
  *
- * 게시 중인 프로그램의 수정본입니다. **게시본은 내려가 있지 않습니다** — 손님은
- * 지금도 승인된 내용을 보고 있고, 승인하면 그 자리에서 교체됩니다.
- *
- * 전체를 다시 읽게 하지 않고 **바뀐 항목만 「전 → 후」로** 보여줍니다. 프로그램
- * 설명이 수백 자인데 통째로 두 번 보여주면 무엇이 바뀌었는지 못 찾습니다.
+ * 내용 심사가 없으므로 관리자는 「최근에 게시됐거나 바뀐 것」을 보다가 이상하면 숨깁니다.
+ * 수정은 **바뀐 항목만 「전 → 후」로** 보여줍니다 — 설명이 수백 자인데 통째로 두 번 보여주면
+ * 무엇이 바뀌었는지 못 찾습니다(v23의 비교 화면을 승인용에서 감시용으로 돌렸습니다).
  */
-function ProgramEditsTab() {
-  const [items, setItems] = useState<PendingEditRow[]>([]);
+function ActivityTab() {
+  const [items, setItems] = useState<ActivityRow[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -763,11 +891,11 @@ function ProgramEditsTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch<{ edits: PendingEditRow[]; truncated: boolean }>(
-        "/admin/program-edits",
+      const res = await apiFetch<{ programs: ActivityRow[]; truncated: boolean }>(
+        "/admin/programs/activity",
         { requireAuth: true }
       );
-      setItems(res.edits);
+      setItems(res.programs);
       setTruncated(res.truncated);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "목록을 불러오지 못했습니다");
@@ -780,18 +908,21 @@ function ProgramEditsTab() {
     void load();
   }, [load]);
 
-  async function decide(id: string, decision: "approved" | "rejected", note: string) {
+  async function hide(id: string, note: string) {
+    if (!window.confirm("이 프로그램을 숨길까요?\n\n그 자리에서 손님에게 안 보이고, 공급자는 사유를 보고 고쳐 승인을 받아야 다시 올릴 수 있습니다.")) {
+      return;
+    }
     setBusyId(id);
     setError(null);
     try {
-      await apiFetch(`/admin/programs/${id}/review-edit`, {
+      await apiFetch(`/admin/programs/${id}/hide`, {
         method: "POST",
-        body: { decision, note },
+        body: { note },
         requireAuth: true,
       });
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "처리에 실패했습니다");
+      setError(err instanceof ApiError ? err.message : "숨기지 못했습니다");
     } finally {
       setBusyId(null);
     }
@@ -802,9 +933,8 @@ function ProgramEditsTab() {
   return (
     <div>
       <p className="mb-4 rounded-lg bg-secondary px-3.5 py-3 text-[13px] leading-relaxed text-secondary-foreground">
-        게시 중인 프로그램의 수정 요청입니다. <strong>지금 손님에게는 승인된 내용이 그대로
-        보이고 있습니다</strong> — 승인하면 그 자리에서 교체되고, 반려하면 수정 내용만
-        버려집니다. 어느 쪽이든 게시가 중단되지는 않습니다.
+        최근에 게시됐거나 내용이 바뀐 프로그램입니다. 바뀐 것은 <strong>바뀐 항목만 「전 → 후」</strong>로
+        보입니다. 문제가 있으면 사유를 적어 숨기세요 — 내용을 대신 고치지는 않습니다.
       </p>
 
       {error && (
@@ -812,71 +942,74 @@ function ProgramEditsTab() {
           {error}
         </p>
       )}
-
       {truncated && (
-        <p className="mb-4 text-[12.5px] text-muted-foreground">
-          목록이 상한에 닿아 뒤가 잘렸습니다.
-        </p>
+        <p className="mb-4 text-[12.5px] text-muted-foreground">목록이 상한에 닿아 뒤가 잘렸습니다.</p>
       )}
 
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">승인 대기 중인 수정 요청이 없습니다.</p>
+        <p className="text-sm text-muted-foreground">아직 게시되거나 바뀐 프로그램이 없습니다.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {items.map((row) => (
             <li key={row.id}>
               <Card>
                 <CardContent className="pt-5">
-                  <p className="font-semibold">{row.title}</p>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    바뀐 항목 {row.changedFields.length}개
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{row.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {row.providerDisplayName ?? "(공급자 프로필 없음)"}
+                        {row.publishedAt ? ` · 게시 ${formatWhen(row.publishedAt)}` : ""}
+                        {row.lastChange ? ` · 수정 ${formatWhen(row.lastChange.changedAt)}` : ""}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-[12px] font-semibold text-secondary-foreground">
+                      {STATUS_LABEL[row.status] ?? row.status}
+                    </span>
+                  </div>
 
-                  <ul className="flex flex-col gap-2">
-                    {row.diff.map((d) => (
-                      <li
-                        key={d.field}
-                        className="rounded-lg border border-border px-3 py-2.5 text-[13px]"
-                      >
-                        <p className="mb-1.5 font-semibold">
-                          {FIELD_LABEL[d.field] ?? d.field}
-                        </p>
-                        {/* 사진·소개·키워드를 글로 요약하면 무엇이 바뀌었는지 알 수
-                            없습니다 — 「사진 1장 → 사진 1장」으로 보입니다(v29). */}
-                        {VISUAL_FIELDS.has(d.field) ? (
-                          <div className="flex flex-col gap-2">
-                            <div>
-                              <p className="mb-1 text-[11.5px] font-semibold text-muted-foreground">
-                                전
-                              </p>
-                              <div className="opacity-55">
-                                <VisualValue field={d.field} value={d.before} />
+                  {row.lastChange ? (
+                    <ul className="mt-3 flex flex-col gap-2">
+                      {row.lastChange.fields.map((field) => (
+                        <li key={field} className="rounded-lg border border-border px-3 py-2.5 text-[13px]">
+                          <p className="mb-1.5 font-semibold">{FIELD_LABEL[field] ?? field}</p>
+                          {/* 사진·소개·키워드를 글로 요약하면 무엇이 바뀌었는지 알 수 없습니다
+                              — 「사진 1장 → 사진 1장」으로 보입니다(v29). */}
+                          {VISUAL_FIELDS.has(field) ? (
+                            <div className="flex flex-col gap-2">
+                              <div>
+                                <p className="mb-1 text-[11.5px] font-semibold text-muted-foreground">전</p>
+                                <div className="opacity-55">
+                                  <VisualValue field={field} value={row.lastChange!.before[field]} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-1 text-[11.5px] font-semibold text-primary">후</p>
+                                <VisualValue field={field} value={row.lastChange!.after[field]} />
                               </div>
                             </div>
-                            <div>
-                              <p className="mb-1 text-[11.5px] font-semibold text-primary">후</p>
-                              <VisualValue field={d.field} value={d.after} />
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <p className="whitespace-pre-line leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
-                              {formatFieldValue(d.field, d.before)}
-                            </p>
-                            <p className="whitespace-pre-line leading-relaxed font-medium text-primary">
-                              → {formatFieldValue(d.field, d.after)}
-                            </p>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                          ) : (
+                            <>
+                              <p className="whitespace-pre-line leading-relaxed text-muted-foreground line-through decoration-muted-foreground/50">
+                                {formatFieldValue(field, row.lastChange!.before[field])}
+                              </p>
+                              <p className="whitespace-pre-line leading-relaxed font-medium text-primary">
+                                → {formatFieldValue(field, row.lastChange!.after[field])}
+                              </p>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[12.5px] text-muted-foreground">
+                      게시 뒤 바뀐 내용이 없습니다. 내용은 「프로그램 관리」에서 볼 수 있습니다.
+                    </p>
+                  )}
 
-                  <DecisionBox
-                    busy={busyId === row.id}
-                    approveLabel="수정 승인"
-                    onDecide={(decision, note) => void decide(row.id, decision, note)}
-                  />
+                  {row.status === "published" && (
+                    <HideBox busy={busyId === row.id} onHide={(note) => void hide(row.id, note)} />
+                  )}
                 </CardContent>
               </Card>
             </li>
@@ -918,7 +1051,7 @@ export default function AdminPage() {
     <div className="container mx-auto max-w-3xl px-5 py-8 pb-20">
       <h1 className="text-[22px] font-bold">관리자</h1>
       <p className="mt-1 text-[13px] text-muted-foreground">
-        승인·반려는 누가 언제 처리했는지 기록으로 남습니다.
+        프로그램은 심사 없이 바로 게시됩니다. 승인·반려·숨기기는 누가 언제 처리했는지 기록으로 남습니다.
       </p>
 
       <div className="mb-6 mt-5 flex gap-1 border-b border-border">
@@ -951,7 +1084,7 @@ export default function AdminPage() {
       ) : tab === "programs" ? (
         <ProgramsTab />
       ) : (
-        <ProgramEditsTab />
+        <ActivityTab />
       )}
     </div>
   );

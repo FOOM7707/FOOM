@@ -85,7 +85,7 @@ const STEPS = [
   },
   {
     title: "프로그램 개설",
-    body: "프로그램 등록 시 심사를 거쳐 등록됩니다.",
+    body: "자격 승인 뒤에는 등록하면 바로 게시됩니다.",
   },
 ];
 
@@ -429,8 +429,9 @@ export default function ProviderApplyPage() {
           <div>
             <dt className="text-[17px] font-bold">등록하면 바로 노출되나요?</dt>
             <dd className="mt-1 break-keep text-muted-foreground">
-              아닙니다. 프로그램마다 내용·가격을 확인하는 게시 심사가 따로 있습니다. 반려되면
-              사유를 보고 고쳐서 다시 요청할 수 있습니다.
+              자격 승인이 끝난 전문가는 「게시하기」를 누르는 순간 바로 노출됩니다. 프로그램마다
+              기다리는 심사는 없습니다. 운영자가 사후에 확인하고, 내용에 문제가 있으면 사유를 적어
+              내릴 수 있습니다 — 그 경우 고친 뒤 승인을 받아 다시 올립니다.
             </dd>
           </div>
           <div>

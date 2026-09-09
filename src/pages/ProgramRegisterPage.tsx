@@ -8,7 +8,9 @@
  * 문서의 클라이언트 직접 수정을 허용하지만, 그 길로 가면 지역·난이도 같은
  * 파생 필드가 갱신되지 않아 원본과 사본이 어긋납니다(2-3).
  *
- * **게시 중인 프로그램의 심사 대상 필드를 고치면 서버가 재심사로 되돌립니다.**
+ * **게시 중인 프로그램의 수정은 바로 반영됩니다(⑨, 2026-09-09).** 변경 기록이 남고 운영자가
+ * 사후에 확인합니다. 관리자가 내린 프로그램을 고친 경우만 관리자 확인으로 넘어갑니다.
+ * (이전 서술) 게시 중인 프로그램의 심사 대상 필드를 고치면 서버가 재심사로 되돌립니다.
  * 화면은 그 결과를 응답으로 받아 안내만 합니다 — 판단을 화면에서 따라 계산하면
  * 서버 규칙이 바뀔 때 두 곳이 어긋납니다.
  */
@@ -135,10 +137,14 @@ interface LoadedProgram {
   excludes: KeywordField;
   preparations: KeywordField;
   introBlocks: IntroBlock[];
-  /** 승인 대기 중인 수정본 (게시 중인 프로그램만). 없으면 null */
-  pendingEdit: { changedFields: string[] } | null;
-  /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다 */
-  editReviewNote?: string | null;
+  /** 최초 게시 시각. 있으면 「게시된 적 있음」 — 내려간 것이 반려인지 내림인지 가릅니다 */
+  publishedAt?: unknown;
+  /** 누가 내렸는가(2-3). `admin`이면 고쳐 저장할 때 관리자 확인으로 넘어갑니다 */
+  hiddenBy?: "provider" | "admin" | null;
+  /** 게시 대기의 이유(⑨) — `qualification`(자격 승인 대기, 자동 게시) / `admin`(관리자 확인) */
+  pendingReason?: "qualification" | "admin" | null;
+  /** 관리자가 내리거나 반려한 사유 */
+  reviewNote?: string | null;
 }
 
 /** 항목 이름 → 사람이 읽는 이름 */
@@ -169,6 +175,10 @@ export default function ProgramRegisterPage() {
   const isEdit = editingId != null;
 
   const [createdId, setCreatedId] = useState<string | null>(null);
+  /** 「게시하기」 결과 — 바로 공개됐는지, 자격 승인을 기다리는지(⑨). 완료 화면 문구가 갈립니다 */
+  const [publishedStatus, setPublishedStatus] = useState<"published" | "pending_review" | null>(
+    null
+  );
   /** 빈 필수 칸이 여럿일 때 첫 번째만 처리하기 위한 표시 (아래 onInvalidCapture) */
   const invalidHandled = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -250,27 +260,6 @@ export default function ProgramRegisterPage() {
   }, [isEdit, user, loadProgram]);
 
   /** 승인 대기 중인 수정본을 버립니다. 게시본은 그대로 남습니다. */
-  async function cancelPendingEdit() {
-    if (!editingId) return;
-    if (!window.confirm("승인 대기 중인 수정 내용을 취소할까요? 게시된 내용은 그대로 남습니다.")) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch(`/programs/${editingId}/pending-edit`, {
-        method: "DELETE",
-        requireAuth: true,
-      });
-      await loadProgram();
-      setSavedMessage("수정 요청을 취소했습니다. 게시된 내용은 그대로입니다.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "취소에 실패했습니다");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   /** 저장된 회차 삭제 — 서버가 즉시 지우고 날짜 요약을 다시 계산합니다. */
   async function deleteSavedSchedule(scheduleId: string) {
     if (!editingId) return;
@@ -425,6 +414,7 @@ export default function ProgramRegisterPage() {
 
   function resetForm() {
     setCreatedId(null);
+    setPublishedStatus(null);
     setCreatedPhotoCount(0);
     pending.forEach(releasePendingPhoto);
     setPending([]);
@@ -557,7 +547,6 @@ export default function ProgramRegisterPage() {
         const res = await apiFetch<{
           status: string;
           sentToReview: boolean;
-          pendingEdit: boolean;
           changedFields: string[];
         }>(
           `/programs/${editingId}`,
@@ -570,17 +559,21 @@ export default function ProgramRegisterPage() {
             body: { schedules },
           });
         }
-        await loadProgram();
-        setScheduleRows([]);
-        setSavedMessage(
-          res.pendingEdit
-            ? `수정 내용을 접수했습니다. ${res.changedFields
-                .map((f) => FIELD_LABEL[f] ?? f)
-                .join(" · ")}은(는) 관리자 승인 후 반영됩니다 — 그때까지 손님에게는 지금 게시된 내용이 그대로 보입니다.`
-            : res.sentToReview
-              ? "수정했습니다. 심사 대상 항목이 바뀌어 다시 심사를 받습니다."
-              : "수정했습니다. 바로 반영됐습니다."
-        );
+        // (⑨) 게시 중 수정은 바로 반영됩니다. 심사로 가는 것은 관리자가 내린 프로그램을
+        // 고친 경우뿐입니다 — 그 사실을 말해줘야 「저장했는데 왜 안 보이지」가 안 됩니다.
+        const message = res.sentToReview
+          ? "수정했습니다. 관리자가 내린 프로그램이라 관리자 확인 후 다시 게시됩니다."
+          : res.status === "published"
+            ? `수정했습니다. ${
+                res.changedFields.length > 0
+                  ? res.changedFields.map((f) => FIELD_LABEL[f] ?? f).join(" · ") + "이(가) "
+                  : ""
+              }지금 손님에게 바로 보입니다.`
+            : "수정했습니다.";
+        // 저장이 끝나면 **내 프로그램으로 넘어갑니다**(2026-09-09, 팀 요청). 같은 화면에 머물면
+        // 저장이 됐는지 화면을 훑어 확인해야 하고, 다음 할 일(게시하기·다시 올리기)이 있는 곳은
+        // 내 프로그램입니다. 결과 문구는 그 화면 위에 한 줄로 뜹니다.
+        navigate("/my/programs", { state: { notice: message } });
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "수정에 실패했습니다");
       } finally {
@@ -670,18 +663,22 @@ export default function ProgramRegisterPage() {
     setBusy(false);
   }
 
-  async function handleSubmitForReview() {
+  /**
+   * 게시하기 (⑨, 2026-09-09) — 심사 없이 바로 공개됩니다. 자격 승인 전이면 서버가
+   * 「자격 승인 대기」로 두고 승인 순간 자동으로 열어주므로, 그 사실을 이 자리에서 말해줍니다.
+   */
+  async function handlePublish() {
     if (!createdId) return;
     setError(null);
     setBusy(true);
     try {
-      await apiFetch(`/programs/${createdId}/submit-for-review`, {
-        method: "POST",
-        requireAuth: true,
-      });
-      navigate("/my/programs");
+      const res = await apiFetch<{ status: "published" | "pending_review" }>(
+        `/programs/${createdId}/publish`,
+        { method: "POST", requireAuth: true }
+      );
+      setPublishedStatus(res.status);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "심사 요청에 실패했습니다");
+      setError(err instanceof ApiError ? err.message : "게시하지 못했습니다");
     } finally {
       setBusy(false);
     }
@@ -751,21 +748,39 @@ export default function ProgramRegisterPage() {
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold text-secondary-foreground">
-              저장했습니다 — 심사를 요청하면 게시됩니다
+              {publishedStatus === "published"
+                ? "게시했습니다 — 지금부터 검색에 나옵니다"
+                : publishedStatus === "pending_review"
+                  ? "저장했습니다 — 자격 승인이 끝나면 자동으로 게시됩니다"
+                  : "저장했습니다 — 「게시하기」를 누르면 바로 공개됩니다"}
             </h1>
             <p className="mb-4 text-sm leading-relaxed">
-              지금은 <strong>작성 중</strong> 상태라 아직 검색에 노출되지 않습니다.{" "}
+              {publishedStatus === "published" ? (
+                <>
+                  손님이 검색하면 바로 보입니다. 운영자가 사후에 확인하고, 내용에 문제가 있으면
+                  사유를 적어 내릴 수 있습니다 — 그 경우 내 프로그램에서 사유를 보고 고쳐 다시
+                  올립니다.{" "}
+                </>
+              ) : publishedStatus === "pending_review" ? (
+                <>
+                  자격 심사가 아직 끝나지 않아 지금은 손님에게 보이지 않습니다. 승인되는 순간
+                  이 프로그램이 자동으로 열리므로 다시 누르지 않아도 됩니다.{" "}
+                </>
+              ) : (
+                <>
+                  지금은 <strong>작성 중</strong> 상태라 아직 검색에 노출되지 않습니다.{" "}
+                </>
+              )}
               {createdPhotoCount > 0 ? (
                 <>
-                  <strong>사진 {createdPhotoCount}장도 함께 올라갔습니다.</strong>{" "}
+                  <strong>사진 {createdPhotoCount}장도 함께 올라갔습니다.</strong>
                 </>
               ) : (
                 <>
                   <strong>사진이 없습니다</strong> — 목록과 검색 결과에서 빈 자리로 보입니다.
-                  「사진·내용 수정」에서 넣을 수 있습니다.{" "}
+                  「사진·내용 수정」에서 넣을 수 있습니다.
                 </>
               )}
-              <strong>심사를 요청</strong>하면 관리자가 확인해 게시합니다.
             </p>
             {error && (
               <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2.5 text-[12.5px] text-destructive">
@@ -773,13 +788,13 @@ export default function ProgramRegisterPage() {
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              {/* 사진을 올릴 수 있게 된 것은 지금부터입니다(18-3).
-                  심사 요청보다 먼저 안내해야 사진 없는 프로그램이 올라가지 않습니다. */}
-              {/* 사진은 저장할 때 함께 올라갑니다(v29) — 「사진 추가하기」가 더 이상
-                  첫 단계가 아니라서 심사 요청을 첫 버튼으로 올렸습니다. */}
-              <Button onClick={handleSubmitForReview} disabled={busy}>
-                심사 요청하기
-              </Button>
+              {/* (⑨) 첫 버튼은 「게시하기」 — 심사 없이 바로 공개됩니다. 사진은 저장할 때
+                  함께 올라갔으므로(v29) 게시 전에 따로 할 일이 없습니다. */}
+              {!publishedStatus && (
+                <Button onClick={handlePublish} disabled={busy}>
+                  {busy ? "게시 중…" : "게시하기"}
+                </Button>
+              )}
               <Button variant="outline" asChild>
                 <Link to={`/programs/${createdId}/edit`}>사진·내용 수정</Link>
               </Button>
@@ -811,66 +826,53 @@ export default function ProgramRegisterPage() {
         <p className="mb-7 text-[14px] leading-relaxed text-muted-foreground">
           {loaded!.status === "published" ? (
             <>
-              현재 <strong>게시 중</strong>입니다. 고쳐도 <strong>게시가 중단되지
-              않습니다</strong> — 제목·소개·사진·가격·정원·장소처럼 심사 대상 항목은 관리자
-              승인 후에 바뀌고, 그때까지 손님에게는 지금 내용이 그대로 보입니다. 배리어프리·
-              우천 대체·걷는 거리, 그리고 <strong>날짜는 승인 없이 바로</strong> 반영됩니다.
+              현재 <strong>게시 중</strong>입니다. 고쳐 저장하면 <strong>손님에게 바로</strong>{" "}
+              반영됩니다 — 무엇을 바꿨는지는 기록으로 남고 운영자가 사후에 확인합니다.
             </>
           ) : loaded!.status === "hidden" ? (
-            <>
-              <strong>반려된 프로그램</strong>입니다. 내용을 고쳐 저장하면 자동으로 다시 심사를
-              요청합니다.
-            </>
+            loaded!.hiddenBy === "admin" || !loaded!.publishedAt ? (
+              <>
+                <strong>관리자가 내린(또는 반려한) 프로그램</strong>입니다. 내용을 고쳐 저장하면
+                관리자 확인으로 넘어가고, 승인되면 다시 게시됩니다.
+                {loaded!.reviewNote && (
+                  <>
+                    {" "}
+                    사유: <strong>{loaded!.reviewNote}</strong>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <strong>모집을 중단한 프로그램</strong>입니다. 고쳐 저장한 뒤 내 프로그램에서
+                「다시 올리기」를 누르면 심사 없이 바로 열립니다.
+              </>
+            )
           ) : loaded!.status === "pending_review" ? (
-            <>
-              <strong>심사 중</strong>입니다. 지금 고친 내용으로 심사받습니다.
-            </>
+            loaded!.pendingReason === "admin" ? (
+              <>
+                <strong>관리자 확인을 기다리는 중</strong>입니다. 지금 고친 내용으로 확인받습니다.
+              </>
+            ) : (
+              <>
+                <strong>자격 승인을 기다리는 중</strong>입니다. 승인되면 자동으로 게시되고, 지금
+                고친 내용이 그대로 나갑니다.
+              </>
+            )
           ) : (
             <>
-              <strong>작성 중</strong>입니다. 자유롭게 고칠 수 있고, 심사를 요청해야 게시됩니다.
+              <strong>작성 중</strong>입니다. 자유롭게 고칠 수 있고, 내 프로그램에서 「게시하기」를
+              누르면 바로 공개됩니다.
             </>
           )}
         </p>
       ) : (
         <p className="mb-7 text-[14px] leading-relaxed text-muted-foreground">
-          저장하면 <strong>작성 중(draft)</strong> 상태가 되고, 심사를 요청해야 게시됩니다.
+          저장하면 <strong>작성 중</strong> 상태가 되고, 「게시하기」를 누르면 심사 없이 바로 공개됩니다.
           {" "}
           <Link to="/my/programs" className="underline">
             내 프로그램
           </Link>
           에서 상태를 확인할 수 있습니다.
-        </p>
-      )}
-
-      {loaded?.pendingEdit && (
-        <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 px-3.5 py-3">
-          <p className="text-[13px] leading-relaxed">
-            <strong className="font-semibold text-primary">승인 대기 중인 수정 내용이 있습니다.</strong>{" "}
-            {loaded.pendingEdit.changedFields.map((f) => FIELD_LABEL[f] ?? f).join(" · ")} — 승인되면
-            반영됩니다. 지금 손님에게는 <strong>게시된 내용</strong>이 보입니다.
-          </p>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
-            아래 값은 <strong>게시된 내용</strong>입니다. 다시 고쳐 저장하면 대기 중인 수정
-            내용이 새것으로 바뀝니다.
-          </p>
-          <button
-            type="button"
-            onClick={() => void cancelPendingEdit()}
-            disabled={busy}
-            className="mt-2 text-[12.5px] text-muted-foreground underline hover:text-destructive disabled:opacity-50"
-          >
-            수정 요청 취소
-          </button>
-        </div>
-      )}
-
-      {loaded?.editReviewNote && !loaded.pendingEdit && (
-        <p className="mb-4 rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
-          <strong className="font-semibold">지난 수정 요청이 반려되었습니다.</strong>
-          <br />
-          {loaded.editReviewNote}
-          <br />
-          <span className="text-[12.5px]">게시된 내용은 그대로 유지되고 있습니다.</span>
         </p>
       )}
 
@@ -1315,7 +1317,7 @@ export default function ProgramRegisterPage() {
         <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur">
           <div className="container mx-auto flex max-w-[800px] items-center justify-between gap-3 px-5 py-3.5">
             <p className="hidden text-[13px] text-muted-foreground sm:block">
-              {isEdit ? "고친 내용은 저장해야 반영됩니다" : "제출하면 관리자 심사로 넘어갑니다"}
+              {isEdit ? "고친 내용은 저장해야 반영됩니다" : "저장한 뒤 「게시하기」를 누르면 바로 공개됩니다"}
             </p>
             <div className="flex flex-1 gap-2 sm:flex-none">
               {isEdit ? (
@@ -1340,7 +1342,7 @@ export default function ProgramRegisterPage() {
                 </Button>
               )}
               <Button type="submit" size="lg" className="flex-1 sm:flex-none" disabled={busy}>
-                {busy ? "제출 중…" : isEdit ? "수정 내용 저장" : "제출"}
+                {busy ? "저장 중…" : isEdit ? "수정 내용 저장" : "저장"}
               </Button>
             </div>
           </div>

@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
@@ -30,18 +30,55 @@ interface ProgramRow {
    * `status`로는 알 수 없습니다: `hidden`이 「반려된 것」과 「내려간 것」 둘 다입니다.
    */
   everPublished?: boolean;
+  /**
+   * 누가 내렸는가(2026-09-09). `provider`면 「다시 올리기」로 심사 없이 되살리고,
+   * `admin`(반려·관리자 숨김)이면 고쳐서 심사를 받아야 합니다. 값이 없는데 게시된 적
+   * 있는 옛 문서는 공급자가 내린 것입니다(그때는 관리자가 내리는 경로가 없었음).
+   */
+  hiddenBy?: "provider" | "admin" | null;
   reviewNote?: string | null;
-  /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다(v23) */
-  editReviewNote?: string | null;
+  /**
+   * 게시 대기의 이유(⑨, 2026-09-09). `qualification`이면 자격 승인 순간 자동 게시라 할 일이
+   * 없고, `admin`이면 관리자가 내린 것을 고쳐 재제출한 것이라 관리자 확인을 기다립니다.
+   */
+  pendingReason?: "qualification" | "admin" | null;
   location?: { address?: string };
 }
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "작성 중",
-  pending_review: "심사 중",
+  pending_review: "관리자 확인 대기",
   published: "게시 중",
   hidden: "반려·숨김",
 };
+
+/**
+ * 「내려감」의 세 얼굴(2-3 `hiddenBy`). 같은 상태값이지만 공급자가 할 일이 다릅니다 —
+ * 반려는 고쳐서 심사, 관리자 숨김도 고쳐서 심사(페널티), 스스로 내린 것은 그냥 다시 올리기.
+ */
+type HiddenKind = "rejected" | "adminHidden" | "selfHidden";
+
+function hiddenKind(p: ProgramRow): HiddenKind | null {
+  if (p.status !== "hidden") return null;
+  if (!p.everPublished) return "rejected";
+  return p.hiddenBy === "admin" ? "adminHidden" : "selfHidden";
+}
+
+function statusLabel(p: ProgramRow): string {
+  switch (hiddenKind(p)) {
+    case "rejected":
+      return "반려";
+    case "adminHidden":
+      return "관리자 숨김";
+    case "selfHidden":
+      return "모집 중단";
+    default:
+      if (p.status === "pending_review" && p.pendingReason === "qualification") {
+        return "자격 승인 대기";
+      }
+      return STATUS_LABEL[p.status] ?? p.status;
+  }
+}
 
 const DIFFICULTY_LABEL: Record<string, string> = {
   easy: "쉬움",
@@ -81,8 +118,8 @@ function hasBookableDate(p: ProgramRow): boolean {
 
 /**
  * 진행 날짜 한 줄 요약.
- * 날짜가 없는 1회성·회차제는 **심사 요청이 막혀 있으므로** 그 이유를 함께 적습니다 —
- * 「심사 요청」을 눌러 거부당하고 나서야 알게 되면 무엇이 빠졌는지 알 수 없습니다.
+ * 날짜가 없는 1회성·회차제는 **게시가 막혀 있으므로** 그 이유를 함께 적습니다 —
+ * 「게시하기」를 눌러 거부당하고 나서야 알게 되면 무엇이 빠졌는지 알 수 없습니다.
  */
 function scheduleSummary(p: ProgramRow): { text: string; warn: boolean } {
   if (p.scheduleType === "open") {
@@ -98,7 +135,7 @@ function scheduleSummary(p: ProgramRow): { text: string; warn: boolean } {
   const today = todayKst();
   const dates = (p.scheduleDates ?? []).filter((d) => d >= today);
   if (dates.length === 0) {
-    return { text: "진행 날짜 없음 — 날짜를 넣어야 심사를 요청할 수 있습니다", warn: true };
+    return { text: "진행 날짜 없음 — 날짜를 넣어야 게시할 수 있습니다", warn: true };
   }
 
   const shown = dates.slice(0, 3).map(formatDate).join(" · ");
@@ -110,8 +147,22 @@ export default function MyProgramsPage() {
   const { user, loading } = useAuth();
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** 게시하기 결과 안내 — 「눌렀는데 아무 말이 없는」 상태를 만들지 않기 위해 */
+  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
+
+  // 수정 화면이 저장을 끝내고 여기로 보낼 때 결과 문구를 함께 넘깁니다(2026-09-09).
+  // 주소 기록에 남은 문구는 지웁니다 — 남기면 뒤로가기로 돌아올 때마다 다시 뜹니다.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const incoming = (location.state as { notice?: string } | null)?.notice;
+    if (!incoming) return;
+    setNotice(incoming);
+    navigate(".", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const load = useCallback(async () => {
     setFetching(true);
@@ -133,17 +184,51 @@ export default function MyProgramsPage() {
     if (!loading && !user) setFetching(false);
   }, [loading, user, load]);
 
-  async function requestReview(id: string) {
-    setBusyId(id);
+  /**
+   * 게시하기 (⑨, 2026-09-09) — 심사 없이 바로 공개됩니다. 자격 승인 전이면 서버가
+   * 「자격 승인 대기」로 두고 승인 순간 자동으로 열어주므로, 그 차이를 이 자리에서 말해줍니다.
+   */
+  async function publish(p: ProgramRow) {
+    setBusyId(p.id);
     setError(null);
+    setNotice(null);
     try {
-      await apiFetch(`/programs/${id}/submit-for-review`, {
-        method: "POST",
-        requireAuth: true,
-      });
+      const res = await apiFetch<{ status: "published" | "pending_review" }>(
+        `/programs/${p.id}/publish`,
+        { method: "POST", requireAuth: true }
+      );
+      setNotice(
+        res.status === "published"
+          ? `「${p.title}」을(를) 게시했습니다. 지금부터 검색에 나옵니다.`
+          : `「${p.title}」은(는) 자격 승인이 끝나는 순간 자동으로 게시됩니다. 다시 누르지 않아도 됩니다.`
+      );
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "심사 요청에 실패했습니다");
+      setError(err instanceof ApiError ? err.message : "게시하지 못했습니다");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * 다시 올리기 — 스스로 내린 프로그램을 **심사 없이** 되살립니다(2026-09-09).
+   * 프로그램은 재사용하는 틀이라(2-4), 시즌마다 새로 만들지 않고 날짜를 더해 다시 엽니다.
+   * 반려·관리자 숨김은 서버가 거부하고 「고쳐서 심사 요청」으로 안내합니다.
+   */
+  async function relist(p: ProgramRow) {
+    if (!hasBookableDate(p)) {
+      const go = window.confirm(
+        `「${p.title}」에 앞으로 진행할 날짜가 없습니다.\n\n다시 올려도 날짜를 추가할 때까지 검색에는 나오지 않습니다. 그래도 올릴까요?`
+      );
+      if (!go) return;
+    }
+    setBusyId(p.id);
+    setError(null);
+    try {
+      await apiFetch(`/programs/${p.id}/relist`, { method: "POST", requireAuth: true });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "다시 올리지 못했습니다");
     } finally {
       setBusyId(null);
     }
@@ -204,6 +289,11 @@ export default function MyProgramsPage() {
           {error}
         </p>
       )}
+      {notice && (
+        <p className="mb-4 rounded-lg bg-secondary px-3 py-2.5 text-[13px] leading-relaxed text-secondary-foreground">
+          {notice}
+        </p>
+      )}
 
       {programs.length === 0 ? (
         <Card className="bg-secondary">
@@ -231,7 +321,7 @@ export default function MyProgramsPage() {
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-[12px] font-semibold text-secondary-foreground">
-                      {STATUS_LABEL[p.status] ?? p.status}
+                      {statusLabel(p)}
                     </span>
                   </div>
 
@@ -250,19 +340,50 @@ export default function MyProgramsPage() {
                     );
                   })()}
 
-                  {/* 수정 요청이 반려된 경우 — 프로그램 자체는 게시 중입니다.
-                      프로그램 반려(위)와 구분해서 보여줘야 오해가 없습니다. */}
-                  {p.status === "published" && p.editReviewNote && (
-                    <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
-                      수정 요청 반려: {p.editReviewNote}
-                      <br />
-                      <span className="text-[12px]">게시된 내용은 그대로 유지되고 있습니다.</span>
+                  {/* 게시 대기(⑨) — 이유에 따라 할 일이 다릅니다. 자격 승인 대기는 할 일이
+                      없고(승인 순간 자동 게시), 관리자 확인 대기는 기다리는 것뿐입니다.
+                      안 적어두면 「심사 중」이 영원히 멈춘 것으로 읽힙니다. */}
+                  {p.status === "pending_review" && (
+                    <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-relaxed text-secondary-foreground">
+                      {p.pendingReason === "admin" ? (
+                        <>
+                          <b>관리자 확인을 기다리고 있습니다.</b> 관리자가 내린 프로그램을 고쳐 올린
+                          것이라 확인 후 다시 게시됩니다.
+                        </>
+                      ) : (
+                        <>
+                          <b>자격 승인이 끝나면 자동으로 게시됩니다.</b> 다시 누르지 않아도 됩니다.
+                          승인 전에는 손님에게 보이지 않습니다.
+                        </>
+                      )}
                     </p>
                   )}
 
-                  {p.status === "hidden" && p.reviewNote && (
-                    <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
-                      반려 사유: {p.reviewNote}
+                  {(hiddenKind(p) === "rejected" || hiddenKind(p) === "adminHidden") &&
+                    p.reviewNote && (
+                      <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
+                        {hiddenKind(p) === "adminHidden" ? "관리자가 내린 사유" : "반려 사유"}:{" "}
+                        {p.reviewNote}
+                        <br />
+                        <span className="text-[12px]">
+                          내용을 고쳐 저장하면 관리자 확인으로 넘어가고, 승인되면 다시 게시됩니다.
+                        </span>
+                      </p>
+                    )}
+
+                  {/* 스스로 내린 프로그램 — 지금 어떤 상태인지, 예약자에게는 어떻게
+                      보이는지, 그리고 왜 삭제가 없는지를 한 자리에서 말해줍니다
+                      (2026-09-09). 이게 없으면 「수정」만 보이는 카드가 「아무것도
+                      못 하는」 것으로 읽힙니다 — 실서버에서 실제로 그렇게 읽혔습니다. */}
+                  {hiddenKind(p) === "selfHidden" && (
+                    <p className="rounded-lg bg-secondary px-3 py-2 text-[12.5px] leading-relaxed text-secondary-foreground">
+                      <b>모집 중단</b> — 손님에게 보이지 않습니다. 이미 예약한 손님에게는 계속
+                      보이고, 그 예약은 그대로 진행해야 합니다.
+                      <br />
+                      <span className="text-[12px]">
+                        날짜를 추가한 뒤 「다시 올리기」를 누르면 바로 열립니다.
+                        한 번 게시된 프로그램은 기록 보존을 위해 지우지 않습니다.
+                      </span>
                     </p>
                   )}
 
@@ -276,27 +397,40 @@ export default function MyProgramsPage() {
                       진행할 날짜가 지나 <b>손님에게 노출되지 않고 있습니다.</b>
                       <br />
                       <span className="text-[12px]">
-                        수정 화면에서 날짜를 추가하면 다시 검색에 나옵니다. 게시 상태는
-                        그대로라 심사를 다시 받지 않습니다.
+                        수정 화면에서 날짜를 추가하면 그 자리에서 다시 검색에 나옵니다.
                       </span>
                     </p>
                   )}
 
                   <div className="mt-1 flex flex-wrap gap-2">
+                    {/* (⑨) 게시하기 — 심사 없이 바로 공개. 날짜가 없으면 서버가 거부하고
+                        위 요약이 그 이유를 이미 말해줍니다. */}
                     {p.status === "draft" && (
-                      <Button
-                        size="sm"
-                        onClick={() => requestReview(p.id)}
-                        disabled={busyId === p.id}
-                      >
-                        심사 요청
+                      <Button size="sm" onClick={() => publish(p)} disabled={busyId === p.id}>
+                        게시하기
                       </Button>
                     )}
-                    {/* 수정은 모든 상태에서 됩니다. 게시 중인 프로그램의 심사 대상
-                        항목을 고치면 서버가 다시 심사로 되돌립니다(5번 v22). */}
+                    {/* 스스로 내린 것 — 첫 버튼은 「다시 올리기」. 재사용을 먼저 권합니다
+                        (새로 만들면 심사·후기·사진이 전부 새로 시작됩니다). */}
+                    {hiddenKind(p) === "selfHidden" && (
+                      <Button size="sm" onClick={() => relist(p)} disabled={busyId === p.id}>
+                        다시 올리기
+                      </Button>
+                    )}
+                    {/* 일정 종료 — 날짜만 넣으면 되므로 첫 버튼을 그 일로 둡니다. */}
+                    {p.status === "published" && !hasBookableDate(p) && (
+                      <Button size="sm" asChild>
+                        <Link to={`/programs/${p.id}/edit`}>날짜 추가</Link>
+                      </Button>
+                    )}
+
+                    {/* 수정은 모든 상태에서 됩니다. 게시 중이면 바로 반영되고(⑨),
+                        관리자가 내린 것을 고치면 관리자 확인으로 넘어갑니다. */}
                     <Button size="sm" variant="outline" asChild>
                       <Link to={`/programs/${p.id}/edit`}>
-                        {p.status === "hidden" ? "수정해서 다시 제출" : "수정"}
+                        {hiddenKind(p) === "rejected" || hiddenKind(p) === "adminHidden"
+                          ? "수정해서 다시 올리기"
+                          : "수정"}
                       </Link>
                     </Button>
 
