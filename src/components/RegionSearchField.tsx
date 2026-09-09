@@ -76,6 +76,12 @@ interface Props {
   className?: string;
   placeholder?: string;
   id?: string;
+  /**
+   * 밖에서 열림을 관리할 때(2026-09-09). 홈 검색 막대는 「한 번에 하나만 열림」을 화면
+   * 단위로 관리해서, 달력을 연 채 이 칸을 누르면 달력이 닫힙니다. 없으면 스스로 관리합니다.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function RegionSearchField({
@@ -86,8 +92,16 @@ export default function RegionSearchField({
   className,
   placeholder = "지역을 고르거나 직접 입력",
   id,
+  open: controlledOpen,
+  onOpenChange,
 }: Props) {
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = controlledOpen ?? innerOpen;
+  const setOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const resolved = typeof next === "function" ? next(open) : next;
+    if (onOpenChange) onOpenChange(resolved);
+    if (controlledOpen === undefined) setInnerOpen(resolved);
+  };
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   /** 기본 목록 — 전과 같은 권역 7개 */
@@ -144,6 +158,8 @@ export default function RegionSearchField({
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
+    // setOpen은 매 렌더마다 새 함수지만 내용이 같아 의존성에 넣지 않습니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function pick(c: RegionPick) {

@@ -9,6 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useLogout } from "@/hooks/useLogout";
 import { startKakaoLogin } from "@/lib/kakaoAuth";
 import { startNaverLogin } from "@/lib/naverAuth";
 
@@ -24,7 +25,9 @@ import { startNaverLogin } from "@/lib/naverAuth";
  * 심사 없이 열립니다. 두 값이 비어도 가입이 되도록 설계돼 있습니다(2-1, 15-4).
  */
 export default function LoginDialog() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
+  // 로그아웃은 홈으로 보내고 안내 문구를 띄웁니다(useLogout) — 버튼만 바뀌면 눌렀는지 알 수 없습니다.
+  const logout = useLogout();
   const [error, setError] = useState<string | null>(null);
 
   if (loading) {

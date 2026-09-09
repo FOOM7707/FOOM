@@ -9,8 +9,8 @@
  *       → 후기.
  */
 
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cardImageUrl } from "@/lib/cardImage";
 import {
   Baby,
@@ -25,7 +25,7 @@ import type { LucideIcon } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { CATEGORIES } from "@/types/firestore";
 import { DEFAULT_FILTERS, toSearchQuery, type SearchRow } from "@/lib/programFilter";
-import { Select } from "@/components/ui/select";
+import ChoiceDropdown from "@/components/ChoiceDropdown";
 import DateRangeCalendar from "@/components/DateRangeCalendar";
 import RegionSearchField, {
   type ProgramDistrict,
@@ -97,7 +97,40 @@ export default function HomePage() {
   const [headcount, setHeadcount] = useState("");
   const [from, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState<string | null>(null);
-  const [dateOpen, setDateOpen] = useState(false);
+  /**
+   * 검색 막대에서 지금 열려 있는 선택창 — **한 번에 하나만** 엽니다(2026-09-09).
+   * 그전에는 달력이 자기 열림을 따로 들고 있어서, 달력을 연 채 지역이나 프로그램 종류를
+   * 누르면 두 창이 겹쳤습니다. 셋을 한 값으로 묶으면 하나를 열 때 나머지가 저절로 닫힙니다.
+   */
+  const [openPanel, setOpenPanel] = useState<"region" | "date" | "category" | null>(null);
+  const dateBoxRef = useRef<HTMLDivElement | null>(null);
+  const datePanelRef = useRef<HTMLDivElement | null>(null);
+
+  /** 로그아웃 뒤 홈으로 올 때 받는 한 줄 안내(useLogout). 몇 초 뒤 사라집니다 */
+  const location = useLocation();
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const incoming = (location.state as { notice?: string } | null)?.notice;
+    if (!incoming) return;
+    setNotice(incoming);
+    // 주소 기록에 남은 안내는 지웁니다 — 남겨두면 뒤로가기로 돌아올 때마다 다시 뜹니다.
+    navigate(".", { replace: true, state: null });
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
+  // 달력은 자기 바깥 클릭을 스스로 닫지 않았습니다(지역·종류 칸은 닫음). 셋을 같게 맞춥니다.
+  useEffect(() => {
+    if (openPanel !== "date") return;
+    function onPointerDown(e: PointerEvent) {
+      const t = e.target as Node;
+      if (dateBoxRef.current?.contains(t) || datePanelRef.current?.contains(t)) return;
+      setOpenPanel(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [openPanel]);
 
   /** 인기 프로그램 — 판정은 서버가 합니다(검색 화면과 같은 경로) */
   const [featured, setFeatured] = useState<SearchRow[] | null>(null);
@@ -167,6 +200,15 @@ export default function HomePage() {
           숲해설가, 산림치유지도사 등 국가공인 전문가와 함께하는 맞춤형 숲 프로그램
         </p>
 
+        {notice && (
+          <p
+            role="status"
+            className="mx-auto mt-5 inline-block rounded-full bg-secondary px-4 py-2 text-[13px] font-semibold text-secondary-foreground"
+          >
+            {notice}
+          </p>
+        )}
+
         {/* 통합 검색 — 고른 값은 검색 화면의 필터로 그대로 넘어갑니다(주소에 남으므로
             뒤로가기·링크 공유도 됩니다).
 
@@ -184,6 +226,8 @@ export default function HomePage() {
               onChange={setRegion}
               onPick={setPick}
               programDistricts={districts}
+              open={openPanel === "region"}
+              onOpenChange={(o) => setOpenPanel((p) => (o ? "region" : p === "region" ? null : p))}
               placeholder="어느 지역을 찾으시나요?"
               className={
                 SEARCH_CONTROL + " outline-none placeholder:font-normal placeholder:text-muted-foreground"
@@ -195,11 +239,14 @@ export default function HomePage() {
               **누르면 이 자리 아래로 펼칩니다.** 단계별로 화면을 넘기는 방식은 쓰지
               않았습니다 — 지역만 정하는 사람과 날짜만 정하는 사람이 대부분인데,
               단계로 만들면 앞 칸을 비운 사람이 다음으로 갈 수 없습니다. */}
-          <div className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
+          <div
+            ref={dateBoxRef}
+            className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1"
+          >
             <span className="mb-0.5 block text-[12px] font-bold text-primary">날짜</span>
             <button
               type="button"
-              onClick={() => setDateOpen((v) => !v)}
+              onClick={() => setOpenPanel((p) => (p === "date" ? null : "date"))}
               className="flex h-[26px] w-full items-center gap-1.5 bg-transparent text-left text-[14.5px] font-semibold leading-[26px] outline-none"
             >
               <CalendarDays className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -216,8 +263,11 @@ export default function HomePage() {
             </button>
           </div>
 
-          {dateOpen && (
-            <div className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-[min(680px,92vw)] -translate-x-1/2 rounded-2xl border bg-card p-4 text-left shadow-[0_14px_32px_rgba(0,0,0,0.12)]">
+          {openPanel === "date" && (
+            <div
+              ref={datePanelRef}
+              className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-[min(680px,92vw)] -translate-x-1/2 rounded-2xl border bg-card p-4 text-left shadow-[0_14px_32px_rgba(0,0,0,0.12)]"
+            >
               <DateRangeCalendar
                 from={from}
                 to={to}
@@ -240,7 +290,7 @@ export default function HomePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDateOpen(false)}
+                  onClick={() => setOpenPanel(null)}
                   className="rounded-full bg-primary px-5 py-2 text-[13.5px] font-bold text-primary-foreground"
                 >
                   확인
@@ -251,20 +301,20 @@ export default function HomePage() {
 
           <label className="flex flex-1 flex-col justify-center border-b px-3 py-2.5 text-left lg:border-b-0 lg:border-r lg:py-1">
             <span className="mb-0.5 block text-[12px] font-bold text-primary">프로그램 종류</span>
-            <Select
+            {/* 지역 칸과 같은 생김새로 열립니다(ChoiceDropdown) — 브라우저 기본 select는
+                운영체제 창으로 열려 옆 칸과 다르게 보였습니다. */}
+            <ChoiceDropdown
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className={
-                SEARCH_CONTROL + (category === "" ? " font-normal text-muted-foreground" : "")
+              onChange={setCategory}
+              options={CATEGORY_LIST.map((c) => ({ value: c, label: c }))}
+              allLabel="전체 카테고리"
+              placeholder="전체 카테고리"
+              open={openPanel === "category"}
+              onOpenChange={(o) =>
+                setOpenPanel((p) => (o ? "category" : p === "category" ? null : p))
               }
-            >
-              <option value="">전체 카테고리</option>
-              {CATEGORY_LIST.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
+              className={SEARCH_CONTROL + " outline-none"}
+            />
           </label>
 
           <label className="flex flex-1 flex-col justify-center px-3 py-2.5 text-left lg:py-1">
@@ -274,6 +324,8 @@ export default function HomePage() {
               min={1}
               value={headcount}
               onChange={(e) => setHeadcount(e.target.value)}
+              // 인원 칸에 초점이 오면 열려 있던 선택창을 닫습니다 — 여기만 열린 채 두면 겹칩니다.
+              onFocus={() => setOpenPanel(null)}
               placeholder="인원 선택 (예: 4명)"
               className="h-[26px] w-full bg-transparent text-[14.5px] font-semibold leading-[26px] outline-none placeholder:font-normal placeholder:text-muted-foreground"
             />
