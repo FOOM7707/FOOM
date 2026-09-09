@@ -13,6 +13,7 @@ import {
   getProgram,
   listPrograms,
   parseProgramInput,
+  removeProgram,
   submitProgramForReview,
   updateProgram,
 } from "../../lib/programs";
@@ -93,6 +94,19 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
         req.auth!.uid,
         input
       );
+      res.json(result);
+    })
+  );
+
+  // 정리 — 소유자만. **한 경로가 두 가지 일을 합니다**(2026-09-08).
+  // 게시된 적 없으면 완전 삭제, 한 번이라도 게시됐으면 내리기(hidden)입니다.
+  // 어느 쪽인지는 서버가 정하고 응답의 `action`으로 알려줍니다 — 화면이 판단하면
+  // 「지운다고 눌렀는데 안 지워지는」 상태를 화면이 설명하지 못합니다.
+  router.delete(
+    "/:id",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await removeProgram(db(), String(req.params.id), req.auth!.uid);
       res.json(result);
     })
   );

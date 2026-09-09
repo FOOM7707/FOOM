@@ -73,6 +73,14 @@ export interface SearchFilters {
   to: string | null;
   sort: SortKey;
   limit: number;
+  /**
+   * 오늘(KST, `YYYY-MM-DD`) — **만료 판정 기준**입니다(2026-09-08 신규).
+   *
+   * 필터로 받는 값이 아니라 서버가 넣습니다. 요청에서 받으면 지난 날짜를 보내
+   * 만료된 프로그램을 되살려 볼 수 있게 됩니다 — `status`를 받지 않는 것과 같은
+   * 이유입니다(17-6).
+   */
+  today: string;
 }
 
 /**
@@ -203,6 +211,7 @@ export function parseSearchQuery(query: Record<string, unknown>, now = new Date(
     ...parsePeriod(query, now),
     sort,
     limit: Math.min(MAX_LIMIT, Math.max(1, num(query.limit, DEFAULT_LIMIT))),
+    today: kstDateString(now),
   };
 }
 
@@ -288,7 +297,43 @@ export function matchesFilters(program: Candidate, f: SearchFilters): boolean {
     return false;
   }
   if (f.from != null && f.to != null && !matchesPeriod(program, f.from, f.to)) return false;
+  if (!hasBookableDate(program, f.today)) return false;
   return true;
+}
+
+/**
+ * 진행할 날짜가 남아 있는가 — **만료 판정** (2026-09-08 신규).
+ *
+ * 심사 요청 시점에는 회차 0건을 거부하지만(v21), **시간이 흘러 0건이 되는 것은
+ * 아무도 막지 않았습니다.** 그대로 두면 손님이 상세로 들어가 「고를 날짜가 없는
+ * 프로그램」을 봅니다 — 예약 버튼이 비활성으로 이유만 적힌 화면입니다.
+ *
+ * **비었는지가 아니라 「오늘 이후가 있는지」로 봅니다.** `scheduleDates`는 회차를
+ * 만들거나 지울 때만 다시 계산되므로(`syncProgramScheduleDates`), 날짜가 그냥
+ * 지나가면 **지난 날짜가 그대로 남아 있습니다.** 달력의 점을 만들 때 같은 이유로
+ * 이미 today와 비교하고 있습니다.
+ *
+ * **상시모집(`open`)은 기준이 다릅니다** — 회차가 없으므로 문의 가능 기간
+ * (`availableUntil`)이 지났는지로 봅니다. 값이 없으면 기한이 없는 것입니다.
+ *
+ * **`nextScheduleAt`으로 판정하지 않습니다.** 그 필드를 인덱스나 부등호에 쓰면
+ * 값이 null인 상시모집이 결과에서 통째로 사라집니다(`backend.md` 절대 규칙, 17-2).
+ * 여기는 메모리 판정이라 당장은 무해하지만, 같은 값을 곳에 따라 다르게 쓰면
+ * 나중에 인덱스로 옮길 때 그대로 함정이 됩니다.
+ *
+ * **요약 필드가 아예 없으면 만료로 보지 않습니다.** 요약을 한 번도 계산한 적 없는
+ * 옛 문서를 숨기면 공급자는 「왜 안 보이는지 알 수 없는」 상태가 됩니다 —
+ * **잘못 숨기는 쪽이 잘못 보여주는 쪽보다 나쁩니다.** 잘못 보여주면 손님이 예약할
+ * 날짜가 없다는 것을 그 자리에서 알지만, 잘못 숨기면 아무도 알아차리지 못합니다.
+ */
+function hasBookableDate(program: Candidate, today: string): boolean {
+  if (program.scheduleType === "open") {
+    const until = program.availableUntil;
+    return typeof until !== "string" || until >= today;
+  }
+  const dates = program.scheduleDates;
+  if (!Array.isArray(dates)) return true;
+  return dates.some((d) => typeof d === "string" && d >= today);
 }
 
 /**

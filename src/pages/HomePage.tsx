@@ -161,7 +161,7 @@ export default function HomePage() {
           시안대로 흰 바탕입니다. 아래 목록 영역과 색이 갈려 첫 화면이 도드라집니다. */}
       <section className="border-b bg-card px-5 pb-14 pt-12 text-center sm:pt-14">
         <h1 className="text-balance text-[26px] font-extrabold leading-tight tracking-tight sm:text-[32px]">
-          검증된 산림복지전문가를 매칭받아보세요
+          검증된 산림복지전문가를 만나보세요
         </h1>
         <p className="mt-3 text-pretty text-[15px] text-muted-foreground sm:text-base">
           숲해설가, 산림치유지도사 등 국가공인 전문가와 함께하는 맞춤형 숲 프로그램

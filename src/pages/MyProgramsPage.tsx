@@ -23,6 +23,13 @@ interface ProgramRow {
   scheduleType?: string;
   /** 오늘~+90일 사이의 예약 가능 날짜. 서버가 회차에서 계산한 사본입니다(2-3) */
   scheduleDates?: string[];
+  /** 상시모집의 문의 가능 기간 끝 */
+  availableUntil?: string | null;
+  /**
+   * 한 번이라도 게시된 적 있는가 — **「지우기」인지 「내리기」인지를 가릅니다.**
+   * `status`로는 알 수 없습니다: `hidden`이 「반려된 것」과 「내려간 것」 둘 다입니다.
+   */
+  everPublished?: boolean;
   reviewNote?: string | null;
   /** 수정본이 반려된 사유. 게시본은 그대로 살아 있습니다(v23) */
   editReviewNote?: string | null;
@@ -48,6 +55,30 @@ function formatDate(iso: string): string {
   return `${Number(m)}월 ${Number(d)}일`;
 }
 
+/** 오늘(KST) — 서버의 만료 판정과 같은 기준을 쓰려면 한국 날짜여야 합니다. */
+function todayKst(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+}
+
+/**
+ * 진행할 날짜가 남아 있는가 — **서버 검색의 만료 판정과 같은 규칙입니다**
+ * (`functions/src/lib/programSearch.ts`의 `hasBookableDate`).
+ *
+ * 두 곳이 갈라지면 「목록에는 정상인데 검색에는 안 나오는」 상태가 되고, 공급자는
+ * 원인을 알 수 없습니다. **서버 규칙을 고치면 여기도 함께 고쳐야 합니다.**
+ *
+ * `scheduleDates`는 회차를 만들거나 지울 때만 다시 계산되므로 **지난 날짜가 그대로
+ * 남아 있을 수 있습니다** — 비었는지가 아니라 오늘 이후가 있는지로 봅니다.
+ */
+function hasBookableDate(p: ProgramRow): boolean {
+  const today = todayKst();
+  if (p.scheduleType === "open") {
+    return typeof p.availableUntil !== "string" || p.availableUntil >= today;
+  }
+  if (!Array.isArray(p.scheduleDates)) return true;
+  return p.scheduleDates.some((d) => d >= today);
+}
+
 /**
  * 진행 날짜 한 줄 요약.
  * 날짜가 없는 1회성·회차제는 **심사 요청이 막혀 있으므로** 그 이유를 함께 적습니다 —
@@ -61,7 +92,11 @@ function scheduleSummary(p: ProgramRow): { text: string; warn: boolean } {
     return { text: "매주 반복 — 준비 중이라 날짜를 넣을 수 없습니다", warn: true };
   }
 
-  const dates = p.scheduleDates ?? [];
+  // **지난 날짜는 빼고 셉니다.** 요약은 회차를 만들거나 지울 때만 다시 계산되므로
+  // 그냥 시간이 흐르면 지난 날짜가 남아 있습니다 — 그대로 보여주면 이미 끝난
+  // 날짜를 「앞으로 진행할 날짜」로 읽게 됩니다.
+  const today = todayKst();
+  const dates = (p.scheduleDates ?? []).filter((d) => d >= today);
   if (dates.length === 0) {
     return { text: "진행 날짜 없음 — 날짜를 넣어야 심사를 요청할 수 있습니다", warn: true };
   }
@@ -109,6 +144,31 @@ export default function MyProgramsPage() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "심사 요청에 실패했습니다");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * 지우기 / 내리기 — **무엇이 일어날지 누르기 전에 말해줍니다.**
+   *
+   * 실제 판단은 서버가 합니다(게시된 적 있으면 내리기, 없으면 완전 삭제). 화면은
+   * 같은 기준(`everPublished`)으로 문구만 맞춥니다 — 「지운다고 눌렀는데 남아
+   * 있는」 상태를 화면이 설명하지 못하면 고장으로 읽힙니다.
+   */
+  async function removeProgram(p: ProgramRow) {
+    const message = p.everPublished
+      ? `「${p.title}」을(를) 내릴까요?\n\n손님에게 보이지 않게 되고, 내용과 사진은 그대로 남습니다.`
+      : `「${p.title}」을(를) 삭제할까요?\n\n등록한 날짜와 사진까지 함께 지워지고 되돌릴 수 없습니다.`;
+    if (!window.confirm(message)) return;
+
+    setBusyId(p.id);
+    setError(null);
+    try {
+      await apiFetch(`/programs/${p.id}`, { method: "DELETE", requireAuth: true });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "처리하지 못했습니다");
     } finally {
       setBusyId(null);
     }
@@ -206,6 +266,22 @@ export default function MyProgramsPage() {
                     </p>
                   )}
 
+                  {/* 만료 — 게시 중인데 진행할 날짜가 없으면 검색에서 빠집니다
+                      (2026-09-08). **게시 상태는 그대로 두고 검색에서만 빼므로**
+                      날짜를 하나 넣으면 그 자리에서 돌아옵니다. 이 안내가 없으면
+                      공급자는 「게시 중」이라고 적힌 화면을 보면서 왜 손님이 못
+                      찾는지 알 수 없습니다. */}
+                  {p.status === "published" && !hasBookableDate(p) && (
+                    <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[12.5px] leading-relaxed text-destructive">
+                      진행할 날짜가 지나 <b>손님에게 노출되지 않고 있습니다.</b>
+                      <br />
+                      <span className="text-[12px]">
+                        수정 화면에서 날짜를 추가하면 다시 검색에 나옵니다. 게시 상태는
+                        그대로라 심사를 다시 받지 않습니다.
+                      </span>
+                    </p>
+                  )}
+
                   <div className="mt-1 flex flex-wrap gap-2">
                     {p.status === "draft" && (
                       <Button
@@ -223,6 +299,21 @@ export default function MyProgramsPage() {
                         {p.status === "hidden" ? "수정해서 다시 제출" : "수정"}
                       </Link>
                     </Button>
+
+                    {/* 지우기 / 내리기 — 게시된 적 있으면 내리기입니다.
+                        이미 내려간 것은 버튼을 두지 않습니다(서버도 거부합니다).
+                        오른쪽 끝으로 밀어 「수정」과 잘못 누르지 않게 합니다. */}
+                    {!(p.status === "hidden" && p.everPublished) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => removeProgram(p)}
+                        disabled={busyId === p.id}
+                      >
+                        {p.everPublished ? "내리기" : "삭제"}
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

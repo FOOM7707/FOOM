@@ -5,6 +5,7 @@
  * "관리자가 로그인만 해도 권한 상태가 깨지는" 사고라 반드시 테스트로 막습니다.
  */
 
+import { FieldValue } from "firebase-admin/firestore";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   resolveDisplayName,
@@ -98,7 +99,7 @@ describe("신규 가입", () => {
     expect((await userDoc(uid)).get("phone")).toBe("+821098765432");
   });
 
-  it("phoneIndex를 선점한다", async () => {
+  it("phoneIndex를 선점하고 출처를 소셜로 기록한다", async () => {
     const { uid } = await upsertSocialUser(
       { provider: "naver", profile: profile({ phone: "010-1111-2222" }) },
       deps()
@@ -106,6 +107,8 @@ describe("신규 가입", () => {
     const idx = await testDb.doc("phoneIndex/+821011112222").get();
     expect(idx.exists).toBe(true);
     expect(idx.get("uid")).toBe(uid);
+    // 마이페이지가 이 값으로 번호를 잠급니다(2-14).
+    expect((await userDoc(uid)).get("phoneSource")).toBe("naver");
   });
 
   it("약관 동의 이력을 같은 트랜잭션에 남긴다 (2-12)", async () => {
@@ -170,18 +173,82 @@ describe("재로그인", () => {
     expect((await userDoc(uid)).get("name")).toBe("내가바꾼이름");
   });
 
-  it("사용자가 직접 입력한 전화번호를 덮어쓰지 않는다", async () => {
+  /**
+   * ⚠️ 아래 재로그인 번호 테스트는 `010-6161-xxxx` 대역만 씁니다 — `phoneIndex`는
+   * 전역 공간이고 vitest가 파일을 병렬로 돌려서, 다른 파일과 번호가 겹치면 번갈아
+   * 깨집니다(users.test.ts의 같은 주석 참고).
+   */
+  it("직접 입력한 번호는 소셜 번호가 오면 교체된다 — 인증된 값이 우선 (2026-09-09)", async () => {
+    // 2026-09-09 이전 규칙은 반대(「직접 입력을 덮어쓰지 않는다」)였습니다. 소셜 번호가
+    // 마이페이지에서 잠기면서, 소셜이 이겨야 네이버에서 번호를 바꾼 사람이 우리 쪽을
+    // 고칠 길(재로그인)이 생깁니다.
     const p = profile({ phone: null });
     const { uid } = await upsertSocialUser({ provider: "naver", profile: p }, deps());
-    // 첫 예약 화면에서 직접 입력한 상황
-    await testDb.doc(`users/${uid}`).update({ phone: "+821055556666" });
+    await testDb.doc(`users/${uid}`).update({ phone: "+821061610001", phoneSource: "manual" });
 
     await upsertSocialUser(
-      { provider: "naver", profile: { ...p, phone: "010-1234-5678" } },
+      { provider: "naver", profile: { ...p, phone: "010-6161-0002" } },
       deps()
     );
 
-    expect((await userDoc(uid)).get("phone")).toBe("+821055556666");
+    const snap = await userDoc(uid);
+    expect(snap.get("phone")).toBe("+821061610002");
+    expect(snap.get("phoneSource")).toBe("naver");
+    expect((await testDb.doc("phoneIndex/+821061610002").get()).get("uid")).toBe(uid);
+  });
+
+  it("소셜에서 번호가 바뀌면 우리 쪽도 따라 바뀌고 선점이 옮겨간다", async () => {
+    const p = profile({ phone: "010-6161-0003" });
+    const { uid } = await upsertSocialUser({ provider: "naver", profile: p }, deps());
+
+    await upsertSocialUser(
+      { provider: "naver", profile: { ...p, phone: "010-6161-0004" } },
+      deps()
+    );
+
+    expect((await userDoc(uid)).get("phone")).toBe("+821061610004");
+    expect((await testDb.doc("phoneIndex/+821061610004").get()).get("uid")).toBe(uid);
+    // 예전 번호의 선점은 풀립니다 — 남기면 그 번호를 실제로 쓰는 사람이 못 씁니다.
+    expect((await testDb.doc("phoneIndex/+821061610003").get()).exists).toBe(false);
+  });
+
+  it("바뀐 소셜 번호가 남의 선점이면 우리 쪽 값은 그대로 두고 기록만 한다 (2-14)", async () => {
+    const p = profile({ phone: "010-6161-0005" });
+    const { uid } = await upsertSocialUser({ provider: "naver", profile: p }, deps());
+    await testDb.doc("phoneIndex/+821061610006").set({ uid: "someone-else", createdAt: new Date() });
+
+    const again = await upsertSocialUser(
+      { provider: "naver", profile: { ...p, phone: "010-6161-0006" } },
+      deps()
+    );
+
+    expect(again.phoneDuplicated).toBe(true);
+    expect((await userDoc(uid)).get("phone")).toBe("+821061610005");
+    expect((await testDb.doc("phoneIndex/+821061610005").get()).get("uid")).toBe(uid);
+    expect((await testDb.doc("phoneIndex/+821061610006").get()).get("uid")).toBe("someone-else");
+  });
+
+  it("출처가 없는 옛 문서는 같은 번호라도 재로그인 때 출처가 채워진다", async () => {
+    // 2026-09-09 이전 가입자 — 이게 없으면 마이페이지가 소셜 번호를 직접 입력으로 알고 열어둡니다.
+    const p = profile({ phone: "010-6161-0007" });
+    const { uid } = await upsertSocialUser({ provider: "naver", profile: p }, deps());
+    await testDb.doc(`users/${uid}`).update({ phoneSource: FieldValue.delete() });
+    expect((await userDoc(uid)).get("phoneSource")).toBeUndefined();
+
+    await upsertSocialUser({ provider: "naver", profile: p }, deps());
+    expect((await userDoc(uid)).get("phoneSource")).toBe("naver");
+  });
+
+  it("소셜이 번호를 안 주면(카카오 심사 전) 직접 입력한 번호를 그대로 둔다", async () => {
+    const p = profile({ phone: null });
+    const { uid } = await upsertSocialUser({ provider: "kakao", profile: p }, deps());
+    await testDb.doc(`users/${uid}`).update({ phone: "+821061610008", phoneSource: "manual" });
+
+    await upsertSocialUser({ provider: "kakao", profile: p }, deps());
+
+    const snap = await userDoc(uid);
+    expect(snap.get("phone")).toBe("+821061610008");
+    expect(snap.get("phoneSource")).toBe("manual");
   });
 
   it("비어 있던 항목은 나중에 채워진다 (fill-if-empty)", async () => {

@@ -13,7 +13,7 @@
  * 서버 규칙이 바뀔 때 두 곳이 어긋납니다.
  */
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CATEGORIES } from "../types/firestore";
 import type { ScheduleType } from "../types/firestore";
@@ -169,6 +169,8 @@ export default function ProgramRegisterPage() {
   const isEdit = editingId != null;
 
   const [createdId, setCreatedId] = useState<string | null>(null);
+  /** 빈 필수 칸이 여럿일 때 첫 번째만 처리하기 위한 표시 (아래 onInvalidCapture) */
+  const invalidHandled = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState<LoadedProgram | null>(null);
@@ -436,20 +438,48 @@ export default function ProgramRegisterPage() {
     setIntroBlocks([emptyIntroBlock()]);
   }
 
+  /**
+   * 빠진 항목이 있는 자리로 화면을 옮기고 커서까지 넣습니다 (2026-09-08).
+   *
+   * **제목·가격처럼 브라우저가 챙기는 칸은 이미 그 자리로 갑니다**(`required`).
+   * 문제는 주소·운영 방식·날짜처럼 우리가 직접 만든 칸입니다 — 그전에는 폼 맨 위에
+   * 메시지 한 줄만 뜨고 화면은 그대로여서, **긴 폼 어디가 문제인지 찾아 헤매야
+   * 했습니다.** 메시지만으로는 부족하고 자리를 보여줘야 합니다.
+   *
+   * 스크롤만 하고 커서를 안 넣으면 「여기구나」까지는 알지만 다시 눌러야 합니다.
+   * 반대로 `focus()`가 스스로 스크롤하게 두면 칸이 화면 맨 위나 아래에 붙어
+   * 무슨 항목인지 보이지 않아서, **스크롤은 가운데로 우리가** 하고 커서만 넣습니다.
+   */
+  function focusField(id: string) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = el.matches("input, select, textarea")
+      ? el
+      : el.querySelector("input, select, textarea");
+    (target as HTMLElement | null)?.focus({ preventScroll: true });
+  }
+
+  /** 검증 실패를 한자리에서 처리합니다 — 메시지·자리 이동·busy 해제를 빠뜨리지 않게. */
+  function fail(message: string, fieldId?: string): false {
+    setError(message);
+    setBusy(false);
+    if (fieldId) focusField(fieldId);
+    return false;
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setBusy(true);
 
     if (!place) {
-      setError("장소를 검색해서 선택해 주세요");
-      setBusy(false);
+      fail("장소를 검색해서 선택해 주세요", "field-place");
       return;
     }
 
     if (!scheduleType) {
-      setError("운영 방식을 선택해 주세요");
-      setBusy(false);
+      fail("운영 방식을 선택해 주세요", "field-schedule");
       return;
     }
 
@@ -458,8 +488,7 @@ export default function ProgramRegisterPage() {
     const conflictKeys = includes.keys.filter((k) => excludes.keys.includes(k));
     const conflictCustom = includes.custom.filter((c) => excludes.custom.includes(c));
     if (conflictKeys.length > 0 || conflictCustom.length > 0) {
-      setError("같은 항목이 포함과 불포함에 함께 있습니다. 한쪽에서 빼 주세요");
-      setBusy(false);
+      fail("같은 항목이 포함과 불포함에 함께 있습니다. 한쪽에서 빼 주세요", "field-content");
       return;
     }
 
@@ -478,10 +507,10 @@ export default function ProgramRegisterPage() {
       (b) => b.heading.trim() === "" && b.body.trim() === ""
     );
     if (emptyBlock >= 0) {
-      setError(
-        `${emptyBlock + 1}번째 소개 블록에 소제목이나 설명을 넣어 주세요. 비워 둘 거라면 그 블록을 지워 주세요.`
+      fail(
+        `${emptyBlock + 1}번째 소개 블록에 소제목이나 설명을 넣어 주세요. 비워 둘 거라면 그 블록을 지워 주세요.`,
+        "field-intro"
       );
-      setBusy(false);
       return;
     }
 
@@ -492,8 +521,7 @@ export default function ProgramRegisterPage() {
     // 수정 모드에서는 이미 저장된 날짜가 있으므로 새 줄이 비어 있어도 정상입니다.
     const savedCount = loaded?.schedules.length ?? 0;
     if (dateBased && schedules.length === 0 && savedCount === 0) {
-      setError("진행 날짜를 입력해 주세요");
-      setBusy(false);
+      fail("진행 날짜를 입력해 주세요", "field-schedules");
       return;
     }
 
@@ -723,10 +751,10 @@ export default function ProgramRegisterPage() {
         <Card className="bg-secondary">
           <CardContent className="pt-6">
             <h1 className="mb-3 text-lg font-bold text-secondary-foreground">
-              작성 중(draft)으로 저장했습니다
+              저장했습니다 — 심사를 요청하면 게시됩니다
             </h1>
             <p className="mb-4 text-sm leading-relaxed">
-              아직 검색에 노출되지 않습니다.{" "}
+              지금은 <strong>작성 중</strong> 상태라 아직 검색에 노출되지 않습니다.{" "}
               {createdPhotoCount > 0 ? (
                 <>
                   <strong>사진 {createdPhotoCount}장도 함께 올라갔습니다.</strong>{" "}
@@ -858,7 +886,24 @@ export default function ProgramRegisterPage() {
         </p>
       )}
 
-      <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+      <form
+        className="flex flex-col gap-5"
+        onSubmit={handleSubmit}
+        /* 브라우저가 빈 필수 칸으로 커서를 옮겨주지만, **하단 고정 바에 가려**
+           무슨 항목인지 안 보이는 경우가 있습니다. 위치만 가운데로 다시 맞춥니다.
+           빈 칸이 여럿이면 이벤트도 여러 번 오는데 **브라우저가 커서를 넣는 것은
+           첫 칸**이라, 첫 번째만 처리하지 않으면 마지막 칸으로 스크롤돼 커서와
+           화면이 따로 놉니다. */
+        onInvalidCapture={(e) => {
+          if (invalidHandled.current) return;
+          invalidHandled.current = true;
+          const el = e.target as HTMLElement;
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            invalidHandled.current = false;
+          }, 0);
+        }}
+      >
         {/* 사진 (v29 — 등록 화면에서도 고를 수 있습니다).
 
             저장 자리 이름에 프로그램 번호가 필요한 것은 그대로입니다(18-3). 다만
@@ -957,7 +1002,7 @@ export default function ProgramRegisterPage() {
         {/* ── 장소와 가격 ───────────────────────────────────────────────── */}
         <FormCard title="장소와 가격" icon={MapPin}>
           <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1.5">
+          <div id="field-place" className="flex flex-col gap-1.5">
             <Label htmlFor="address">장소(주소)</Label>
             <AddressSearchField value={place} onChange={setPlace} />
           </div>
@@ -1012,7 +1057,7 @@ export default function ProgramRegisterPage() {
           desc="어떻게 진행할지 고르고, 실제로 여는 날짜를 넣습니다."
         >
           {/* 카드형 선택지 — 라디오 점만 있으면 무엇이 골라졌는지 한눈에 안 들어옵니다. */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div id="field-schedule" className="grid gap-3 sm:grid-cols-2">
             {SCHEDULE_OPTIONS.map((opt) => {
               const selected = scheduleType === opt.value;
               return (
@@ -1063,19 +1108,21 @@ export default function ProgramRegisterPage() {
               </>
             )}
 
-            <ScheduleFields
-              scheduleType={scheduleType}
-              rows={scheduleRows}
-              onChange={setScheduleRows}
-              programCapacity={capacity}
-              compact={isEdit}
-              canAdd={
-                isEdit
-                  ? scheduleType === "series" ||
-                    (scheduleType === "single" && (loaded?.schedules.length ?? 0) === 0)
-                  : undefined
-              }
-            />
+            <div id="field-schedules">
+              <ScheduleFields
+                scheduleType={scheduleType}
+                rows={scheduleRows}
+                onChange={setScheduleRows}
+                programCapacity={capacity}
+                compact={isEdit}
+                canAdd={
+                  isEdit
+                    ? scheduleType === "series" ||
+                      (scheduleType === "single" && (loaded?.schedules.length ?? 0) === 0)
+                    : undefined
+                }
+              />
+            </div>
           </div>
 
           {/* 문의 가능 기간은 상시모집 전용입니다 — 다른 방식에서는 서버가 null로
@@ -1110,6 +1157,7 @@ export default function ProgramRegisterPage() {
 
         {/* ── 프로그램 소개 ─────────────────────────────────────────────── */}
         <FormCard
+          id="field-intro"
           title="프로그램 소개"
           icon={BookOpen}
           desc="사진과 글만 넣으시면 배치는 자동으로 됩니다 — 상세 페이지에서 좌우로 번갈아 놓입니다. 순서는 왼쪽 손잡이를 끌거나 화살표 버튼으로 바꿉니다."
@@ -1130,6 +1178,7 @@ export default function ProgramRegisterPage() {
 
         {/* ── 상세 구성 항목 ────────────────────────────────────────────── */}
         <FormCard
+          id="field-content"
           title="상세 구성 항목"
           icon={ListChecks}
           desc="목록에서 고르고, 없으면 직접 입력합니다(구분마다 3개까지). 같은 항목을 포함과 불포함에 함께 고를 수 없습니다."
@@ -1266,16 +1315,32 @@ export default function ProgramRegisterPage() {
         <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur">
           <div className="container mx-auto flex max-w-[800px] items-center justify-between gap-3 px-5 py-3.5">
             <p className="hidden text-[13px] text-muted-foreground sm:block">
-              {isEdit ? "고친 내용은 저장해야 반영됩니다" : "저장하면 작성 중 상태가 됩니다"}
+              {isEdit ? "고친 내용은 저장해야 반영됩니다" : "제출하면 관리자 심사로 넘어갑니다"}
             </p>
             <div className="flex flex-1 gap-2 sm:flex-none">
-              {isEdit && (
+              {isEdit ? (
                 <Button type="button" size="lg" variant="outline" asChild>
                   <Link to="/my/programs">내 프로그램으로</Link>
                 </Button>
+              ) : (
+                /* 취소 — 쓰던 내용이 사라지므로 반드시 한 번 물어봅니다.
+                   폼을 채우다 실수로 눌렀을 때 되돌릴 방법이 없습니다. */
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm("작성을 취소할까요?\n\n지금까지 쓴 내용은 저장되지 않습니다.")) {
+                      navigate("/my/programs");
+                    }
+                  }}
+                >
+                  취소
+                </Button>
               )}
               <Button type="submit" size="lg" className="flex-1 sm:flex-none" disabled={busy}>
-                {busy ? "저장 중…" : isEdit ? "수정 내용 저장" : "작성 중으로 저장"}
+                {busy ? "제출 중…" : isEdit ? "수정 내용 저장" : "제출"}
               </Button>
             </div>
           </div>

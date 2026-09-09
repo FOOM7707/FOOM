@@ -19,12 +19,28 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
 import { maskPhone, normalizePhone } from "./phone";
 
+/**
+ * 연락처가 어디서 왔는가 (2-14, 2026-09-09).
+ *  - `naver`/`kakao` — 소셜 로그인이 넘겨준 번호. 그 서비스가 본인 확인을 거친 값이라
+ *    마이페이지에서 **잠깁니다**(바꾸려면 그 서비스에서 바꾸고 재로그인).
+ *  - `manual` — 사용자가 마이페이지에서 직접 입력한 번호. 인증되지 않은 값이라
+ *    `phoneIndex`를 **선점하지 않고**, 본인 예약 안내 발송에만 씁니다.
+ *  - `null` — 번호 없음, 또는 출처를 적기 전(2026-09-09 이전)에 저장된 옛 문서.
+ *    옛 문서는 `manual`로 취급하고, 소셜이 번호를 주는 다음 로그인 때 출처가 채워집니다.
+ */
+export type PhoneSource = "naver" | "kakao" | "manual" | null;
+
+export function isSocialPhoneSource(source: unknown): source is "naver" | "kakao" {
+  return source === "naver" || source === "kakao";
+}
+
 export interface MeResponse {
   uid: string;
   role: string;
   name: string | null;
   email: string | null;
   phone: string | null;
+  phoneSource: PhoneSource;
   profileImageUrl: string | null;
   status: string;
   authProvider: string | null;
@@ -75,12 +91,18 @@ export async function getMe(db: Firestore, uid: string): Promise<MeResponse> {
     name: (user.name as string) ?? null,
     email: (user.email as string) ?? null,
     phone: (user.phone as string) ?? null,
+    phoneSource: normalizePhoneSource(user.phoneSource),
     profileImageUrl: (user.profileImageUrl as string) ?? null,
     status: (user.status as string) ?? "active",
     authProvider: (user.authProvider as string) ?? null,
     identityVerifiedAt: user.identityVerifiedAt ?? null,
     provider,
   };
+}
+
+/** 문서에 적힌 값이 목록 밖이면 null로 — 화면이 모르는 값을 만나 분기가 깨지지 않게 합니다. */
+function normalizePhoneSource(value: unknown): PhoneSource {
+  return isSocialPhoneSource(value) || value === "manual" ? value : null;
 }
 
 /** 이름 길이 상한. 화면에 그대로 놓이는 값이라 레이아웃이 깨지지 않을 선입니다. */
@@ -144,15 +166,28 @@ export function parseUpdateMeInput(body: unknown): UpdateMeInput {
   return input;
 }
 
+const SOURCE_LABEL: Record<"naver" | "kakao", string> = { naver: "네이버", kakao: "카카오" };
+
 /**
  * 내 정보 수정 (마이페이지).
  *
  * **`role`·`status`는 이 경로로도 바뀌지 않습니다** — 입력에서 아예 읽지 않습니다.
  * 권한 부여는 Admin SDK 스크립트 전용이고(12-3), 탈퇴는 별도 경로입니다.
  *
- * 전화번호는 `phoneIndex`로 선점합니다(2-14). **번호를 문서 ID로 삼아 create로
- * 선점하는 방식만이 경합을 막습니다** — 트랜잭션은 쿼리 결과를 잠그지 못하므로
- * "이 번호 쓰는 사람 있나?"를 조회하는 방식은 동시 요청에서 나란히 통과합니다.
+ * **연락처 규칙 (2026-09-09, 2-14 — 8/28 보안검사 B-1의 해소).**
+ *
+ *  ① **소셜이 준 번호는 여기서 바꿀 수 없습니다.** 그 서비스가 본인 확인을 거친
+ *     값이라 우리가 다시 확인할 것이 없고, 바꾸는 길은 그 서비스에서 바꾼 뒤
+ *     재로그인하는 것입니다(`socialAuth.ts` — 소셜 번호가 항상 이깁니다).
+ *  ② **직접 입력한 번호는 `phoneIndex`를 선점하지 않습니다.** 예전에는 여기서도
+ *     선점했는데, 그러면 ⓐ 남의 번호를 먼저 등록해 실소유자를 막을 수 있고(스쿼팅)
+ *     ⓑ 「이미 쓰는 번호입니다」 응답으로 그 번호 주인이 회원인지 알아낼 수
+ *     있었습니다(열거). 인증 안 된 번호는 선점도 조회도 하지 않으니 둘 다 닫힙니다 —
+ *     **남이 쓰는 번호를 넣어도 응답이 같습니다.** 이 번호는 본인 예약 안내 발송에만
+ *     쓰이고, 중복 판별(쿠폰 등)은 인증된 번호만 봅니다. 문자 인증이 붙는 날
+ *     「직접 입력 → 인증 통과 → 그때 선점」으로 이어집니다.
+ *  ③ 예전 번호에 **우리 선점**이 남아 있으면 풀어줍니다(2026-09-09 이전에 여기서
+ *     선점한 것). 우리 것인지 확인한 뒤 지우므로 남의 선점은 건드리지 않습니다.
  */
 export async function updateMe(
   db: Firestore,
@@ -173,45 +208,38 @@ export async function updateMe(
     }
 
     const previousPhone = (userSnap.get("phone") as string | null) ?? null;
+    const previousSource = normalizePhoneSource(userSnap.get("phoneSource"));
     const phoneChanged = input.phone !== undefined && previousPhone !== input.phone;
 
+    if (phoneChanged && previousPhone && isSocialPhoneSource(previousSource)) {
+      // ① 소셜 번호는 잠겨 있습니다. 같은 값을 다시 보낸 것은 위 phoneChanged에서
+      //    걸러지므로, 화면이 값을 그대로 되보내도 여기 걸리지 않습니다.
+      const label = SOURCE_LABEL[previousSource];
+      throw new AppError(
+        "failed-precondition",
+        `${label} 계정에서 받은 연락처는 여기서 바꿀 수 없습니다. ` +
+          `${label}에서 번호를 바꾼 뒤 다시 로그인하면 반영됩니다.`
+      );
+    }
+
     // ── 읽기 단계 ────────────────────────────────────────────────
-    const indexRef = phoneChanged ? db.doc(`phoneIndex/${input.phone}`) : null;
+    // 새 번호의 선점 문서는 **읽지 않습니다**(②) — 읽어서 응답을 가르는 것 자체가
+    // 열거 구멍입니다. 예전 번호는 우리 선점을 풀어주기 위해서만 읽습니다(③).
     const previousRef =
       phoneChanged && previousPhone ? db.doc(`phoneIndex/${previousPhone}`) : null;
-
-    const [indexSnap, previousSnap] = await Promise.all([
-      indexRef ? tx.get(indexRef) : Promise.resolve(null),
-      previousRef ? tx.get(previousRef) : Promise.resolve(null),
-    ]);
-
-    if (indexSnap?.exists && (indexSnap.get("uid") as string | undefined) !== uid) {
-      // **여기서는 막습니다.** 2-14가 "선점 실패는 가입을 막지 않는다"고 정한
-      // 근거는 「번호가 첫 예약 화면에서 들어오는 사용자가 되돌아갈 곳 없이
-      // 멈춘다」인데, 마이페이지는 그 상황이 아닙니다 — 사용자가 스스로 설정을
-      // 고치는 자리라 그냥 두고 나갈 수 있습니다. 반대로 조용히 저장하지 않으면
-      // 「저장했다는데 안 바뀌는」 고장으로 읽힙니다.
-      console.warn("[users] duplicate phone rejected on profile update", {
-        uid,
-        phone: maskPhone(input.phone!),
-      });
-      throw new AppError("failed-precondition", "이미 다른 계정에서 쓰고 있는 연락처입니다");
-    }
+    const previousSnap = previousRef ? await tx.get(previousRef) : null;
 
     // ── 쓰기 단계 ────────────────────────────────────────────────
     const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
     if (input.name !== undefined) patch.name = input.name;
 
     if (phoneChanged) {
-      if (indexRef && !indexSnap?.exists) {
-        tx.set(indexRef, { uid, createdAt: FieldValue.serverTimestamp() });
-      }
-      // 예전 번호의 선점은 풀어줍니다 — 남겨두면 번호를 바꾼 사용자가
-      // 되돌릴 수 없고, 그 번호를 실제로 쓰는 사람도 못 씁니다.
       if (previousRef && previousSnap?.exists && previousSnap.get("uid") === uid) {
         tx.delete(previousRef);
       }
       patch.phone = input.phone;
+      patch.phoneSource = "manual";
+      console.info("[users] manual phone saved", { uid, phone: maskPhone(input.phone!) });
     }
 
     tx.update(userRef, patch);

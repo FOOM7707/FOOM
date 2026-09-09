@@ -37,7 +37,11 @@ service cloud.firestore {
         && request.resource.data.get('role', 'consumer') == 'consumer'
         && request.resource.data.get('status', 'active') == 'active';
 
-      allow update: if isSelf(uid) && !changed(['role', 'status']);
+      // (2026-09-09) phone·phoneSource도 막습니다 — 연락처는 PATCH /users/me 경유.
+      // 소셜이 준 번호는 잠기고 직접 입력은 선점을 안 하는 규칙이 서버에만 있어서,
+      // 여기를 열어두면 브라우저에서 그 규칙을 통째로 건너뛸 수 있습니다(2-14).
+      // 화면은 users 문서를 직접 쓰는 곳이 없습니다(2026-09-07 확인).
+      allow update: if isSelf(uid) && !changed(['role', 'status', 'phone', 'phoneSource']);
       allow delete: if false;      // 탈퇴는 서버에서 status='withdrawn' 처리
       // 관리자에게도 클라이언트 쓰기를 열지 않습니다 — role 부여는
       // Admin SDK 스크립트 전용(12-3). 여기서 열면 브라우저에서 남의 role을
