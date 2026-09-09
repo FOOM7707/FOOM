@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { cardImageUrl } from "@/lib/cardImage";
 import {
   Baby,
@@ -106,20 +106,6 @@ export default function HomePage() {
   const dateBoxRef = useRef<HTMLDivElement | null>(null);
   const datePanelRef = useRef<HTMLDivElement | null>(null);
 
-  /** 로그아웃 뒤 홈으로 올 때 받는 한 줄 안내(useLogout). 몇 초 뒤 사라집니다 */
-  const location = useLocation();
-  const [notice, setNotice] = useState<string | null>(null);
-  useEffect(() => {
-    const incoming = (location.state as { notice?: string } | null)?.notice;
-    if (!incoming) return;
-    setNotice(incoming);
-    // 주소 기록에 남은 안내는 지웁니다 — 남겨두면 뒤로가기로 돌아올 때마다 다시 뜹니다.
-    navigate(".", { replace: true, state: null });
-    const timer = window.setTimeout(() => setNotice(null), 4000);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state]);
-
   // 달력은 자기 바깥 클릭을 스스로 닫지 않았습니다(지역·종류 칸은 닫음). 셋을 같게 맞춥니다.
   useEffect(() => {
     if (openPanel !== "date") return;
@@ -200,14 +186,6 @@ export default function HomePage() {
           숲해설가, 산림치유지도사 등 국가공인 전문가와 함께하는 맞춤형 숲 프로그램
         </p>
 
-        {notice && (
-          <p
-            role="status"
-            className="mx-auto mt-5 inline-block rounded-full bg-secondary px-4 py-2 text-[13px] font-semibold text-secondary-foreground"
-          >
-            {notice}
-          </p>
-        )}
 
         {/* 통합 검색 — 고른 값은 검색 화면의 필터로 그대로 넘어갑니다(주소에 남으므로
             뒤로가기·링크 공유도 됩니다).
