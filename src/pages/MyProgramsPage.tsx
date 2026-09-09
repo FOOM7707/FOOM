@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
@@ -151,6 +151,18 @@ export default function MyProgramsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
+
+  // 수정 화면이 저장을 끝내고 여기로 보낼 때 결과 문구를 함께 넘깁니다(2026-09-09).
+  // 주소 기록에 남은 문구는 지웁니다 — 남기면 뒤로가기로 돌아올 때마다 다시 뜹니다.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const incoming = (location.state as { notice?: string } | null)?.notice;
+    if (!incoming) return;
+    setNotice(incoming);
+    navigate(".", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const load = useCallback(async () => {
     setFetching(true);

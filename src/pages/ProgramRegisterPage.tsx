@@ -559,21 +559,21 @@ export default function ProgramRegisterPage() {
             body: { schedules },
           });
         }
-        await loadProgram();
-        setScheduleRows([]);
         // (⑨) 게시 중 수정은 바로 반영됩니다. 심사로 가는 것은 관리자가 내린 프로그램을
-        // 고친 경우뿐입니다 — 그 사실을 이 자리에서 말해줘야 「저장했는데 왜 안 보이지」가 안 됩니다.
-        setSavedMessage(
-          res.sentToReview
-            ? "수정했습니다. 관리자가 내린 프로그램이라 관리자 확인 후 다시 게시됩니다."
-            : res.status === "published"
-              ? `수정했습니다. ${
-                  res.changedFields.length > 0
-                    ? res.changedFields.map((f) => FIELD_LABEL[f] ?? f).join(" · ") + "이(가) "
-                    : ""
-                }지금 손님에게 바로 보입니다.`
-              : "수정했습니다."
-        );
+        // 고친 경우뿐입니다 — 그 사실을 말해줘야 「저장했는데 왜 안 보이지」가 안 됩니다.
+        const message = res.sentToReview
+          ? "수정했습니다. 관리자가 내린 프로그램이라 관리자 확인 후 다시 게시됩니다."
+          : res.status === "published"
+            ? `수정했습니다. ${
+                res.changedFields.length > 0
+                  ? res.changedFields.map((f) => FIELD_LABEL[f] ?? f).join(" · ") + "이(가) "
+                  : ""
+              }지금 손님에게 바로 보입니다.`
+            : "수정했습니다.";
+        // 저장이 끝나면 **내 프로그램으로 넘어갑니다**(2026-09-09, 팀 요청). 같은 화면에 머물면
+        // 저장이 됐는지 화면을 훑어 확인해야 하고, 다음 할 일(게시하기·다시 올리기)이 있는 곳은
+        // 내 프로그램입니다. 결과 문구는 그 화면 위에 한 줄로 뜹니다.
+        navigate("/my/programs", { state: { notice: message } });
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "수정에 실패했습니다");
       } finally {
