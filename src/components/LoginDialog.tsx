@@ -8,8 +8,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import LogoutButton from "@/components/LogoutButton";
 import { useAuth } from "@/hooks/useAuth";
-import { useLogout } from "@/hooks/useLogout";
 import { startKakaoLogin } from "@/lib/kakaoAuth";
 import { startNaverLogin } from "@/lib/naverAuth";
 
@@ -26,8 +26,6 @@ import { startNaverLogin } from "@/lib/naverAuth";
  */
 export default function LoginDialog() {
   const { user, loading } = useAuth();
-  // 로그아웃은 홈으로 보내고 안내 문구를 띄웁니다(useLogout) — 버튼만 바뀌면 눌렀는지 알 수 없습니다.
-  const logout = useLogout();
   const [error, setError] = useState<string | null>(null);
 
   if (loading) {
@@ -38,12 +36,10 @@ export default function LoginDialog() {
     );
   }
 
+  // 로그아웃은 확인 창을 거치고 화면을 새로 불러옵니다(`LogoutButton`) — 버튼 글자만
+  // 바뀌면 눌렀는지 알 수 없습니다.
   if (user) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => void logout()}>
-        로그아웃
-      </Button>
-    );
+    return <LogoutButton />;
   }
 
   /** 로그인 후 보고 있던 화면으로 돌아옵니다. */
