@@ -7,6 +7,11 @@
  *
  * 지난 회차는 지울 수 없게 합니다 — 이미 진행한 기록이고, 예약·정산이 붙으면
  * 서버가 거부할 대상입니다.
+ *
+ * **매주 반복이 만든 날짜도 여기에 나옵니다** (2026-09-11). 못 가는 날을 닫는 방법이
+ * 「그 회차를 지우기」 하나뿐이라(공휴일을 걸러내지 않음), 목록을 감추면 닫을 길이
+ * 없어집니다. 지운 날짜는 규칙이 다시 만들지 않습니다 — 같은 이름을 쓰던 자리가
+ * 비었는지가 아니라 「이미 있는지」로 판단하기 때문입니다.
  */
 
 import type { ScheduleType } from "../types/firestore";
@@ -45,12 +50,16 @@ interface Props {
 }
 
 export default function SavedSchedules({ scheduleType, schedules, onDelete, busy }: Props) {
-  if (scheduleType === "open" || scheduleType === "weekly") return null;
+  if (scheduleType === "open") return null;
 
+  // **매주 반복도 여기에 보여줍니다** (2026-09-11). 규칙이 만든 날짜라도 못 가는 날은
+  // 그 날짜만 지워서 닫습니다 — 목록을 감추면 닫을 방법이 없어집니다.
   if (schedules.length === 0) {
     return (
       <p className="rounded-lg bg-destructive/10 px-3.5 py-3 text-[13px] leading-relaxed text-destructive">
-        저장된 진행 날짜가 없습니다. 날짜를 하나 이상 넣어야 게시할 수 있습니다.
+        {scheduleType === "weekly"
+          ? "열려 있는 날짜가 없습니다. 아래에서 진행 요일을 정하면 90일치 날짜가 자동으로 열립니다."
+          : "저장된 진행 날짜가 없습니다. 날짜를 하나 이상 넣어야 게시할 수 있습니다."}
       </p>
     );
   }

@@ -26,6 +26,12 @@ import {
   reorderProgramImages,
 } from "../../lib/programImages";
 import { addSchedules, deleteSchedule, parseScheduleInputs } from "../../lib/schedules";
+import {
+  createScheduleTemplate,
+  deleteScheduleTemplate,
+  listScheduleTemplates,
+  updateScheduleTemplate,
+} from "../../lib/scheduleTemplates";
 import { asyncHandler, authenticate, optionalAuthenticate } from "../middleware";
 import type { Firestore } from "firebase-admin/firestore";
 
@@ -193,6 +199,62 @@ export function buildProgramsRouter(overrides: ProgramRouteDeps = {}): Router {
         db(),
         String(req.params.id),
         String(req.params.scheduleId),
+        req.auth!.uid
+      );
+      res.json(result);
+    })
+  );
+
+  // 매주 반복 규칙 — 소유자만 (2-4). 규칙을 저장하면 그 자리에서 90일치 회차가
+  // 채워집니다. 채우지 않고 배치만 기다리면 등록한 사람이 다음 날까지 게시를
+  // 못 합니다(회차 0건은 게시가 막힘).
+  router.get(
+    "/:id/schedule-templates",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const templates = await listScheduleTemplates(db(), String(req.params.id), req.auth!.uid);
+      res.json({ templates });
+    })
+  );
+
+  router.post(
+    "/:id/schedule-templates",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await createScheduleTemplate(
+        db(),
+        String(req.params.id),
+        req.auth!.uid,
+        req.body
+      );
+      res.status(201).json(result);
+    })
+  );
+
+  // 수정 — 예약이 있는 회차는 건드리지 않고 결과에 몇 건을 건너뛰었는지 돌려줍니다.
+  router.patch(
+    "/:id/schedule-templates/:templateId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await updateScheduleTemplate(
+        db(),
+        String(req.params.id),
+        String(req.params.templateId),
+        req.auth!.uid,
+        req.body
+      );
+      res.json(result);
+    })
+  );
+
+  router.delete(
+    "/:id/schedule-templates/:templateId",
+    authenticate,
+    asyncHandler(async (req, res) => {
+      const result = await deleteScheduleTemplate(
+        db(),
+        String(req.params.id),
+        String(req.params.templateId),
         req.auth!.uid
       );
       res.json(result);

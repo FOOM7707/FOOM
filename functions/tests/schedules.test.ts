@@ -186,8 +186,10 @@ describe("parseScheduleInputs — 저장되면 조용히 틀리는 입력을 거
     expect(parse([], { scheduleType: "open" })).toEqual([]);
   });
 
-  it("매주 반복은 준비 중이라 날짜를 직접 받지 않는다", () => {
-    expect(() => parse([row("2026-09-05")], { scheduleType: "weekly" })).toThrow(/준비 중/);
+  it("매주 반복은 날짜를 직접 받지 않는다 — 요일 규칙이 날짜를 만든다", () => {
+    // 둘 다 받으면 같은 프로그램에 「규칙이 만든 날짜」와 「직접 넣은 날짜」가 섞여,
+    // 규칙을 고쳤을 때 무엇이 따라 바뀌고 무엇이 남는지 알 수 없게 됩니다.
+    expect(() => parse([row("2026-09-05")], { scheduleType: "weekly" })).toThrow(/요일 규칙/);
   });
 
   it("공휴일·주말을 걸러내지 않는다 — 성수기라 오히려 열어야 하는 날이다", () => {

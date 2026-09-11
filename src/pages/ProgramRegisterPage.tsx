@@ -44,6 +44,12 @@ import ScheduleFields, {
   type ScheduleRowInput,
 } from "@/components/ScheduleFields";
 import SavedSchedules, { type SavedSchedule } from "@/components/SavedSchedules";
+import ScheduleTemplateFields, {
+  emptyTemplateRow,
+  toTemplatePayload,
+  type SavedScheduleTemplate,
+  type ScheduleTemplateRowInput,
+} from "@/components/ScheduleTemplateFields";
 import ProgramImageUploader, { MAX_IMAGES } from "@/components/ProgramImageUploader";
 import PendingImagePicker from "@/components/PendingImagePicker";
 import KeywordPicker from "@/components/KeywordPicker";
@@ -71,13 +77,13 @@ import {
 import type { IntroBlockImage } from "@/lib/programContent";
 import type { PickedPlace } from "@/lib/places";
 
-// 「매주 반복」은 선택지에서 뺐습니다(2026-08-27, 팀 요청). 반복 회차를 만드는
-// 서버 경로가 없어 그전에도 고를 수 없게 막아둔 상태였는데, 눌러도 안 되는 칸이
-// 남아 있으면 「우리가 못 하는 것」으로 읽힙니다. 회차제로 같은 요일을 여러 줄
-// 추가하면 같은 결과가 되므로 대체 수단은 이미 있습니다.
+// 「매주 반복」이 선택지로 돌아왔습니다(2026-09-11). 2026-08-27에 뺐던 이유는
+// **반복 회차를 만드는 서버 경로가 없어서**였습니다 — 눌러도 안 되는 칸이 남아
+// 있으면 「우리가 못 하는 것」으로 읽힙니다. 그 경로(반복 규칙)가 생겼으므로
+// 다시 엽니다.
 //
-// **서버는 그대로 둡니다.** `weekly`로 저장된 옛 프로그램의 심사 요청은 계속
-// 거부되고(2-4), 반복 템플릿을 만드는 날 화면과 서버를 함께 엽니다.
+// 고르면 날짜 칸 대신 **규칙 칸**(요일·시각·정원·기간)이 뜨고, 실제 날짜는 서버가
+// 90일치를 만듭니다.
 const SCHEDULE_OPTIONS: {
   value: ScheduleType;
   label: string;
@@ -85,6 +91,7 @@ const SCHEDULE_OPTIONS: {
 }[] = [
   { value: "single", label: "1회성", hint: "특정 날짜 1회만 진행" },
   { value: "series", label: "회차제", hint: "여러 회차로 나눠 순차 진행" },
+  { value: "weekly", label: "매주 반복", hint: "요일·시각을 정하면 날짜가 자동으로 열림" },
   { value: "open", label: "상시모집(협의형)", hint: "정원 없이 결제 후 채팅으로 일정 협의" },
 ];
 
@@ -193,6 +200,11 @@ export default function ProgramRegisterPage() {
   const [scheduleType, setScheduleType] = useState<ScheduleType | null>(null);
   const [capacity, setCapacity] = useState("");
   const [scheduleRows, setScheduleRows] = useState<ScheduleRowInput[]>([]);
+  // 「매주 반복」은 날짜가 아니라 규칙을 받습니다(2026-09-11). 저장된 규칙과 새로
+  // 넣는 규칙을 따로 들고 있습니다 — 저장된 것은 지우는 즉시 서버에 반영되고,
+  // 새 규칙은 저장 버튼을 눌러야 올라갑니다(사진과 같은 방식).
+  const [templateRows, setTemplateRows] = useState<ScheduleTemplateRowInput[]>([]);
+  const [savedTemplates, setSavedTemplates] = useState<SavedScheduleTemplate[]>([]);
   // 포함·불포함·준비물·소개 블록도 폼 값이 아니라 상태로 둡니다 — 칩 선택과
   // 블록 편집은 입력칸 하나로 표현되지 않습니다.
   const [includes, setIncludes] = useState<KeywordField>(emptyKeywordField());
@@ -248,6 +260,19 @@ export default function ProgramRegisterPage() {
       setIntroBlocks(savedBlocks.length > 0 ? savedBlocks : [emptyIntroBlock()]);
       // 새로 추가할 줄은 비운 상태로 시작합니다 — 이미 저장된 날짜는 위에 따로 보여줍니다.
       setScheduleRows([]);
+      setTemplateRows([]);
+      // 반복 규칙은 프로그램 응답에 들어 있지 않습니다(소유자만 보는 값이라 경로가
+      // 따로입니다). 「매주 반복」일 때만 부릅니다 — 다른 방식에서 부르면 서버가
+      // 거부하고 화면에 쓸데없는 오류가 뜹니다.
+      if (res.program.scheduleType === "weekly") {
+        const tpl = await apiFetch<{ templates: SavedScheduleTemplate[] }>(
+          `/programs/${editingId}/schedule-templates`,
+          { requireAuth: true }
+        );
+        setSavedTemplates(tpl.templates);
+      } else {
+        setSavedTemplates([]);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "프로그램을 불러오지 못했습니다");
     } finally {
@@ -260,6 +285,32 @@ export default function ProgramRegisterPage() {
   }, [isEdit, user, loadProgram]);
 
   /** 승인 대기 중인 수정본을 버립니다. 게시본은 그대로 남습니다. */
+  /**
+   * 저장된 반복 규칙 삭제 — 앞으로의 회차 중 예약이 없는 것을 서버가 함께 치웁니다.
+   * 예약이 있는 회차는 남습니다(약속이라 규칙이 없어진다고 사라지면 안 됩니다).
+   */
+  async function deleteSavedTemplate(templateId: string) {
+    if (!editingId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ removed: number; kept: number }>(
+        `/programs/${editingId}/schedule-templates/${templateId}`,
+        { method: "DELETE", requireAuth: true }
+      );
+      await loadProgram();
+      setSavedMessage(
+        res.kept > 0
+          ? `반복 규칙을 지웠습니다. 예약이 있는 ${res.kept}개 날짜는 그대로 남습니다.`
+          : `반복 규칙과 열려 있던 ${res.removed}개 날짜를 지웠습니다.`
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "반복 규칙을 지우지 못했습니다");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** 저장된 회차 삭제 — 서버가 즉시 지우고 날짜 요약을 다시 계산합니다. */
   async function deleteSavedSchedule(scheduleId: string) {
     if (!editingId) return;
@@ -290,8 +341,13 @@ export default function ProgramRegisterPage() {
       setScheduleRows((rows) => (rows.length > 0 ? rows.slice(0, 1) : [emptyScheduleRow(capacity)]));
     } else if (next === "series") {
       setScheduleRows((rows) => (rows.length > 0 ? rows : [emptyScheduleRow(capacity)]));
+    } else if (next === "weekly") {
+      // 규칙 칸 하나를 열어둡니다 — 「＋ 요일 추가」를 찾지 못해 규칙 없이 저장하면
+      // 날짜가 하나도 없는 프로그램이 됩니다(소개 블록과 같은 판단).
+      setScheduleRows([]);
+      setTemplateRows((rows) => (rows.length > 0 ? rows : [emptyTemplateRow(capacity)]));
     } else {
-      // 상시모집은 날짜를 받지 않습니다(매주 반복은 옛 프로그램에만 남아 있습니다).
+      // 상시모집은 날짜를 받지 않습니다.
       setScheduleRows([]);
     }
   }
@@ -505,7 +561,15 @@ export default function ProgramRegisterPage() {
     }
 
     const schedules = toSchedulePayload(scheduleRows, scheduleType);
+    const templates = scheduleType === "weekly" ? toTemplatePayload(templateRows) : [];
     const dateBased = scheduleType === "single" || scheduleType === "series";
+
+    // 반복 규칙이 없으면 날짜가 하나도 열리지 않습니다 — 서버도 게시 단계에서
+    // 거부하지만, 그때 알리면 등록을 마친 뒤에 되돌아와야 합니다.
+    if (scheduleType === "weekly" && templates.length === 0 && savedTemplates.length === 0) {
+      fail("진행 요일을 골라 주세요", "field-schedules");
+      return;
+    }
     // 날짜가 없으면 게시돼도 예약할 수 없습니다. 서버도 심사 요청 단계에서
     // 거부하지만, 그때 알리면 등록을 마친 뒤에 되돌아와야 합니다.
     // 수정 모드에서는 이미 저장된 날짜가 있으므로 새 줄이 비어 있어도 정상입니다.
@@ -559,6 +623,15 @@ export default function ProgramRegisterPage() {
             body: { schedules },
           });
         }
+        // 반복 규칙은 한 줄씩 보냅니다 — 서버가 규칙 하나를 저장할 때마다 그 자리에서
+        // 90일치 날짜를 채우고, 중복·상한을 규칙 단위로 판단합니다.
+        for (const template of templates) {
+          await apiFetch(`/programs/${editingId}/schedule-templates`, {
+            method: "POST",
+            requireAuth: true,
+            body: template,
+          });
+        }
         // (⑨) 게시 중 수정은 바로 반영됩니다. 심사로 가는 것은 관리자가 내린 프로그램을
         // 고친 경우뿐입니다 — 그 사실을 말해줘야 「저장했는데 왜 안 보이지」가 안 됩니다.
         const message = res.sentToReview
@@ -604,6 +677,28 @@ export default function ProgramRegisterPage() {
       setError(err instanceof ApiError ? err.message : "등록에 실패했습니다");
       setBusy(false);
       return;
+    }
+
+    // 반복 규칙도 프로그램이 만들어진 뒤에 올립니다 — 규칙이 저장될 자리 이름에
+    // 프로그램 번호가 들어가기 때문입니다(사진과 같은 사정).
+    //
+    // **여기서 실패해도 프로그램은 저장된 상태로 둡니다.** 되돌리면 방금 쓴 글이 전부
+    // 사라지고, 규칙은 수정 화면에서 다시 넣을 수 있습니다.
+    if (templates.length > 0) {
+      try {
+        for (const template of templates) {
+          await apiFetch(`/programs/${newId}/schedule-templates`, {
+            method: "POST",
+            requireAuth: true,
+            body: template,
+          });
+        }
+      } catch (err) {
+        setError(
+          (err instanceof ApiError ? `${err.message} — ` : "") +
+            "프로그램은 저장됐지만 반복 요일을 저장하지 못했습니다. 아래 「사진·내용 수정」에서 다시 넣어 주세요."
+        );
+      }
     }
 
     // 사진은 프로그램이 만들어진 뒤에 올립니다.
@@ -1091,7 +1186,9 @@ export default function ProgramRegisterPage() {
           </div>
 
           <div className="mt-6 flex flex-col gap-3 border-t pt-5">
-            <p className="text-[15px] font-bold">진행 날짜</p>
+            <p className="text-[15px] font-bold">
+              {scheduleType === "weekly" ? "진행 요일" : "진행 날짜"}
+            </p>
 
             {isEdit && loaded && (
               <>
@@ -1111,19 +1208,32 @@ export default function ProgramRegisterPage() {
             )}
 
             <div id="field-schedules">
-              <ScheduleFields
-                scheduleType={scheduleType}
-                rows={scheduleRows}
-                onChange={setScheduleRows}
-                programCapacity={capacity}
-                compact={isEdit}
-                canAdd={
-                  isEdit
-                    ? scheduleType === "series" ||
-                      (scheduleType === "single" && (loaded?.schedules.length ?? 0) === 0)
-                    : undefined
-                }
-              />
+              {/* 「매주 반복」은 날짜가 아니라 규칙을 받습니다 — 실제 날짜는 서버가
+                  90일치를 만듭니다(2026-09-11). */}
+              {scheduleType === "weekly" ? (
+                <ScheduleTemplateFields
+                  rows={templateRows}
+                  onChange={setTemplateRows}
+                  saved={isEdit ? savedTemplates : []}
+                  onDeleteSaved={isEdit ? deleteSavedTemplate : undefined}
+                  programCapacity={capacity}
+                  busy={busy}
+                />
+              ) : (
+                <ScheduleFields
+                  scheduleType={scheduleType}
+                  rows={scheduleRows}
+                  onChange={setScheduleRows}
+                  programCapacity={capacity}
+                  compact={isEdit}
+                  canAdd={
+                    isEdit
+                      ? scheduleType === "series" ||
+                        (scheduleType === "single" && (loaded?.schedules.length ?? 0) === 0)
+                      : undefined
+                  }
+                />
+              )}
             </div>
           </div>
 
