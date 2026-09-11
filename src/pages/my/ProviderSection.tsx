@@ -13,6 +13,7 @@
  */
 
 import { Link } from "react-router-dom";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import ReviewProgress from "@/components/ReviewProgress";
 import { Button } from "@/components/ui/button";
 import type { Me } from "@/hooks/useMe";
@@ -50,11 +51,7 @@ export default function ProviderSection({ me }: { me: Me }) {
         <span className="text-[13px] text-muted-foreground">활동명</span>
         <span className="text-sm font-semibold">
           {me.provider?.displayName ?? "-"}
-          {me.provider?.verified && (
-            <span className="ml-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-              인증
-            </span>
-          )}
+          {me.provider?.verified && <VerifiedBadge className="ml-1.5" />}
         </span>
       </div>
 

@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiFetch } from "@/lib/api";
+import VerifiedBadge from "@/components/VerifiedBadge";
+import { avatarInitial } from "@/lib/profile";
 import type { Me } from "@/hooks/useMe";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -128,11 +130,17 @@ export default function ProfileSection({ me, onSaved }: Props) {
             className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-base font-extrabold text-primary-foreground"
             aria-hidden
           >
-            {(me.name ?? "품").slice(0, 2)}
+            {avatarInitial(me.name)}
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate text-lg font-extrabold">{me.name ?? "이용자"}</p>
+          <p className="flex items-center gap-1.5 text-lg font-extrabold">
+            <span className="truncate">{me.name ?? "이용자"}</span>
+            {/* 자격 심사를 통과한 전문가에게만 붙습니다 — 신청만 한 상태에는 붙지
+                않습니다(그러면 심사의 의미가 사라집니다). 여기서는 무엇에 대한
+                인증인지 알기 어려워 「인증 전문가」로 풀어 씁니다. */}
+            {me.provider?.verified && <VerifiedBadge label="인증 전문가" className="shrink-0" />}
+          </p>
           <p className="text-[13px] text-muted-foreground">
             {ROLE_LABEL[me.role] ?? me.role}
             {me.authProvider &&

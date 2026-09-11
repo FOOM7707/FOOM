@@ -15,6 +15,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin, Navigation } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import VerifiedBadge from "@/components/VerifiedBadge";
+import { avatarInitial } from "@/lib/profile";
 import ProgramMap from "../components/ProgramMap";
 import WeatherWidget from "../components/WeatherWidget";
 import ProgramGallery from "../components/ProgramGallery";
@@ -610,16 +612,12 @@ export default function ProgramDetailPage() {
         {program.provider && (
           <div className="flex items-center gap-3 border-t pt-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
-              {(program.provider.displayName ?? "품").slice(0, 2)}
+              {avatarInitial(program.provider.displayName)}
             </div>
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-sm font-extrabold">
                 {program.provider.displayName ?? "운영자"}
-                {program.provider.verified && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                    인증
-                  </span>
-                )}
+                {program.provider.verified && <VerifiedBadge />}
               </p>
               {/* 평점은 리뷰가 있을 때만 보여줍니다 — 0.0점은 "나쁜 평가"로
                   읽힙니다(2-3의 같은 규칙). */}
