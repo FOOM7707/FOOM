@@ -24,16 +24,20 @@ import {
   reviewProvider,
   startProviderReview,
 } from "../../lib/adminReview";
-import { db as defaultDb } from "../../lib/firebase";
+import { auth as defaultAuth, db as defaultDb } from "../../lib/firebase";
+import { adminClaimsPort, type ProviderClaimsPort } from "../../lib/providerClaims";
 import { asyncHandler, authenticate, requireAdmin } from "../middleware";
 
 export interface AdminRouteDeps {
   db?: Firestore;
+  /** 출입증의 전문가 표시를 맞추는 통로 (2026-09-11). 테스트에서 갈아끼웁니다 */
+  claimsPort?: ProviderClaimsPort;
 }
 
 export function buildAdminRouter(overrides: AdminRouteDeps = {}): Router {
   const router = express.Router();
   const db = () => overrides.db ?? defaultDb();
+  const claimsPort = () => overrides.claimsPort ?? adminClaimsPort(defaultAuth());
 
   // ── 차단선 ───────────────────────────────────────────────────────────────
   router.use(authenticate, requireAdmin);
@@ -64,7 +68,7 @@ export function buildAdminRouter(overrides: AdminRouteDeps = {}): Router {
     "/providers/:id/approve",
     asyncHandler(async (req, res) => {
       const input = parseReviewInput(req.body, req.auth!.uid);
-      const result = await reviewProvider(db(), String(req.params.id), input);
+      const result = await reviewProvider(db(), String(req.params.id), input, claimsPort());
       res.json(result);
     })
   );

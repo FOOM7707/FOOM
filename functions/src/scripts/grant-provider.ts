@@ -14,7 +14,8 @@
  * 공개 프로필의 `verified`는 false로 남습니다. 의도된 값입니다.
  */
 
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
+import { adminClaimsPort } from "../lib/providerClaims";
 import {
   grantProvider,
   verifyProviderConsistency,
@@ -85,7 +86,10 @@ async function main(): Promise<number> {
   console.log(`대상 프로젝트 : ${projectId}`);
   console.log(`대상 환경     : ${usingEmulator ? "에뮬레이터" : "⚠ 실서버"}`);
 
-  const deps = { db: db() };
+  // 출입증의 「전문가」 표시도 함께 답니다 (2026-09-11) — 헤더가 이 표시를 보고
+  // 「프로그램 등록」 버튼을 띄웁니다. 이미 발급된 출입증에는 소급되지 않으므로
+  // 받은 사람은 다시 로그인해야 버튼이 바뀝니다(또는 한 시간 뒤 자동 갱신).
+  const deps = { db: db(), claimsPort: adminClaimsPort(auth()) };
 
   if (args.check) {
     const report = await verifyProviderConsistency(args.uid, deps);

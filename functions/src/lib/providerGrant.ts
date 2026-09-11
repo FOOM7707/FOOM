@@ -24,9 +24,19 @@
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
+import {
+  syncProviderClaims,
+  type ProviderClaimsPort,
+} from "./providerClaims";
 
 export interface ProviderGrantDeps {
   db: Firestore;
+  /**
+   * 출입증에 「전문가」 표시를 적기 위한 통로 (2026-09-11). **없으면 그냥 넘어갑니다** —
+   * 이 표시는 헤더 버튼 모양만 정하므로, 없다고 자격 부여가 실패하면 안 됩니다.
+   * 다음 로그인 때 `syncProviderClaimsFromDb`가 어차피 맞춰줍니다.
+   */
+  claimsPort?: ProviderClaimsPort;
 }
 
 export interface ProviderGrantResult {
@@ -102,6 +112,13 @@ export async function grantProvider(
   }
 
   await batch.commit();
+
+  // 출입증의 전문가 표시를 맞춥니다. 이미 발급된 출입증에는 소급되지 않아
+  // 브라우저가 갱신할 때(약 1시간) 또는 다시 로그인할 때 반영됩니다.
+  if (deps.claimsPort) {
+    // 여기서 만들어지는 계정은 심사 전이므로 승인 표시는 붙이지 않습니다.
+    await syncProviderClaims(deps.claimsPort, uid, { provider: true, providerApproved: false });
+  }
 
   return { uid, previousRole, createdProfile: !publicSnap.exists };
 }

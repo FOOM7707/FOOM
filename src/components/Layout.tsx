@@ -47,7 +47,20 @@ export default function Layout() {
   const location = useLocation();
   // 관리자에게만 메뉴를 보여줍니다(12-3). **메뉴를 숨기는 것은 보안이 아닙니다** —
   // 누구나 주소창에 /admin 을 칠 수 있고, 실제 차단은 함수 진입부와 보안규칙이 합니다.
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, isProvider, isProviderApproved, user } = useAuth();
+
+  // 헤더 오른쪽 버튼은 **보는 사람에 따라 다릅니다** (2026-09-11, 팀 요청).
+  //   · 승인된 전문가  → 「프로그램 등록」  (다음에 할 일이 그것뿐입니다)
+  //   · 심사 중인 전문가 → 「심사 상태 보기」 (이미 신청한 사람에게 또 신청하라고
+  //     할 수 없고, 「프로그램 등록」은 승인 전이라 눌러도 막힙니다)
+  //   · 그 외 전부      → 「전문가로 활동하기」 (그대로)
+  // 판단은 토큰 클레임으로 합니다 — 서버에 물으면 페이지를 열 때마다 요청이 하나씩
+  // 붙고, 답이 올 때까지 버튼이 바뀌는 깜빡임이 보입니다(`useAuth`).
+  const providerCta = isProviderApproved
+    ? { to: "/programs/new", label: "프로그램 등록" }
+    : isProvider
+      ? { to: "/my?tab=provider", label: "심사 상태 보기" }
+      : { to: "/provider/apply", label: "전문가로 활동하기" };
 
   // 하단 탭바를 숨길 화면 — 상세(`/programs/:id`)·등록·수정(`/programs/new`,
   // `/programs/:id/edit`)은 하단에 「참여하기」·「저장」 고정 바가 이미 있어,
@@ -111,7 +124,7 @@ export default function Layout() {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
-            {/* 좁은 화면에서 관리자·「전문가로 활동하기」는 숨깁니다 — 전문가는 하단
+            {/* 좁은 화면에서 관리자·전문가 버튼은 숨깁니다 — 전문가는 하단
                 탭바, 관리자는 마이페이지 탭으로 접근합니다. 헤더에는 로그인 버튼과
                 (로그인 시) 마이페이지 아이콘만 남겨 로고와 한 줄에 들어가게 합니다. */}
             {isAdmin && (
@@ -126,10 +139,10 @@ export default function Layout() {
             {/* 공급자가 아닌 사용자를 등록 폼으로 바로 보내면, 폼을 다 채운 뒤에야
                 권한 거부를 만나게 됩니다. 안내 화면을 거치게 합니다(15-1). */}
             <Link
-              to="/provider/apply"
+              to={providerCta.to}
               className="hidden rounded-md bg-primary px-4 py-[7px] text-[13px] font-bold text-primary-foreground transition-colors hover:bg-secondary-foreground min-[769px]:inline-block"
             >
-              전문가로 활동하기
+              {providerCta.label}
             </Link>
 
             {/* 계정 — 좁은 화면에서만. 탐색(찾기·지도·전문가)은 하단 탭바가 맡고,

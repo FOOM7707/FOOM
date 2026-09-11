@@ -16,6 +16,7 @@
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { AppError } from "./errors";
+import { syncProviderClaims, type ProviderClaimsPort } from "./providerClaims";
 import { discardPendingEdit, latestProgramHistory } from "./programEdits";
 import {
   autoPublishAwaitingPrograms,
@@ -213,7 +214,12 @@ export async function startProviderReview(
 export async function reviewProvider(
   db: Firestore,
   uid: string,
-  input: ReviewInput
+  input: ReviewInput,
+  /**
+   * 출입증의 「승인됨」 표시를 함께 맞춥니다 (2026-09-11). **없으면 넘어갑니다** —
+   * 이 표시는 헤더 버튼 모양만 정하고, 다음 로그인 때 어차피 맞춰집니다.
+   */
+  claimsPort?: ProviderClaimsPort
 ): Promise<{
   uid: string;
   approvalStatus: string;
@@ -264,6 +270,15 @@ export async function reviewProvider(
   // 프로그램을 자동으로 엽니다 — 승인 메일을 받고 들어와 다시 버튼을 눌러야 하면
   // 「승인됐다는데 왜 안 보이지」가 됩니다. 실패한 건은 대기 상태로 남습니다(programPublish.ts).
   const publishedPrograms = approved ? await autoPublishAwaitingPrograms(db, uid) : [];
+
+  // 반려해도 전문가 자격 자체는 남으므로(`users.role`은 그대로) 「전문가」 표시는
+  // 유지하고 「승인됨」만 뗍니다 — 그래야 헤더가 「심사 상태 보기」를 보여줍니다.
+  if (claimsPort) {
+    await syncProviderClaims(claimsPort, uid, {
+      provider: true,
+      providerApproved: approved,
+    });
+  }
 
   return {
     uid,
