@@ -140,7 +140,7 @@ export function parseScheduleInputs(
         "invalid-argument",
         scheduleType === "open"
           ? "상시모집은 날짜를 미리 등록하지 않습니다. 예약자와 협의해 정합니다"
-          : "매주 반복은 날짜를 직접 등록하지 않습니다. 요일 규칙을 등록하면 날짜가 열립니다"
+          : "매주 반복은 아직 준비 중입니다. 「회차제」로 날짜를 직접 등록해 주세요"
       );
     }
     return [];
@@ -398,7 +398,7 @@ export async function listSchedules(
 }
 
 /** 소유자 확인 + 프로그램 정보. 남의 프로그램은 존재 여부도 알리지 않습니다. */
-export async function loadOwnedProgram(
+async function loadOwnedProgram(
   db: Firestore,
   programId: string,
   uid: string
@@ -553,10 +553,9 @@ export async function deleteSchedule(
  * 날짜가 없는 채로 게시되면 **검색에는 뜨는데 예약할 날짜가 없는 프로그램**이
  * 됩니다. 사용자는 이걸 고장으로 읽고, 공급자는 무엇이 빠졌는지 모릅니다.
  *
- * **`weekly`는 문구만 다릅니다** (2026-09-11). 반복 규칙(`POST /programs/{id}/schedule-templates`)
- * 이 생겼으므로 더는 「준비 중」이 아니고, 회차가 0건인 이유는 **규칙을 아직 등록하지
- * 않은 것**입니다. 규칙을 저장하면 그 자리에서 회차가 채워지므로 여기까지 0건으로
- * 오는 경우는 규칙이 없는 때뿐입니다.
+ * **`weekly`도 막습니다.** 반복 템플릿(`POST /programs/{id}/schedule-templates`)이
+ * 아직 없어서 회차가 생길 경로가 없습니다. 통과시키면 영구히 예약 불가인
+ * 프로그램이 게시됩니다. 템플릿이 생기는 날 이 분기를 지웁니다.
  * `open`(상시모집)은 회차 자체를 쓰지 않으므로 예외입니다(2-4).
  */
 export function assertSchedulableForReview(scheduleType: string, count: number): void {
@@ -566,7 +565,7 @@ export function assertSchedulableForReview(scheduleType: string, count: number):
   if (scheduleType === "weekly") {
     throw new AppError(
       "failed-precondition",
-      "반복 규칙을 등록한 뒤 게시해 주세요. 요일과 시각을 정하면 90일치 날짜가 자동으로 열립니다"
+      "매주 반복은 아직 준비 중입니다. 「회차제」로 날짜를 직접 등록해 주세요"
     );
   }
 
