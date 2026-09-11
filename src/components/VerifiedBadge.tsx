@@ -31,14 +31,17 @@ export default function VerifiedBadge({ label = "인증", className }: Props) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 align-middle text-[11px] font-bold text-primary",
+        // **꽉 찬 초록 + 흰 글자**입니다 (2026-09-11 팀 요청). 그전에는 연한 배경에
+        // 초록 글자였는데, 우리 아이콘은 **선으로만 그린 종류**(색을 채우지 않고 글자
+        // 색을 따라감)라 연한 배경 위에서는 윤곽선만 희미하게 보였습니다.
+        "inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 align-middle text-[11px] font-bold text-primary-foreground",
         className
       )}
     >
       {/* 메달 모양을 씁니다(2026-09-11 팀 요청) — 체크 표시는 「확인했다」로 읽히고,
           이 배지가 말하려는 것은 「자격을 갖췄다」입니다. 선 아이콘만 쓰고 이모지는
           쓰지 않습니다 — MD/frontend/frontend.md */}
-      <Award className="h-4 w-4" strokeWidth={2} aria-hidden />
+      <Award className="h-[15px] w-[15px]" strokeWidth={2.5} aria-hidden />
       {label}
     </span>
   );
