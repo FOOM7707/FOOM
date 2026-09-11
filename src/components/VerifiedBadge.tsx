@@ -12,16 +12,30 @@
  *
  * **표시 자체가 보증은 아니므로 문구를 키우지 않습니다** — 「공식 인증」·「검증 완료」
  * 같은 말은 우리가 보증하는 범위를 넘습니다(전문가 안내 화면에서 같은 판단을 했습니다).
+ *
+ * ──────────────────────────────────────────────────────────────────────────────
+ * **메달은 알약(초록 테두리) 밖에 둡니다** (2026-09-11 팀 확정). 알약 안에는 글자만
+ * 들어갑니다 — 메달이 안으로 들어가면 색이 있는 그림 주위를 연한 초록이 감싸서
+ * 「그림 속의 그림」처럼 보였습니다.
+ *
+ * **메달은 우리 아이콘 세트(`lucide-react`)가 아니라 팀이 준 그림 파일입니다.**
+ * `lucide`는 선으로만 그린 한 가지 색 도안이라 금색 메달을 낼 수 없습니다 —
+ * **이 자리만 예외**이고, 다른 곳에 색이 들어간 그림을 늘리지 마세요(이모지 금지와
+ * 같은 이유로 화면이 금방 어지러워집니다). 원본은 `src/assets/verified-badge.svg`
+ * 이고, 피그마가 함께 내보낸 회색 프레임 배경은 지우고 넣었습니다.
+ *
+ * 그림에는 뜻이 담겨 있지 않게 둡니다(`alt=""`) — 바로 옆에 「인증 전문가」라는 글자가
+ * 있어서, 화면을 읽어주는 프로그램이 같은 말을 두 번 읽게 됩니다.
  */
 
-import { Award } from "lucide-react";
 import { cn } from "@/lib/utils";
+import verifiedMedal from "@/assets/verified-badge.svg";
 
 interface Props {
   /**
    * 배지 글자. 기본은 「인증」입니다 — 운영자 이름 옆처럼 **전문가 맥락이 분명한
-   * 자리**에서는 한 글자라도 짧은 편이 낫습니다. 내 계정 화면처럼 무엇에 대한
-   * 인증인지 알기 어려운 자리에서만 「인증 전문가」로 풀어 씁니다.
+   * 자리**에서는 짧은 편이 낫습니다. 내 계정 화면처럼 무엇에 대한 인증인지 알기
+   * 어려운 자리에서만 「인증 전문가」로 풀어 씁니다.
    */
   label?: string;
   className?: string;
@@ -29,17 +43,11 @@ interface Props {
 
 export default function VerifiedBadge({ label = "인증", className }: Props) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 align-middle text-[11px] font-bold text-primary",
-        className
-      )}
-    >
-      {/* 메달 모양을 씁니다(2026-09-11 팀 요청) — 체크 표시는 「확인했다」로 읽히고,
-          이 배지가 말하려는 것은 「자격을 갖췄다」입니다. 선 아이콘만 쓰고 이모지는
-          쓰지 않습니다 — MD/frontend/frontend.md */}
-      <Award className="h-4 w-4" strokeWidth={2} aria-hidden />
-      {label}
+    <span className={cn("inline-flex items-center gap-1 align-middle", className)}>
+      <img src={verifiedMedal} alt="" aria-hidden className="h-[18px] w-[18px] shrink-0" />
+      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+        {label}
+      </span>
     </span>
   );
 }
