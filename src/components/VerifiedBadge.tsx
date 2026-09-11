@@ -14,7 +14,7 @@
  * 같은 말은 우리가 보증하는 범위를 넘습니다(전문가 안내 화면에서 같은 판단을 했습니다).
  */
 
-import { BadgeCheck } from "lucide-react";
+import { Award } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -35,8 +35,10 @@ export default function VerifiedBadge({ label = "인증", className }: Props) {
         className
       )}
     >
-      {/* 아이콘은 선 아이콘만 씁니다(이모지 금지) — MD/frontend/frontend.md */}
-      <BadgeCheck className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+      {/* 메달 모양을 씁니다(2026-09-11 팀 요청) — 체크 표시는 「확인했다」로 읽히고,
+          이 배지가 말하려는 것은 「자격을 갖췄다」입니다. 선 아이콘만 쓰고 이모지는
+          쓰지 않습니다 — MD/frontend/frontend.md */}
+      <Award className="h-4 w-4" strokeWidth={2} aria-hidden />
       {label}
     </span>
   );
