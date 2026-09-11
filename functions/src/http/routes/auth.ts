@@ -34,6 +34,11 @@ import { buildAuthorizeUrl, createKakaoPort, type KakaoPort } from "../../lib/ka
 import { createNaverPort, type NaverPort } from "../../lib/naver";
 import { upsertSocialUser, type SocialUpsertDeps } from "../../lib/socialAuth";
 import { db } from "../../lib/firebase";
+import {
+  adminClaimsPort,
+  syncProviderClaimsFromDb,
+  type ProviderClaimsPort,
+} from "../../lib/providerClaims";
 import { asyncHandler } from "../middleware";
 
 /** 테스트에서 네이버 호출부와 Auth를 갈아끼우기 위한 주입 지점. */
@@ -42,6 +47,7 @@ export interface AuthRouteDeps {
   kakaoPort?: KakaoPort;
   upsertDeps?: SocialUpsertDeps;
   createCustomToken?: (uid: string) => Promise<string>;
+  claimsPort?: ProviderClaimsPort;
 }
 
 function defaultUpsertDeps(): SocialUpsertDeps {
@@ -134,6 +140,15 @@ export function buildAuthRouter(overrides: AuthRouteDeps = {}): Router {
       const mintToken =
         overrides.createCustomToken ?? ((uid: string) => auth().createCustomToken(uid));
 
+      // 출입증의 전문가 표시를 회원 정보에 맞춥니다 — **출입증을 만들기 전에** 해야
+      // 이번 로그인부터 반영됩니다. 「로그아웃 후 재로그인」이 언제나 즉시 고치는
+      // 방법이 되는 자리이고, 실패해도 로그인을 막지 않습니다(버튼 모양만 정하는 값).
+      await syncProviderClaimsFromDb(
+        db(),
+        overrides.claimsPort ?? adminClaimsPort(auth()),
+        result.uid
+      );
+
       res.json({
         customToken: await mintToken(result.uid),
         isNew: result.isNew,
@@ -192,6 +207,15 @@ export function buildAuthRouter(overrides: AuthRouteDeps = {}): Router {
 
       const mintToken =
         overrides.createCustomToken ?? ((uid: string) => auth().createCustomToken(uid));
+
+      // 출입증의 전문가 표시를 회원 정보에 맞춥니다 — **출입증을 만들기 전에** 해야
+      // 이번 로그인부터 반영됩니다. 「로그아웃 후 재로그인」이 언제나 즉시 고치는
+      // 방법이 되는 자리이고, 실패해도 로그인을 막지 않습니다(버튼 모양만 정하는 값).
+      await syncProviderClaimsFromDb(
+        db(),
+        overrides.claimsPort ?? adminClaimsPort(auth()),
+        result.uid
+      );
 
       res.json({
         customToken: await mintToken(result.uid),

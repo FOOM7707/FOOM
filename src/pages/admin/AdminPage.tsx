@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -529,11 +530,7 @@ function ProvidersTab() {
                     <div>
                       <p className="font-semibold">
                         {p.displayName ?? "(활동명 없음)"}
-                        {p.verified && (
-                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                            인증
-                          </span>
-                        )}
+                        {p.verified && <VerifiedBadge className="ml-2" />}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {p.userName} · {p.uid}

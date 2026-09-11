@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
-import { Map, Search, UserRoundPlus } from "lucide-react";
+import { Map, PlusSquare, Search, UserRoundPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 /**
  * 하단 고정 탭바 (모바일 전용, 스키마 없음 — 2026-08-28 모바일 최적화).
@@ -18,6 +19,11 @@ import { cn } from "@/lib/utils";
  *
  * 항목은 헤더 네비(`NAV_ITEMS`)와 같은 이동 규칙을 따르되, CTA인 「전문가로
  * 활동하기」를 세 번째 칸에 함께 둡니다(팀 요청, 2026-08-28).
+ *
+ * **세 번째 칸은 보는 사람에 따라 바뀝니다** (2026-09-11) — 헤더 오른쪽 버튼과 같은
+ * 규칙입니다(`Layout`). 헤더만 고치면 **휴대폰에서는 전문가가 여전히 「전문가로
+ * 활동」을 보게 됩니다** — 그 폭에서는 헤더 버튼이 숨겨지고 이 칸이 그 역할을
+ * 대신하기 때문입니다.
  */
 
 interface Tab {
@@ -41,18 +47,40 @@ const TABS: Tab[] = [
     icon: Map,
     active: (path, search) => path === "/search" && search.includes("view=map"),
   },
-  {
+];
+
+/** 세 번째 칸 — 헤더 오른쪽 버튼과 같은 규칙으로 고릅니다. */
+function providerTab(isProvider: boolean, isProviderApproved: boolean): Tab {
+  if (isProviderApproved) {
+    return {
+      to: "/programs/new",
+      label: "프로그램 등록",
+      icon: PlusSquare,
+      active: (path) => path === "/programs/new",
+    };
+  }
+  if (isProvider) {
+    return {
+      to: "/my?tab=provider",
+      label: "심사 상태",
+      icon: UserRoundPlus,
+      active: (path, search) => path === "/my" && search.includes("tab=provider"),
+    };
+  }
+  return {
     to: "/provider/apply",
     label: "전문가로 활동",
     // 헤더 계정 아이콘(UserRound)과 겹치지 않게 「사람+」을 씁니다 — 계정 보기가
     // 아니라 「활동 시작」이라는 뜻도 함께 담깁니다.
     icon: UserRoundPlus,
     active: (path) => path === "/provider/apply",
-  },
-];
+  };
+}
 
 export default function MobileTabBar() {
   const location = useLocation();
+  const { isProvider, isProviderApproved } = useAuth();
+  const tabs = [...TABS, providerTab(isProvider, isProviderApproved)];
 
   return (
     <nav
@@ -63,7 +91,7 @@ export default function MobileTabBar() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur min-[769px]:hidden"
     >
       <ul className="flex items-stretch">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab.active(location.pathname, location.search);
           const Icon = tab.icon;
           return (
